@@ -20,16 +20,17 @@ export async function fetchStockInfo(ticker) {
   };
 }
 
+// Devolve { prices, changes } — changes = variação do dia (vs fecho anterior).
 export async function fetchStockPrices(tickers) {
   const unique = [...new Set(
     tickers.map((t) => String(t || "").trim().toUpperCase()).filter(Boolean)
   )];
-  if (!unique.length) return {};
+  if (!unique.length) return { prices: {}, changes: {} };
 
   const res = await fetch(`/api/stocks/prices?tickers=${encodeURIComponent(unique.join(","))}`);
   const data = await res.json();
-  if (!res.ok) return {};
-  return data.prices || {};
+  if (!res.ok) return { prices: {}, changes: {} };
+  return { prices: data.prices || {}, changes: data.changes || {} };
 }
 
 // Daily close history [{date,close}] for a ticker (used for the S&P benchmark).

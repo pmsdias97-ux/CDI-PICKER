@@ -23,23 +23,21 @@ const MARKET_HOLIDAYS_US = new Set([
   "2027-01-01","2027-01-18","2027-02-15","2027-03-26","2027-05-31","2027-06-18",
   "2027-07-05","2027-09-06","2027-11-25","2027-12-24",
 ]);
-// Estado do mercado pela hora de Nova Iorque (sem API). Devolve {state,label}.
+// Estado do mercado pela hora de Nova Iorque (sem API). Só aberto/fechado
+// (horário regular 09:30–16:00 ET). Devolve {open,label,et,pt}.
 function marketStatus(){
   try{
+    const et=new Intl.DateTimeFormat("pt-PT",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(new Date());
     const date=new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
     const parts=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",weekday:"short",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());
     const get=t=>parts.find(p=>p.type===t)?.value;
     const wd=get("weekday");
     let h=parseInt(get("hour"),10); if(h===24) h=0;
-    const m=parseInt(get("minute"),10);
-    const t=h*60+m;
+    const t=h*60+parseInt(get("minute"),10);
     const weekend=wd==="Sat"||wd==="Sun";
-    if(weekend||MARKET_HOLIDAYS_US.has(date)) return{state:"closed",label:"Mercado fechado"};
-    if(t>=570&&t<960) return{state:"open",label:"Mercado aberto"};
-    if(t>=240&&t<570) return{state:"pre",label:"Pré-mercado"};
-    if(t>=960&&t<1200) return{state:"after",label:"After-hours"};
-    return{state:"closed",label:"Mercado fechado"};
-  }catch{ return{state:"closed",label:"Mercado fechado"}; }
+    const open=!weekend&&!MARKET_HOLIDAYS_US.has(date)&&t>=570&&t<960;
+    return{open,label:open?"Mercado aberto":"Mercado fechado",et};
+  }catch{ return{open:false,label:"Mercado fechado",et:""}; }
 }
 
 // Mapa curado de setores (sem APIs). Tickers fora do mapa caem em "Outros".
@@ -211,6 +209,7 @@ export default function App(){
   const [myName,setMyName]=useState(null);
   const [hasSubmitted,setHasSubmitted]=useState(false);
   const [livePrices,setLivePrices]=useState({});
+  const [dayChange,setDayChange]=useState({}); // variação do dia por ticker
   const [pricesLoading,setPricesLoading]=useState(false);
   const [detailKey,setDetailKey]=useState(null);
   const [toast,setToast]=useState(null);
@@ -220,11 +219,12 @@ export default function App(){
   const refreshLivePrices=useCallback(async(pfs)=>{
     // Inclui "SPY" para o benchmark (preço ao vivo do S&P 500 agora).
     const tickers=[...new Set([...(pfs||[]).flatMap(p=>p.stocks.map(s=>s.ticker)),"SPY"])];
-    if(!tickers.length){ setLivePrices({}); return; }
+    if(!tickers.length){ setLivePrices({}); setDayChange({}); return; }
     setPricesLoading(true);
     try{
-      const prices=await fetchStockPrices(tickers);
+      const { prices, changes }=await fetchStockPrices(tickers);
       setLivePrices(prices);
+      setDayChange(changes||{});
     }catch(err){
       console.error(err);
     }finally{
@@ -264,6 +264,7 @@ export default function App(){
       console.error(pfError);
       setPortfolios([]);
       setLivePrices({});
+      setDayChange({});
     }else{
       const pfs=(portfolioRows||[])
         .filter(row=>row.users?.has_submitted_portfolio)
@@ -403,7 +404,7 @@ export default function App(){
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} onSelect={(k)=>{setDetailKey(k);nav("detail");}}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
-  if(page==="detail") return sh(submitted?<Detail pf={portfolios.find(p=>p.key===detailKey)||myPf} rank={(()=>{const k=(portfolios.find(p=>p.key===detailKey)||myPf)?.key; const i=ranking.findIndex(r=>r.key===k); return i>=0?i+1:0;})()} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="detail") return sh(submitted?<Detail pf={portfolios.find(p=>p.key===detailKey)||myPf} rank={(()=>{const k=(portfolios.find(p=>p.key===detailKey)||myPf)?.key; const i=ranking.findIndex(r=>r.key===k); return i>=0?i+1:0;})()} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
   return null;
 }
@@ -431,31 +432,31 @@ function Shell({children,page,nav,submitted,toast}){
 }
 
 /* ---- Indicador de estado do mercado -------------------------------------- */
-const MARKET_DOT={open:"#34d399",pre:"#fbbf24",after:"#fbbf24",closed:"#94a3b8"};
 function MarketStatus(){
   const [st,setSt]=useState(null); // null no servidor → evita mismatch SSR
   useEffect(()=>{
     setSt(marketStatus());
-    const id=setInterval(()=>setSt(marketStatus()),60_000);
+    const id=setInterval(()=>setSt(marketStatus()),1000);
     return()=>clearInterval(id);
   },[]);
   if(!st) return null;
-  const c=MARKET_DOT[st.state]||"#94a3b8";
-  const live=st.state==="open";
+  const c=st.open?"#34d399":"#f87171";
   return(
     <div style={{position:"fixed",top:12,right:14,zIndex:60}}>
       <style>{`
-        @keyframes mktPulse{0%{box-shadow:0 0 0 0 var(--mk)}70%{box-shadow:0 0 0 6px transparent}100%{box-shadow:0 0 0 0 transparent}}
+        @keyframes mktPulse{0%{box-shadow:0 0 8px var(--mk),0 0 0 0 var(--mk)}70%{box-shadow:0 0 8px var(--mk),0 0 0 6px transparent}100%{box-shadow:0 0 8px var(--mk),0 0 0 0 transparent}}
         @media(max-width:480px){.mktLabel{display:none}}
       `}</style>
-      <div title={st.label} style={{display:"inline-flex",alignItems:"center",gap:8,
-        padding:"6px 12px 6px 11px",borderRadius:999,
+      <div title={st.label} style={{display:"inline-flex",alignItems:"center",gap:9,
+        padding:"6px 13px 6px 11px",borderRadius:999,
         background:"rgba(255,255,255,0.05)",backdropFilter:"blur(18px) saturate(170%)",WebkitBackdropFilter:"blur(18px) saturate(170%)",
         border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 6px 22px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.10)"}}>
         <span style={{"--mk":`${c}90`,width:8,height:8,borderRadius:"50%",background:c,flexShrink:0,
-          boxShadow:`0 0 8px ${c}, 0 0 0 0 ${c}90`,
-          animation:live?"mktPulse 2s ease-out infinite":"none"}}/>
+          boxShadow:`0 0 8px ${c}`,animation:st.open?"mktPulse 2s ease-out infinite":"none"}}/>
         <span className="mktLabel" style={{fontSize:12,fontWeight:600,color:"#cbd5e1",letterSpacing:"0.2px",whiteSpace:"nowrap"}}>{st.label}</span>
+        <span style={{fontSize:11,fontWeight:600,fontFamily:"monospace",color:"#64748b",whiteSpace:"nowrap"}}>
+          {st.et} ET
+        </span>
       </div>
     </div>
   );
@@ -1329,7 +1330,7 @@ function SectorDonut({stocks}){
 }
 
 /* ---- Detail -------------------------------------------------------------- */
-function Detail({pf,rank,livePrices,spy,nav}){
+function Detail({pf,rank,livePrices,dayChange,spy,nav}){
   if(!pf) return(
     <div style={{textAlign:"center",padding:80,color:"#4b5563"}}>
       Portefólio não encontrado. <button onClick={()=>nav("ranking")} style={{color:"#22c55e",background:"none",border:"none",cursor:"pointer"}}>Voltar</button>
@@ -1342,8 +1343,16 @@ function Detail({pf,rank,livePrices,spy,nav}){
   });
   const spyRet=spy?spy.returnFor(pf):null;
   const alpha=spyRet!=null?st.total-spyRet:null;
-  // Destaques (#6) — ações ordenadas por performance desde a submissão.
+  // Tabela: ordenada por rentabilidade desde a submissão (métrica do jogo).
   const bySorted=[...rows].sort((a,b)=>b.ret-a.ret);
+  // Destaques: melhor/pior performance DO DIA (variação vs fecho anterior),
+  // espelhada para shorts. Só inclui ações com variação diária disponível.
+  const dc=dayChange||{};
+  const byDay=rows.map(s=>{
+    const raw=dc[s.ticker];
+    if(!Number.isFinite(raw)) return null;
+    return {...s,ret:s.side==="short"?-raw:raw};
+  }).filter(Boolean).sort((a,b)=>b.ret-a.ret);
   const GLASS={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
   return(
     <div style={{maxWidth:820,margin:"0 auto",padding:"40px 20px 80px"}}>
@@ -1396,7 +1405,7 @@ function Detail({pf,rank,livePrices,spy,nav}){
           <span style={{textAlign:"right"}}>Preço atual</span>
           <span style={{textAlign:"right"}}>Rentab.</span>
         </div>
-        {rows.map(s=>(
+        {bySorted.map(s=>(
           <div key={s.ticker} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",
             padding:"14px 20px",borderBottom:"1px solid #0f172a"}}>
             <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
@@ -1407,7 +1416,6 @@ function Detail({pf,rank,livePrices,spy,nav}){
                   <SideBadge side={s.side}/>
                   <span style={{fontSize:13,color:"#6b7280"}}>{s.companyName}</span>
                 </div>
-                <div style={{fontSize:11,color:"#374151",marginTop:2}}>{s.exchange} · 12,5%</div>
               </div>
             </div>
             <span style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#6b7280",alignSelf:"center"}}>{money(s.initialPrice)}</span>
@@ -1432,15 +1440,15 @@ function Detail({pf,rank,livePrices,spy,nav}){
         </div>
       </div>
 
-      {/* Destaques (#6) — top 3 melhores / piores desde a submissão */}
+      {/* Destaques — melhor/pior performance DO DIA */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16}}>
         <div style={{...GLASS,borderRadius:16,padding:24}}>
-          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#4ade80",textAlign:"center"}}>Melhor performance</h3>
-          <TopList items={bySorted.slice(0,3)}/>
+          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#4ade80",textAlign:"center"}}>Melhor performance do dia</h3>
+          {byDay.length?<TopList items={byDay.slice(0,3)}/>:<p style={{fontSize:13,color:"#6b7280",textAlign:"center",margin:0}}>Sem variação do dia disponível.</p>}
         </div>
         <div style={{...GLASS,borderRadius:16,padding:24}}>
-          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#f87171",textAlign:"center"}}>Pior performance</h3>
-          <TopList items={[...bySorted].reverse().slice(0,3)}/>
+          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#f87171",textAlign:"center"}}>Pior performance do dia</h3>
+          {byDay.length?<TopList items={[...byDay].reverse().slice(0,3)}/>:<p style={{fontSize:13,color:"#6b7280",textAlign:"center",margin:0}}>Sem variação do dia disponível.</p>}
         </div>
       </div>
     </div>

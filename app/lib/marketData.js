@@ -69,11 +69,13 @@ async function yahooQuote(symbol) {
   const meta = data.chart?.result?.[0]?.meta;
   const price = meta?.regularMarketPrice;
   if (!Number.isFinite(price)) return null;
+  const prevClose = meta?.chartPreviousClose ?? meta?.previousClose;
   return {
     price,
     name: meta?.longName || meta?.shortName || null,
     exchange: meta?.fullExchangeName || meta?.exchangeName || null,
     currency: meta?.currency || null,
+    prevClose: Number.isFinite(prevClose) ? prevClose : null,
   };
 }
 
@@ -111,11 +113,13 @@ async function cnbcFetchQuote(sym) {
   if (!quote || quote.code !== 0) return null;
   const price = parseFloat(String(quote.last).replace(/,/g, ""));
   if (!Number.isFinite(price)) return null;
+  const change = parseFloat(String(quote.change).replace(/,/g, ""));
   return {
     price,
     name: quote.name || quote.shortName || null,
     exchange: quote.exchange || quote.exchangeName || null,
     currency: quote.currencyCode || null,
+    prevClose: Number.isFinite(change) ? price - change : null,
   };
 }
 

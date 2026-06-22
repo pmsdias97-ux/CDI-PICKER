@@ -1,5 +1,5 @@
 import { after } from "next/server";
-import { fetchQuote, flushQuoteRevalidations } from "../../../lib/marketData";
+import { fetchQuoteFull, flushQuoteRevalidations } from "../../../lib/marketData";
 import { isValidTicker, rateLimited } from "../../../lib/apiGuards";
 
 export async function GET(request) {
@@ -15,21 +15,23 @@ export async function GET(request) {
   )].filter(isValidTicker).slice(0, 100);
 
   if (!tickers.length) {
-    return Response.json({ prices: {}, errors: {} });
+    return Response.json({ prices: {}, changes: {}, errors: {} });
   }
 
   const prices = {};
+  const changes = {}; // variação do dia (preço atual vs fecho anterior)
   const errors = {};
 
   for (const ticker of tickers) {
     try {
-      const price = await fetchQuote(ticker);
-      if (price == null) errors[ticker] = "not_found";
-      else prices[ticker] = price;
+      const q = await fetchQuoteFull(ticker);
+      if (q?.price == null) { errors[ticker] = "not_found"; continue; }
+      prices[ticker] = q.price;
+      if (Number.isFinite(q.prevClose) && q.prevClose > 0) changes[ticker] = q.price / q.prevClose - 1;
     } catch (err) {
       errors[ticker] = err.message || "fetch_failed";
     }
   }
 
-  return Response.json({ prices, errors });
+  return Response.json({ prices, changes, errors });
 }
