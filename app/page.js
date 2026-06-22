@@ -449,14 +449,35 @@ function WinnersGrid({top,livePrices,nav}){
     })();
     return()=>{ cancel=true; };
   },[top]);
+  const main=top.slice(0,4);
+  const peek=top[4]; // 5º lugar — "espreitado" no desktop para dar continuidade
   return(
     <>
-      <style>{`.cdiWinners{display:grid;gap:14px;grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:768px){.cdiWinners{grid-template-columns:repeat(2,minmax(0,1fr))}}`}</style>
-      <div className="cdiWinners">
-        {top.map((p,i)=>(
+      <style>{`
+        .cdiWinners{display:grid;gap:14px;grid-template-columns:repeat(4,minmax(0,1fr))}
+        .cdiPeek{display:none}
+        @media(min-width:769px){
+          .cdiWinners.has-peek{grid-template-columns:repeat(4,minmax(0,1fr)) minmax(0,0.42fr)}
+          .cdiPeek{display:block;overflow:hidden;cursor:pointer;
+            -webkit-mask-image:linear-gradient(to right,#000 30%,transparent 95%);
+            mask-image:linear-gradient(to right,#000 30%,transparent 95%);
+            filter:blur(1.5px);opacity:0.5}
+          .cdiPeek>div{width:260px}
+        }
+        @media(max-width:768px){.cdiWinners{grid-template-columns:repeat(2,minmax(0,1fr))}}
+      `}</style>
+      <div className={`cdiWinners${peek?" has-peek":""}`}>
+        {main.map((p,i)=>(
           <WinnerCard key={p.key} p={p} rank={i+1} livePrices={livePrices}
             series={seriesById[p.id]||[]} onClick={()=>nav("ranking")}/>
         ))}
+        {peek&&(
+          <div className="cdiPeek" onClick={()=>nav("ranking")} aria-hidden="true">
+            <div>
+              <WinnerCard p={peek} rank={5} livePrices={livePrices} series={seriesById[peek.id]||[]} onClick={()=>nav("ranking")}/>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
@@ -601,7 +622,7 @@ function Home({nav,submitted,count,settings,ranking,livePrices}){
               <span style={{width:7,height:7,borderRadius:"50%",background:"#ef4444",display:"inline-block"}}/>AO VIVO
             </span>
           </div>
-          <WinnersGrid top={ranking.slice(0,4)} livePrices={livePrices} nav={nav}/>
+          <WinnersGrid top={ranking.slice(0,5)} livePrices={livePrices} nav={nav}/>
         </section>
       )}
 
