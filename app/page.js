@@ -306,7 +306,9 @@ export default function App(){
       background:"radial-gradient(1200px 600px at 50% -10%, rgba(37,99,235,0.18) 0%, transparent 60%), linear-gradient(180deg,#0b1730 0%,#0a1226 55%,#070d1c 100%)",
       backgroundAttachment:"fixed",
       display:"flex",alignItems:"center",justifyContent:"center",color:"#4b5563",fontFamily:"system-ui,sans-serif"}}>
-      A carregar…
+      <style>{`@keyframes cdiPulse{0%,100%{opacity:.45;transform:scale(.92)}50%{opacity:1;transform:scale(1)}}`}</style>
+      <img src="/logo.png" alt="A carregar…"
+        style={{width:"clamp(96px,16vw,140px)",height:"auto",animation:"cdiPulse 1.4s ease-in-out infinite"}}/>
     </div>
   );
 
