@@ -74,20 +74,33 @@ function dlCSV(filename,rows){
 }
 
 /* ---- Stock logo ----------------------------------------------------------
-   Company logo by ticker via Financial Modeling Prep (free, no key). If the
-   image fails to load (missing ticker, service down), it hides itself so the
-   ticker badge beside it stays as the fallback. White rounded backdrop so
-   transparent/dark logos stay visible on the dark UI.
+   Company logo by ticker via logo.dev (high quality, ticker-accurate). Needs a
+   public token (pk_...) in NEXT_PUBLIC_LOGODEV_TOKEN. If there's no token or the
+   image fails, falls back to a coloured monogram with the ticker's initials.
 --------------------------------------------------------------------------- */
+const LOGODEV_TOKEN=process.env.NEXT_PUBLIC_LOGODEV_TOKEN;
+function Monogram({ticker,size}){
+  const t=(ticker||"?").replace(/[.\-].*$/,"").slice(0,4);
+  const label=t.slice(0,t.length<=3?t.length:2);
+  let h=0; for(let i=0;i<ticker.length;i++) h=(h*31+ticker.charCodeAt(i))%360;
+  return(
+    <div style={{width:size,height:size,borderRadius:6,flexShrink:0,display:"flex",
+      alignItems:"center",justifyContent:"center",fontWeight:800,
+      fontSize:Math.round(size*0.36),letterSpacing:"-0.5px",color:"#fff",
+      background:`linear-gradient(135deg,hsl(${h},55%,42%),hsl(${(h+40)%360},55%,32%))`}}>
+      {label}
+    </div>
+  );
+}
 function StockLogo({ticker,size=28}){
   const [err,setErr]=useState(false);
-  if(err||!ticker) return null;
+  if(!ticker) return null;
+  if(err||!LOGODEV_TOKEN) return <Monogram ticker={ticker} size={size}/>;
   return(
     <img
-      src={`https://financialmodelingprep.com/image-stock/${encodeURIComponent(ticker)}.png`}
+      src={`https://img.logo.dev/ticker/${encodeURIComponent(ticker)}?token=${LOGODEV_TOKEN}&size=${size*3}&format=png&retina=true&fallback=404`}
       alt="" width={size} height={size} loading="lazy" onError={()=>setErr(true)}
-      style={{width:size,height:size,borderRadius:6,objectFit:"contain",
-        background:"#fff",padding:2,boxSizing:"border-box",flexShrink:0}}/>
+      style={{width:size,height:size,borderRadius:6,objectFit:"contain",flexShrink:0}}/>
   );
 }
 
@@ -903,27 +916,28 @@ function EvolutionChart({portfolioId,currentReturn}){
     if(series.length&&series[series.length-1].date===today) series[series.length-1].r=currentReturn;
     else series.push({date:today,r:currentReturn});
   }
-  if(series.length<2) return(
-    <p style={{fontSize:13,color:"#6b7280",margin:0}}>
-      📈 O gráfico de evolução começa a preencher a partir de amanhã (um ponto por dia).
-    </p>
-  );
+  // Ainda não há histórico real (o jogo começou hoje). Mostra uma pré-visualização
+  // de exemplo, claramente marcada, para se ver como vai ficar.
+  const isExample=series.length<2;
+  const drawn=isExample
+    ? [0,0.006,-0.003,0.009,0.004,0.012,0.009,0.017].map((r,i)=>({date:`d${i}`,r}))
+    : series;
 
   const W=800,H=160,P=8;
-  const vals=series.map(p=>p.r).concat([0]);
+  const vals=drawn.map(p=>p.r).concat([0]);
   let min=Math.min(...vals),max=Math.max(...vals);
   if(min===max){ min-=0.01; max+=0.01; }
   const pad=(max-min)*0.1; min-=pad; max+=pad;
-  const x=i=>P+(i/(series.length-1))*(W-2*P);
+  const x=i=>P+(i/(drawn.length-1))*(W-2*P);
   const y=v=>P+(1-(v-min)/(max-min))*(H-2*P);
-  const line=series.map((p,i)=>`${i===0?"M":"L"}${x(i).toFixed(1)},${y(p.r).toFixed(1)}`).join(" ");
-  const area=`${line} L${x(series.length-1).toFixed(1)},${(H-P).toFixed(1)} L${x(0).toFixed(1)},${(H-P).toFixed(1)} Z`;
-  const last=series[series.length-1].r;
-  const col=last>=0?"#22c55e":"#f87171";
+  const line=drawn.map((p,i)=>`${i===0?"M":"L"}${x(i).toFixed(1)},${y(p.r).toFixed(1)}`).join(" ");
+  const area=`${line} L${x(drawn.length-1).toFixed(1)},${(H-P).toFixed(1)} L${x(0).toFixed(1)},${(H-P).toFixed(1)} Z`;
+  const last=drawn[drawn.length-1].r;
+  const col=isExample?"#64748b":(last>=0?"#22c55e":"#f87171");
   const zeroY=y(0);
 
   return(
-    <div style={{width:"100%"}}>
+    <div style={{width:"100%",position:"relative",opacity:isExample?0.55:1}}>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{width:"100%",height:160,display:"block"}}>
         <defs>
           <linearGradient id="evoFill" x1="0" y1="0" x2="0" y2="1">
@@ -936,13 +950,17 @@ function EvolutionChart({portfolioId,currentReturn}){
         )}
         <path d={area} fill="url(#evoFill)"/>
         <path d={line} fill="none" stroke={col} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"/>
+          strokeDasharray={isExample?"6 5":undefined} vectorEffect="non-scaling-stroke"/>
       </svg>
-      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#4b5563",marginTop:6}}>
-        <span>{series[0].date}</span>
-        <span style={{color:col,fontWeight:700,fontFamily:"monospace"}}>{pct(last)}</span>
-        <span>{series[series.length-1].date}</span>
-      </div>
+      {isExample
+        ? <div style={{textAlign:"center",fontSize:12,color:"#6b7280",marginTop:6}}>
+            Exemplo — o teu gráfico começa a preencher a partir de amanhã (um ponto por dia).
+          </div>
+        : <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#4b5563",marginTop:6}}>
+            <span>{series[0].date}</span>
+            <span style={{color:col,fontWeight:700,fontFamily:"monospace"}}>{pct(last)}</span>
+            <span>{series[series.length-1].date}</span>
+          </div>}
     </div>
   );
 }
@@ -1036,11 +1054,11 @@ function Detail({pf,livePrices,spy,nav}){
       {/* Destaques (#6) — top 3 melhores / piores desde a submissão */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16}}>
         <div style={{...GLASS,borderRadius:16,padding:24}}>
-          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#4ade80"}}>📈 Melhor performance</h3>
+          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#4ade80",textAlign:"center"}}>Melhor performance</h3>
           <TopList items={bySorted.slice(0,3)}/>
         </div>
         <div style={{...GLASS,borderRadius:16,padding:24}}>
-          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#f87171"}}>📉 Pior performance</h3>
+          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#f87171",textAlign:"center"}}>Pior performance</h3>
           <TopList items={[...bySorted].reverse().slice(0,3)}/>
         </div>
       </div>
