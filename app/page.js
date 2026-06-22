@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useId } from "react";
 import { supabase } from "./supabase";
 import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } from "./lib/stocks";
 
@@ -125,14 +125,13 @@ function Monogram({ticker,size}){
     </div>
   );
 }
+// Só marca as posições SHORT — long é o normal, não precisa de badge.
 function SideBadge({side}){
-  const short=side==="short";
+  if(side!=="short") return null;
   return(
     <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.5px",borderRadius:5,padding:"2px 6px",
-      color:short?"#fbbf24":"#4ade80",
-      background:short?"rgba(245,158,11,0.15)":"rgba(34,197,94,0.13)",
-      border:`1px solid ${short?"rgba(245,158,11,0.35)":"rgba(34,197,94,0.3)"}`}}>
-      {short?"SHORT":"LONG"}
+      color:"#fbbf24",background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.35)"}}>
+      SHORT
     </span>
   );
 }
@@ -361,7 +360,7 @@ export default function App(){
 
   if(loading) return(
     <div style={{minHeight:"100vh",
-      background:"radial-gradient(1200px 600px at 50% -10%, rgba(37,99,235,0.18) 0%, transparent 60%), linear-gradient(180deg,#0b1730 0%,#0a1226 55%,#070d1c 100%)",
+      background:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",
       backgroundAttachment:"fixed",
       display:"flex",alignItems:"center",justifyContent:"center",color:"#4b5563",fontFamily:"system-ui,sans-serif"}}>
       <style>{`@keyframes cdiPulse{0%,100%{opacity:.45;transform:scale(.92)}50%{opacity:1;transform:scale(1)}}`}</style>
@@ -385,7 +384,7 @@ export default function App(){
 function Shell({children,page,nav,submitted,toast}){
   return(
     <div style={{minHeight:"100vh",
-      background:"radial-gradient(1200px 600px at 50% -10%, rgba(37,99,235,0.18) 0%, transparent 60%), linear-gradient(180deg,#0b1730 0%,#0a1226 55%,#070d1c 100%)",
+      background:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",
       backgroundAttachment:"fixed",
       color:"#e2e8f0",fontFamily:"system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",overflowX:"hidden"}}>
       <Nav page={page} nav={nav} submitted={submitted} />
@@ -431,9 +430,7 @@ function NavLink({label,active,onClick,locked}){
   );
 }
 
-/* ---- Home ---------------------------------------------------------------- */
 /* ---- Home: liga ao vivo -------------------------------------------------- */
-const GLASS_CARD={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
 
 function WinnersGrid({top,livePrices,nav}){
   const [seriesById,setSeriesById]=useState({});
@@ -453,34 +450,59 @@ function WinnersGrid({top,livePrices,nav}){
     return()=>{ cancel=true; };
   },[top]);
   return(
-    <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:14}}>
-      {top.map((p,i)=>(
-        <WinnerCard key={p.key} p={p} rank={i+1} livePrices={livePrices}
-          series={seriesById[p.id]||[]} onClick={()=>nav("ranking")}/>
-      ))}
-    </div>
+    <>
+      <style>{`.cdiWinners{display:grid;gap:14px;grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:768px){.cdiWinners{grid-template-columns:repeat(2,minmax(0,1fr))}}`}</style>
+      <div className="cdiWinners">
+        {top.map((p,i)=>(
+          <WinnerCard key={p.key} p={p} rank={i+1} livePrices={livePrices}
+            series={seriesById[p.id]||[]} onClick={()=>nav("ranking")}/>
+        ))}
+      </div>
+    </>
   );
 }
 
+const RANK_BADGE={
+  1:{background:"linear-gradient(145deg,#fde68a,#f59e0b)",color:"#3a2800",boxShadow:"0 3px 12px rgba(245,158,11,0.45)"},
+  2:{background:"linear-gradient(145deg,#f8fafc,#94a3b8)",color:"#1e293b",boxShadow:"0 3px 10px rgba(148,163,184,0.3)"},
+  3:{background:"linear-gradient(145deg,#fcd9a8,#b45309)",color:"#2e1800",boxShadow:"0 3px 10px rgba(180,83,9,0.3)"},
+};
 function WinnerCard({p,rank,livePrices,series,onClick}){
-  const medals={1:"🥇",2:"🥈",3:"🥉"};
   const up=p.total>=0;
-  const col=up?"#22c55e":"#f87171";
+  const col=up?"#34d399":"#fb7185";
+  const isTop=rank===1;
+  const baseShadow=isTop
+    ? "0 10px 36px rgba(0,0,0,0.35), 0 0 0 1px rgba(251,191,36,0.18), inset 0 1px 0 rgba(255,255,255,0.14)"
+    : "0 10px 36px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.10)";
+  const badge=RANK_BADGE[rank]||{background:"rgba(255,255,255,0.06)",color:"#94a3b8",border:"1px solid rgba(255,255,255,0.14)"};
   return(
-    <div onClick={onClick} style={{...GLASS_CARD,borderRadius:16,padding:18,cursor:"pointer",
-      ...(rank===1?{border:"1px solid rgba(251,191,36,0.5)",boxShadow:"0 8px 30px rgba(0,0,0,0.3), 0 0 0 1px rgba(251,191,36,0.15), inset 0 1px 0 rgba(255,255,255,0.12)"}:{})}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-        <span style={{fontSize:20,minWidth:26,textAlign:"center"}}>{medals[rank]||<span style={{fontSize:14,fontWeight:800,color:"#4b5563"}}>{rank}</span>}</span>
-        <span style={{fontWeight:800,fontSize:17,letterSpacing:"-0.3px",flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
-        <span style={{textAlign:"right"}}>
-          <span style={{fontFamily:"monospace",fontWeight:800,fontSize:18,color:col}}>{up?"▲":"▼"} {pct(Math.abs(p.total)).replace(/[+-]/,"")}</span>
-          <div style={{fontSize:10,color:"#6b7280",marginTop:1}}>rentab. média</div>
-        </span>
+    <div onClick={onClick}
+      onMouseEnter={e=>{ e.currentTarget.style.transform="translateY(-3px)"; e.currentTarget.style.boxShadow=isTop?"0 18px 46px rgba(251,191,36,0.16), 0 0 0 1px rgba(251,191,36,0.32), inset 0 1px 0 rgba(255,255,255,0.16)":"0 18px 46px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.14)"; }}
+      onMouseLeave={e=>{ e.currentTarget.style.transform="none"; e.currentTarget.style.boxShadow=baseShadow; }}
+      style={{cursor:"pointer",borderRadius:22,padding:22,
+        background:isTop
+          ? "linear-gradient(160deg, rgba(251,191,36,0.12) 0%, rgba(255,255,255,0.045) 38%, rgba(255,255,255,0.025) 100%)"
+          : "linear-gradient(160deg, rgba(255,255,255,0.075) 0%, rgba(255,255,255,0.028) 100%)",
+        backdropFilter:"blur(22px) saturate(170%)",WebkitBackdropFilter:"blur(22px) saturate(170%)",
+        border:`1px solid ${isTop?"rgba(251,191,36,0.38)":"rgba(255,255,255,0.10)"}`,
+        boxShadow:baseShadow,transition:"transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18}}>
+        <div style={{width:34,height:34,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+          fontSize:14,fontWeight:800,...badge}}>{rank}</div>
+        <span style={{fontWeight:700,fontSize:17,letterSpacing:"-0.4px",flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
       </div>
-      <div style={{display:"flex",gap:4,marginBottom:12}}>
+      <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:18}}>
+        <span style={{fontSize:13,color:col}}>{up?"▲":"▼"}</span>
+        <span style={{fontFamily:"'SF Mono',ui-monospace,monospace",fontWeight:800,fontSize:30,letterSpacing:"-1.5px",color:col}}>
+          {pct(Math.abs(p.total)).replace(/[+-]/,"")}
+        </span>
+        <span style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.5px",marginLeft:"auto"}}>rentab. média</span>
+      </div>
+      <div style={{display:"flex",gap:4,marginBottom:14}}>
         {p.stocks.map(s=>{ const g=stockRet(s,livePrices)>=0; return(
-          <span key={s.ticker} title={s.ticker} style={{flex:1,height:7,borderRadius:999,
-            background:g?"#22c55e":"#ef4444",opacity:0.85}}/>
+          <span key={s.ticker} title={s.ticker} style={{flex:1,height:6,borderRadius:999,
+            background:g?"linear-gradient(180deg,#34d399,#10b981)":"linear-gradient(180deg,#fb7185,#ef4444)",
+            boxShadow:"inset 0 1px 0 rgba(255,255,255,0.25)"}}/>
         ); })}
       </div>
       <MiniSparkline series={series} current={p.total}/>
@@ -489,6 +511,7 @@ function WinnerCard({p,rank,livePrices,series,onClick}){
 }
 
 function MiniSparkline({series,current}){
+  const uid=useId();
   const today=new Date().toISOString().slice(0,10);
   const pts=(series||[]).map(s=>({date:s.date,r:s.r}));
   if(typeof current==="number"){
@@ -496,19 +519,37 @@ function MiniSparkline({series,current}){
     else pts.push({date:today,r:current});
   }
   const isEx=pts.length<2;
-  const drawn=isEx?[0,0.005,-0.002,0.008,0.004,0.011,0.008,0.015].map(r=>({r})):pts;
-  const W=300,H=44,P=3;
+  const drawn=isEx?[0,0.004,-0.002,0.006,0.003,0.009,0.007,0.013].map(r=>({r})):pts;
+  const W=300,H=52,P=4;
   const vals=drawn.map(p=>p.r).concat([0]);
   let min=Math.min(...vals),max=Math.max(...vals);
   if(min===max){ min-=0.01; max+=0.01; }
+  const pad=(max-min)*0.18; min-=pad; max+=pad;
   const x=i=>P+(i/(drawn.length-1))*(W-2*P);
   const y=v=>P+(1-(v-min)/(max-min))*(H-2*P);
-  const line=drawn.map((p,i)=>`${i===0?"M":"L"}${x(i).toFixed(1)},${y(p.r).toFixed(1)}`).join(" ");
+  // Smooth curve (Catmull-Rom → cubic Bézier) for an organic line.
+  const pts2=drawn.map((p,i)=>[x(i),y(p.r)]);
+  let line=`M${pts2[0][0].toFixed(1)},${pts2[0][1].toFixed(1)}`;
+  for(let i=0;i<pts2.length-1;i++){
+    const p0=pts2[i-1]||pts2[i],p1=pts2[i],p2=pts2[i+1],p3=pts2[i+2]||p2;
+    const c1x=p1[0]+(p2[0]-p0[0])/6,c1y=p1[1]+(p2[1]-p0[1])/6;
+    const c2x=p2[0]-(p3[0]-p1[0])/6,c2y=p2[1]-(p3[1]-p1[1])/6;
+    line+=` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  }
+  const area=`${line} L${x(drawn.length-1).toFixed(1)},${H} L${x(0).toFixed(1)},${H} Z`;
   const last=drawn[drawn.length-1].r;
-  const col=isEx?"#64748b":(last>=0?"#22c55e":"#f87171");
+  const col=isEx?"#64748b":(last>=0?"#34d399":"#fb7185");
+  const gid=`spk-${uid}`;
   return(
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{width:"100%",height:40,display:"block",opacity:isEx?0.5:1}}>
-      <path d={line} fill="none" stroke={col} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{width:"100%",height:48,display:"block",opacity:isEx?0.55:1}}>
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={col} stopOpacity={isEx?0.16:0.32}/>
+          <stop offset="100%" stopColor={col} stopOpacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#${gid})`}/>
+      <path d={line} fill="none" stroke={col} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round"
         strokeDasharray={isEx?"5 4":undefined} vectorEffect="non-scaling-stroke"/>
     </svg>
   );
@@ -553,7 +594,7 @@ function Home({nav,submitted,count,settings,ranking,livePrices}){
 
       {/* Liga ao vivo — vencedores */}
       {ranking&&ranking.length>0&&(
-        <section style={{maxWidth:760,margin:"0 auto",padding:"0 24px 80px"}}>
+        <section style={{maxWidth:1120,margin:"0 auto",padding:"0 24px 80px"}}>
           <div style={{display:"flex",justifyContent:"center",marginBottom:24}}>
             <span style={{display:"inline-flex",alignItems:"center",gap:7,background:"rgba(239,68,68,0.12)",
               border:"1px solid rgba(239,68,68,0.3)",borderRadius:999,padding:"5px 12px",fontSize:12,fontWeight:700,color:"#f87171",letterSpacing:"0.5px"}}>
@@ -586,13 +627,12 @@ function Home({nav,submitted,count,settings,ranking,livePrices}){
       {/* Regras */}
       <section style={{maxWidth:980,margin:"0 auto",padding:"0 24px 80px"}}>
         <div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16,padding:40}}>
-          <h2 style={{fontSize:22,fontWeight:700,marginBottom:28,letterSpacing:"-0.3px",textAlign:"center"}}>📋 Regras do Jogo</h2>
+          <h2 style={{fontSize:22,fontWeight:700,marginBottom:28,letterSpacing:"-0.3px",textAlign:"center"}}>Regras do Jogo</h2>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:"12px 40px"}}>
             {[
               "Cada participante cria exatamente 1 portefólio com 8 ações",
               "Cada ação representa 12,5% do portefólio (peso igual)",
-              "Podes abrir até 2 posições short (aposta na descida: a ação cai, ganhas)",
-              "O portefólio começa com um valor fictício de $10,000",
+              "Podes abrir até 2 posições short",
               "O preço de cada ação é registado no momento da submissão",
               "Não podes ver os outros portefólios antes de submeter o teu",
               "Depois de submetido, o portefólio fica bloqueado",
@@ -615,7 +655,19 @@ function Home({nav,submitted,count,settings,ranking,livePrices}){
             borderRadius:20,padding:"48px 40px",textAlign:"center"}}>
             <h2 style={{fontSize:26,fontWeight:700,marginBottom:8,letterSpacing:"-0.5px"}}>Pronto para competir?</h2>
             <p style={{fontSize:15,color:"#6b7280",marginBottom:28}}>Junta-te à comunidade e mostra quem escolhe as melhores ações.</p>
-            <Btn onClick={()=>nav("create")} primary large>Criar Portefólio Agora</Btn>
+            <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap"}}>
+              <Btn onClick={()=>nav("create")} primary large>Criar Portefólio Agora</Btn>
+              <a href="https://www.patreon.com/cw/Conversasdeinvestidores" target="_blank" rel="noopener noreferrer"
+                onMouseEnter={e=>{e.currentTarget.style.filter="brightness(1.08)";e.currentTarget.style.transform="translateY(-1px)";}}
+                onMouseLeave={e=>{e.currentTarget.style.filter="none";e.currentTarget.style.transform="none";}}
+                style={{display:"inline-flex",alignItems:"center",justifyContent:"center",textDecoration:"none",
+                  background:"linear-gradient(180deg,#3b82f6,#2563eb)",color:"#fff",border:"1px solid rgba(255,255,255,0.25)",
+                  borderRadius:12,padding:"14px 28px",fontSize:16,fontWeight:700,letterSpacing:"-0.2px",
+                  boxShadow:"0 2px 14px rgba(37,99,235,0.4), inset 0 1px 0 rgba(255,255,255,0.3)",
+                  transition:"transform 0.15s, filter 0.15s"}}>
+                Junta-te à Comunidade
+              </a>
+            </div>
           </div>
         </section>
       )}
@@ -796,13 +848,13 @@ function Create({settings,doSubmit,onDone,showToast}){
                 <button onClick={()=>{ if(shortCount<MAX_SHORTS) setShortMode(true); else showToast(`Máximo de ${MAX_SHORTS} posições short.`,"error"); }}
                   style={{border:"none",cursor:"pointer",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:700,
                     background:shortMode?"rgba(245,158,11,0.2)":"transparent",color:shortMode?"#fbbf24":"#6b7280"}}>
-                  Short {shortCount}/{MAX_SHORTS}
+                  Short
                 </button>
               </div>
             </div>
             {shortMode&&(
               <p style={{margin:"0 0 12px",fontSize:12,color:"#fbbf24"}}>
-                📉 Modo SHORT — a próxima ação que adicionares fica short (aposta na descida). Depois volta a Long.
+                Short - máximo 2 posições.
               </p>
             )}
             <div style={{display:"flex",gap:8}}>
