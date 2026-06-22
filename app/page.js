@@ -100,7 +100,8 @@ function StockLogo({ticker,size=28}){
     <img
       src={`https://img.logo.dev/ticker/${encodeURIComponent(ticker)}?token=${LOGODEV_TOKEN}&size=${size*3}&format=png&retina=true&fallback=404`}
       alt="" width={size} height={size} loading="lazy" onError={()=>setErr(true)}
-      style={{width:size,height:size,borderRadius:6,objectFit:"contain",flexShrink:0}}/>
+      style={{width:size,height:size,borderRadius:6,objectFit:"cover",
+        background:"#fff",display:"block",flexShrink:0}}/>
   );
 }
 
