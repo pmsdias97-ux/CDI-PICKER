@@ -66,15 +66,40 @@ async function yahooQuote(symbol) {
   url.searchParams.set("interval", "1d");
   const data = await yahooJson(url.toString(), 300);
   if (data.chart?.error) throw new Error(data.chart.error.description || "Yahoo error");
-  const price = data.chart?.result?.[0]?.meta?.regularMarketPrice;
-  return Number.isFinite(price) ? price : null;
+  const meta = data.chart?.result?.[0]?.meta;
+  const price = meta?.regularMarketPrice;
+  if (!Number.isFinite(price)) return null;
+  return {
+    price,
+    name: meta?.longName || meta?.shortName || null,
+    exchange: meta?.fullExchangeName || meta?.exchangeName || null,
+    currency: meta?.currency || null,
+  };
 }
 
-async function cnbcQuote(symbol) {
+// Yahoo uses "TICKER.EXCHANGE" (MC.PA); CNBC uses "TICKER-COUNTRY" (MC-FR).
+// Map the common Yahoo exchange suffixes to CNBC country codes so European /
+// international tickers still resolve via CNBC when Yahoo is rate-limited.
+const CNBC_COUNTRY = {
+  PA: "FR", AS: "NL", BR: "BE", DE: "DE", F: "DE", MI: "IT", MC: "ES",
+  LS: "PT", L: "GB", IL: "GB", SW: "CH", VX: "CH", ST: "SE", HE: "FI",
+  CO: "DK", OL: "NO", VI: "AT", IR: "IE", AT: "GR",
+};
+
+function cnbcSymbol(symbol) {
+  const dot = symbol.lastIndexOf(".");
+  if (dot < 0) return symbol; // US tickers: same on both
+  const base = symbol.slice(0, dot);
+  const suffix = symbol.slice(dot + 1).toUpperCase();
+  const country = CNBC_COUNTRY[suffix];
+  return country ? `${base}-${country}` : symbol;
+}
+
+async function cnbcFetchQuote(sym) {
   const url = new URL(
     "https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol"
   );
-  url.searchParams.set("symbols", symbol);
+  url.searchParams.set("symbols", sym);
   url.searchParams.set("output", "json");
   const res = await fetch(url.toString(), {
     headers: { "User-Agent": UA, Accept: "application/json" },
@@ -85,10 +110,26 @@ async function cnbcQuote(symbol) {
   const quote = data?.FormattedQuoteResult?.FormattedQuote?.[0];
   if (!quote || quote.code !== 0) return null;
   const price = parseFloat(String(quote.last).replace(/,/g, ""));
-  return Number.isFinite(price) ? price : null;
+  if (!Number.isFinite(price)) return null;
+  return {
+    price,
+    name: quote.name || quote.shortName || null,
+    exchange: quote.exchange || quote.exchangeName || null,
+    currency: quote.currencyCode || null,
+  };
 }
 
-export async function fetchQuote(ticker) {
+async function cnbcQuote(symbol) {
+  // Try as-is (US tickers). If it doesn't resolve, try the CNBC-format symbol.
+  const quote = await cnbcFetchQuote(symbol);
+  if (quote != null) return quote;
+  const translated = cnbcSymbol(symbol);
+  if (translated !== symbol) return cnbcFetchQuote(translated);
+  return null;
+}
+
+// Returns the full quote object { price, name, exchange, currency } (or null).
+export async function fetchQuoteFull(ticker) {
   const symbol = String(ticker || "").trim().toUpperCase();
   if (!symbol) return null;
 
@@ -98,19 +139,25 @@ export async function fetchQuote(ticker) {
 
   if (yahooAvailable()) {
     try {
-      const price = await yahooQuote(symbol);
-      if (price != null) {
-        setCached(cacheKey, price);
-        return price;
+      const quote = await yahooQuote(symbol);
+      if (quote != null) {
+        setCached(cacheKey, quote);
+        return quote;
       }
     } catch {
       // fall through to CNBC
     }
   }
 
-  const price = await cnbcQuote(symbol);
-  if (price != null) setCached(cacheKey, price);
-  return price;
+  const quote = await cnbcQuote(symbol);
+  if (quote != null) setCached(cacheKey, quote);
+  return quote;
+}
+
+// Convenience wrapper for callers that only need the price.
+export async function fetchQuote(ticker) {
+  const quote = await fetchQuoteFull(ticker);
+  return quote?.price ?? null;
 }
 
 async function yahooSearch(q) {

@@ -5,6 +5,21 @@ export async function fetchStockPrice(ticker) {
   return data.price;
 }
 
+// Returns { price, name, exchange, currency } for a ticker, or null if it has
+// no quote. Used to resolve the full company name for any ticker, even ones not
+// present in the search index.
+export async function fetchStockInfo(ticker) {
+  const res = await fetch(`/api/stocks/price?ticker=${encodeURIComponent(ticker)}`);
+  const data = await res.json();
+  if (!res.ok || typeof data.price !== "number") return null;
+  return {
+    price: data.price,
+    name: data.name || null,
+    exchange: data.exchange || null,
+    currency: data.currency || null,
+  };
+}
+
 export async function fetchStockPrices(tickers) {
   const unique = [...new Set(
     tickers.map((t) => String(t || "").trim().toUpperCase()).filter(Boolean)

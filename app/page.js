@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabase";
-import { fetchStockPrice, fetchStockPrices, searchTickers } from "./lib/stocks";
+import { fetchStockInfo, fetchStockPrices, searchTickers } from "./lib/stocks";
 
 /* ============================================================================
    CONVERSAS DE INVESTIDORES
@@ -342,9 +342,9 @@ function Nav({page,nav,submitted}){
     <nav style={{position:"sticky",top:0,zIndex:50,background:"rgba(8,13,20,0.92)",backdropFilter:"blur(12px)",
       borderBottom:"1px solid rgba(255,255,255,0.06)",padding:"0 24px",display:"flex",alignItems:"center",height:56}}>
       <div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>nav("home")}>
-        <div style={{width:28,height:28,borderRadius:8,background:"linear-gradient(135deg,#22c55e,#16a34a)",
-          display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>📈</div>
-        <span style={{fontWeight:700,fontSize:15,letterSpacing:"-0.3px"}}>Conversas de Investidores</span>
+        <img src="/logo.png" alt="CDI Picker" width={32} height={32}
+          style={{width:32,height:32,objectFit:"contain",display:"block"}}/>
+        <span style={{fontWeight:700,fontSize:15,letterSpacing:"-0.3px"}}>CDI PICKER</span>
       </div>
       <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
         <NavLink label="Início" active={page==="home"} onClick={()=>nav("home")}/>
@@ -470,13 +470,16 @@ function Create({settings,doSubmit,onDone,showToast}){
   const [searching,setSearching]=useState(false);
   const [picked,setPicked]=useState([]);
   const [submitting,setSubmitting]=useState(false);
+  const [addingManual,setAddingManual]=useState(false);
 
   useEffect(()=>{
     const q=query.trim();
-    if(q.length<1){ setResults([]); return; }
+    if(q.length<1){ setResults([]); setSearching(false); return; }
+    // Marca já como "a pesquisar" para o aviso de "sem sugestões" não aparecer
+    // enquanto se escreve (durante o debounce e entre teclas).
+    setSearching(true);
     let cancelled=false;
     const timer=setTimeout(async()=>{
-      setSearching(true);
       try{
         const r=await searchTickers(q);
         if(!cancelled) setResults(r);
@@ -492,14 +495,25 @@ function Create({settings,doSubmit,onDone,showToast}){
   const noResults=query.trim().length>=2&&!searching&&results.length===0;
   const has=t=>picked.some(p=>p.ticker===t);
   const add=s=>{ if(picked.length>=PORTFOLIO_SIZE||has(s.ticker)) return; setPicked(p=>[...p,s]); setQuery(""); };
-  const addManual=()=>{
+  const addManual=async()=>{
+    if(addingManual||picked.length>=PORTFOLIO_SIZE) return;
     const ticker=query.trim().toUpperCase();
     if(!TICKER_RE.test(ticker)){
       showToast("Ticker inválido. Usa letras, números, ponto ou hífen (ex: AAPL, MC.PA).","error");
       return;
     }
-    if(has(ticker)) return;
-    add({ ticker, name: ticker, exchange: "", currency: "USD" });
+    if(has(ticker)){ setQuery(""); return; }
+    // Só adiciona se o ticker existir mesmo (tiver cotação) — caso contrário a
+    // rentabilidade nunca poderia ser calculada. A própria cotação devolve o
+    // nome completo e a bolsa, por isso funciona para qualquer ticker.
+    setAddingManual(true);
+    const info=await fetchStockInfo(ticker);
+    setAddingManual(false);
+    if(info==null){
+      showToast(`Não encontrámos cotação para "${ticker}". Verifica o ticker (ex.: AAPL, MC.PA, GALP.LS).`,"error");
+      return;
+    }
+    add({ ticker, name: info.name||ticker, exchange: info.exchange||"", currency: info.currency||"USD" });
   };
   const rem=t=>setPicked(p=>p.filter(s=>s.ticker!==t));
   const progress=picked.length/PORTFOLIO_SIZE;
@@ -579,28 +593,42 @@ function Create({settings,doSubmit,onDone,showToast}){
             )}
           </div>
 
-          {/* Pesquisa */}
+          {/* Submeter — ocupa o lugar da pesquisa quando o portefólio está completo */}
+          {picked.length===PORTFOLIO_SIZE&&(
+            <button onClick={submit}
+              disabled={submitting||submClosed}
+              style={{width:"100%",marginBottom:16,background:!submClosed?"#22c55e":"#1f2937",
+                color:!submClosed?"#000":"#4b5563",border:"none",borderRadius:16,padding:"24px",
+                fontSize:16,fontWeight:700,cursor:!submClosed?"pointer":"not-allowed",transition:"background 0.2s"}}>
+              {submitting?"A submeter…":submClosed?"Submissões encerradas":"Submeter Portefólio"}
+            </button>
+          )}
+
+          {/* Pesquisa — escondida quando já há 8 ações */}
+          {picked.length<PORTFOLIO_SIZE&&(
           <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:24,marginBottom:16}}>
             <h3 style={{fontSize:15,fontWeight:600,marginBottom:14}}>Pesquisar ação</h3>
             <div style={{display:"flex",gap:8}}>
               <input value={query} onChange={e=>setQuery(e.target.value)}
-                onKeyDown={e=>{ if(e.key==="Enter") addManual(); }}
+                onKeyDown={e=>{
+                  if(e.key!=="Enter") return;
+                  // Enter assume a 1ª sugestão; só recorre ao ticker manual se não houver sugestões.
+                  const first=results.find(s=>!has(s.ticker));
+                  if(first) add(first); else addManual();
+                }}
                 placeholder="Pesquisa por ticker (ex: AAPL) ou nome da empresa"
                 disabled={picked.length>=PORTFOLIO_SIZE}
                 style={{flex:1,background:"#0d1520",border:`1px solid ${query.length>=1?"#22c55e":"#1f2937"}`,
                   borderRadius:10,padding:"12px 16px",fontSize:14,color:"#e2e8f0",outline:"none",
                   boxSizing:"border-box",transition:"border-color 0.2s",
                   opacity:picked.length>=PORTFOLIO_SIZE?0.5:1}}/>
-              <button onClick={addManual} disabled={picked.length>=PORTFOLIO_SIZE||!query.trim()}
+              <button onClick={addManual} disabled={picked.length>=PORTFOLIO_SIZE||!query.trim()||addingManual}
                 style={{background:"#1a2a1a",border:"1px solid rgba(34,197,94,0.3)",borderRadius:10,
-                  padding:"0 16px",fontSize:13,color:"#4ade80",cursor:"pointer",fontWeight:600,
-                  opacity:picked.length>=PORTFOLIO_SIZE||!query.trim()?0.5:1}}>
-                Adicionar
+                  padding:"0 16px",fontSize:13,color:"#4ade80",cursor:"pointer",fontWeight:600,whiteSpace:"nowrap",
+                  opacity:picked.length>=PORTFOLIO_SIZE||!query.trim()||addingManual?0.5:1}}>
+                {addingManual?"A verificar…":"Adicionar"}
               </button>
             </div>
-            <p style={{marginTop:8,fontSize:12,color:"#4b5563"}}>
-              Pesquisa sugerida via Yahoo Finance ou adiciona manualmente qualquer ticker válido.
-            </p>
 
             {searching&&(
               <p style={{marginTop:12,fontSize:13,color:"#6b7280"}}>A pesquisar…</p>
@@ -641,13 +669,14 @@ function Create({settings,doSubmit,onDone,showToast}){
               </ul>
             )}
           </div>
+          )}
 
           {/* Portfolio */}
           {picked.length>0&&(
             <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:24,marginBottom:16}}>
               <h3 style={{fontSize:15,fontWeight:600,marginBottom:14}}>O teu portefólio</h3>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {picked.map(s=>(
+                {[...picked].reverse().map(s=>(
                   <div key={s.ticker} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
                     background:"#0d1520",border:"1px solid #1f2937",borderRadius:10,padding:"10px 14px"}}>
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -671,15 +700,6 @@ function Create({settings,doSubmit,onDone,showToast}){
             </div>
           )}
 
-          {/* Submit */}
-          <button onClick={submit}
-            disabled={picked.length!==PORTFOLIO_SIZE||submitting||submClosed}
-            style={{width:"100%",background:picked.length===PORTFOLIO_SIZE&&!submClosed?"#22c55e":"#1f2937",
-              color:picked.length===PORTFOLIO_SIZE&&!submClosed?"#000":"#4b5563",
-              border:"none",borderRadius:12,padding:"16px",fontSize:16,fontWeight:700,
-              cursor:picked.length===PORTFOLIO_SIZE&&!submClosed?"pointer":"not-allowed",transition:"background 0.2s"}}>
-            {submitting?"A submeter…":picked.length===PORTFOLIO_SIZE?"Submeter Portefólio":`Seleciona ${PORTFOLIO_SIZE-picked.length} mais ${PORTFOLIO_SIZE-picked.length===1?"ação":"açoões"}`}
-          </button>
         </>
       )}
     </div>
