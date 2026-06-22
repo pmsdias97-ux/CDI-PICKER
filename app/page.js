@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useId } from "react";
 import { supabase } from "./supabase";
-import { fetchStockInfo, fetchStockPrices, fetchStockHistory, fetchStockFundamentals, searchTickers } from "./lib/stocks";
+import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } from "./lib/stocks";
 
 /* ============================================================================
    CONVERSAS DE INVESTIDORES
@@ -94,13 +94,6 @@ function pfStats(p,livePrices){
 }
 function pct(x,dp=2){ const v=(x*100).toFixed(dp); return `${x>=0?"+":""}${v}%`; }
 function money(x){ return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2}).format(x); }
-function fmtMarketCap(n){
-  if(!Number.isFinite(n)||n<=0) return "—";
-  if(n>=1e12) return `$${(n/1e12).toFixed(2)}T`;
-  if(n>=1e9)  return `$${(n/1e9).toFixed(2)}B`;
-  if(n>=1e6)  return `$${(n/1e6).toFixed(1)}M`;
-  return `$${Math.round(n).toLocaleString("en-US")}`;
-}
 function dt(iso){
   if(!iso) return "—";
   try{ return new Date(iso).toLocaleString("pt-PT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); }
@@ -139,62 +132,6 @@ function SideBadge({side}){
     <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.5px",borderRadius:5,padding:"2px 6px",
       color:"#fbbf24",background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.35)"}}>
       SHORT
-    </span>
-  );
-}
-/* ---- Fundamentais (tooltip no nome da empresa) --------------------------
-   Hover/tap revela P/E, Market Cap e variação vs máx. 52 sem. Os dados-base
-   (EPS, ações, 52 sem.) vêm da BD/AV uma vez; P/E e cap são ao vivo com `cur`.
---------------------------------------------------------------------------- */
-const fundCache=new Map(); // ticker -> {eps,sharesOutstanding,week52High}|null
-function FundamentalsHover({ticker,cur,children}){
-  const [open,setOpen]=useState(false);
-  const [data,setData]=useState(()=>fundCache.has(ticker)?fundCache.get(ticker):undefined);
-  const load=()=>{
-    if(fundCache.has(ticker)){ setData(fundCache.get(ticker)); return; }
-    setData(undefined);
-    fetchStockFundamentals(ticker).then(d=>{
-      const v=d&&(d.eps!=null||d.sharesOutstanding!=null||d.week52High!=null)?d:null;
-      fundCache.set(ticker,v); setData(v);
-    }).catch(()=>{ fundCache.set(ticker,null); setData(null); });
-  };
-  const show=()=>{ setOpen(true); load(); };
-  const pe=data&&data.eps>0&&Number.isFinite(cur)?cur/data.eps:null;
-  const cap=data&&Number.isFinite(data.sharesOutstanding)&&Number.isFinite(cur)?data.sharesOutstanding*cur:null;
-  const vs52=data&&data.week52High>0&&Number.isFinite(cur)?cur/data.week52High-1:null;
-  return(
-    <span style={{position:"relative",display:"inline-block"}}
-      onMouseEnter={show} onMouseLeave={()=>setOpen(false)}
-      onClick={e=>{ e.stopPropagation(); open?setOpen(false):show(); }}>
-      <span style={{cursor:"help",borderBottom:"1px dotted rgba(148,163,184,0.45)"}}>{children}</span>
-      {open&&(
-        <span style={{position:"absolute",bottom:"calc(100% + 8px)",left:0,zIndex:60,
-          minWidth:190,padding:"12px 14px",borderRadius:12,textAlign:"left",cursor:"default",
-          background:"rgba(15,23,42,0.92)",backdropFilter:"blur(18px) saturate(170%)",WebkitBackdropFilter:"blur(18px) saturate(170%)",
-          border:"1px solid rgba(255,255,255,0.12)",boxShadow:"0 12px 36px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.12)"}}>
-          <span style={{display:"block",fontSize:11,fontWeight:700,color:"#e2e8f0",marginBottom:8,letterSpacing:"-0.2px"}}>{ticker} · fundamentais</span>
-          {data===undefined?(
-            <span style={{fontSize:12,color:"#6b7280"}}>A carregar…</span>
-          ):data===null?(
-            <span style={{fontSize:12,color:"#6b7280"}}>Sem dados disponíveis.</span>
-          ):(
-            <span style={{display:"flex",flexDirection:"column",gap:6,fontSize:12.5}}>
-              <FundRow label="P/E" value={pe!=null?pe.toFixed(1):(data.eps!=null&&data.eps<=0?"n/a":"—")}/>
-              <FundRow label="Market Cap" value={fmtMarketCap(cap)}/>
-              <FundRow label="vs máx. 52 sem." value={vs52!=null?`${vs52>=0?"+":""}${(vs52*100).toFixed(1)}%`:"—"}
-                color={vs52==null?undefined:vs52>=0?"#4ade80":"#f87171"}/>
-            </span>
-          )}
-        </span>
-      )}
-    </span>
-  );
-}
-function FundRow({label,value,color}){
-  return(
-    <span style={{display:"flex",justifyContent:"space-between",gap:16}}>
-      <span style={{color:"#94a3b8"}}>{label}</span>
-      <span style={{fontFamily:"monospace",fontWeight:700,color:color||"#e2e8f0"}}>{value}</span>
     </span>
   );
 }
@@ -1408,9 +1345,7 @@ function Detail({pf,rank,livePrices,spy,nav}){
                 <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                   <span style={{fontWeight:800,fontSize:14,color:"#e2e8f0"}}>{s.ticker}</span>
                   <SideBadge side={s.side}/>
-                  <FundamentalsHover ticker={s.ticker} cur={s.cur}>
-                    <span style={{fontSize:13,color:"#6b7280"}}>{s.companyName}</span>
-                  </FundamentalsHover>
+                  <span style={{fontSize:13,color:"#6b7280"}}>{s.companyName}</span>
                 </div>
                 <div style={{fontSize:11,color:"#374151",marginTop:2}}>{s.exchange} · 12,5%</div>
               </div>
