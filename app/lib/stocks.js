@@ -44,6 +44,18 @@ export async function fetchStockHistory(ticker) {
   }
 }
 
+// Fundamentais (EPS, ações em circulação, máx. 52 sem.) para o tooltip de detalhe.
+export async function fetchStockFundamentals(ticker) {
+  try {
+    const res = await fetch(`/api/stocks/fundamentals?ticker=${encodeURIComponent(ticker)}`);
+    const data = await res.json();
+    if (!res.ok) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 export async function searchTickers(query) {
   const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`);
   const data = await res.json();

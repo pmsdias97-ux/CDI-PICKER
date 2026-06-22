@@ -280,6 +280,43 @@ export async function fetchSector(ticker) {
   }
 }
 
+// AV devolve strings; "None"/"-"/"" → null.
+function avNum(v) {
+  if (v == null) return null;
+  const n = parseFloat(String(v));
+  return Number.isFinite(n) ? n : null;
+}
+
+// Fundamentais de um ticker via Alpha Vantage OVERVIEW (mesmo endpoint do setor).
+// Devolve { eps, sharesOutstanding, week52High, sector } ou null. Cache 24h em
+// memória; persistência/aprendizagem é feita na BD pela rota.
+export async function fetchFundamentals(ticker) {
+  const symbol = String(ticker || "").trim().toUpperCase();
+  if (!symbol) return null;
+  const cacheKey = `fund:${symbol}`;
+  const cached = getCached(cacheKey);
+  if (cached != null) return cached;
+  const key = process.env.ALPHA_VANTAGE_API_KEY;
+  if (!key) return null;
+  try {
+    const url = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${encodeURIComponent(symbol)}&apikey=${key}`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || !data.Symbol) return null; // rate-limited / desconhecido
+    const out = {
+      eps: avNum(data.EPS),
+      sharesOutstanding: avNum(data.SharesOutstanding),
+      week52High: avNum(data["52WeekHigh"]),
+      sector: mapAvSector(data.Sector),
+    };
+    setCached(cacheKey, out, 24 * 60 * 60 * 1000);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchHistory(ticker) {
   const symbol = String(ticker || "").trim().toUpperCase();
   if (!symbol) return null;
