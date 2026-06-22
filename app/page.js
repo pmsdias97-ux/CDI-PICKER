@@ -13,6 +13,35 @@ const PORTFOLIO_SIZE = 8;
 const STARTING_VALUE = 10000;
 const PER_STOCK = STARTING_VALUE / PORTFOLIO_SIZE;
 
+// Mapa curado de setores (sem APIs). Tickers fora do mapa caem em "Outros".
+const SECTORS = {
+  // Tecnologia
+  AAPL:"Tecnologia",MSFT:"Tecnologia",NVDA:"Tecnologia",AVGO:"Tecnologia",ORCL:"Tecnologia",
+  CRM:"Tecnologia",ADBE:"Tecnologia",AMD:"Tecnologia",MU:"Tecnologia",INTC:"Tecnologia",
+  SMCI:"Tecnologia",PLTR:"Tecnologia",CSCO:"Tecnologia",QCOM:"Tecnologia",TXN:"Tecnologia",
+  IBM:"Tecnologia",NOW:"Tecnologia",SHOP:"Tecnologia",ASML:"Tecnologia",ARM:"Tecnologia",
+  TSM:"Tecnologia",ZETA:"Tecnologia",DELL:"Tecnologia",ANET:"Tecnologia",PANW:"Tecnologia",
+  // Comunicação / Internet
+  GOOG:"Comunicação",GOOGL:"Comunicação",META:"Comunicação",NFLX:"Comunicação",DIS:"Comunicação",
+  TMUS:"Comunicação",T:"Comunicação",VZ:"Comunicação",SPOT:"Comunicação",
+  // Consumo
+  AMZN:"Consumo",TSLA:"Consumo",MCD:"Consumo",NKE:"Consumo",SBUX:"Consumo",LULU:"Consumo",
+  HD:"Consumo",LOW:"Consumo",KO:"Consumo",PEP:"Consumo",PG:"Consumo",COST:"Consumo",WMT:"Consumo",
+  MB:"Consumo",CMG:"Consumo",
+  // Financeiro
+  MA:"Financeiro",V:"Financeiro",JPM:"Financeiro",BAC:"Financeiro",WFC:"Financeiro",GS:"Financeiro",
+  MS:"Financeiro",AXP:"Financeiro","BRK.A":"Financeiro","BRK.B":"Financeiro",NU:"Financeiro",
+  SOFI:"Financeiro",PYPL:"Financeiro",C:"Financeiro",SCHW:"Financeiro",
+  // Saúde
+  UNH:"Saúde",JNJ:"Saúde",LLY:"Saúde",PFE:"Saúde",ABBV:"Saúde",MRK:"Saúde",TMO:"Saúde",
+  // Energia / Industrial
+  XOM:"Energia",CVX:"Energia",BA:"Industrial",CAT:"Industrial",GE:"Industrial",UBER:"Industrial",
+  SPCX:"Industrial",RTX:"Industrial",LMT:"Industrial",
+  // ETFs
+  VOO:"ETF / Índice",SPY:"ETF / Índice",QQQ:"ETF / Índice",VTI:"ETF / Índice",
+};
+const SECTOR_COLORS=["#3b82f6","#22c55e","#fbbf24","#a855f7","#f87171","#06b6d4","#f97316","#94a3b8"];
+
 /* ---- Storage helpers -----------------------------------------------------
    Per-visitor identity only (the Telegram name), in browser localStorage so it
    survives closing/reopening the window. All shared data lives in Supabase.
@@ -327,11 +356,11 @@ export default function App(){
 
   const sh=(children)=><Shell page={page} nav={nav} submitted={submitted} toast={toast}>{children}</Shell>;
 
-  if(page==="home")   return sh(<Home nav={nav} submitted={submitted} count={portfolios.length} settings={settings}/>);
+  if(page==="home")   return sh(<Home nav={nav} submitted={submitted} count={portfolios.length} settings={settings} ranking={ranking} livePrices={livePrices}/>);
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} onSelect={(k)=>{setDetailKey(k);nav("detail");}}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
-  if(page==="detail") return sh(submitted?<Detail pf={portfolios.find(p=>p.key===detailKey)||myPf} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="detail") return sh(submitted?<Detail pf={portfolios.find(p=>p.key===detailKey)||myPf} rank={(()=>{const k=(portfolios.find(p=>p.key===detailKey)||myPf)?.key; const i=ranking.findIndex(r=>r.key===k); return i>=0?i+1:0;})()} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
   return null;
 }
@@ -387,7 +416,89 @@ function NavLink({label,active,onClick,locked}){
 }
 
 /* ---- Home ---------------------------------------------------------------- */
-function Home({nav,submitted,count,settings}){
+/* ---- Home: liga ao vivo -------------------------------------------------- */
+const GLASS_CARD={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
+
+function WinnersGrid({top,livePrices,nav}){
+  const [seriesById,setSeriesById]=useState({});
+  useEffect(()=>{
+    let cancel=false;
+    const ids=top.map(p=>p.id).filter(Boolean);
+    if(!ids.length) return;
+    (async()=>{
+      const { data }=await supabase
+        .from("portfolio_snapshots").select("portfolio_id,date,total_return")
+        .in("portfolio_id",ids).order("date",{ascending:true});
+      if(cancel) return;
+      const m={};
+      (data||[]).forEach(r=>{ (m[r.portfolio_id]=m[r.portfolio_id]||[]).push({date:r.date,r:Number(r.total_return)}); });
+      setSeriesById(m);
+    })();
+    return()=>{ cancel=true; };
+  },[top]);
+  return(
+    <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:14}}>
+      {top.map((p,i)=>(
+        <WinnerCard key={p.key} p={p} rank={i+1} livePrices={livePrices}
+          series={seriesById[p.id]||[]} onClick={()=>nav("ranking")}/>
+      ))}
+    </div>
+  );
+}
+
+function WinnerCard({p,rank,livePrices,series,onClick}){
+  const medals={1:"🥇",2:"🥈",3:"🥉"};
+  const up=p.total>=0;
+  const col=up?"#22c55e":"#f87171";
+  return(
+    <div onClick={onClick} style={{...GLASS_CARD,borderRadius:16,padding:18,cursor:"pointer",
+      ...(rank===1?{border:"1px solid rgba(251,191,36,0.5)",boxShadow:"0 8px 30px rgba(0,0,0,0.3), 0 0 0 1px rgba(251,191,36,0.15), inset 0 1px 0 rgba(255,255,255,0.12)"}:{})}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+        <span style={{fontSize:20,minWidth:26,textAlign:"center"}}>{medals[rank]||<span style={{fontSize:14,fontWeight:800,color:"#4b5563"}}>{rank}</span>}</span>
+        <span style={{fontWeight:800,fontSize:17,letterSpacing:"-0.3px",flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
+        <span style={{textAlign:"right"}}>
+          <span style={{fontFamily:"monospace",fontWeight:800,fontSize:18,color:col}}>{up?"▲":"▼"} {pct(Math.abs(p.total)).replace(/[+-]/,"")}</span>
+          <div style={{fontSize:10,color:"#6b7280",marginTop:1}}>rentab. média</div>
+        </span>
+      </div>
+      <div style={{display:"flex",gap:4,marginBottom:12}}>
+        {p.stocks.map(s=>{ const g=stockRet(s,livePrices)>=0; return(
+          <span key={s.ticker} title={s.ticker} style={{flex:1,height:7,borderRadius:999,
+            background:g?"#22c55e":"#ef4444",opacity:0.85}}/>
+        ); })}
+      </div>
+      <MiniSparkline series={series} current={p.total}/>
+    </div>
+  );
+}
+
+function MiniSparkline({series,current}){
+  const today=new Date().toISOString().slice(0,10);
+  const pts=(series||[]).map(s=>({date:s.date,r:s.r}));
+  if(typeof current==="number"){
+    if(pts.length&&pts[pts.length-1].date===today) pts[pts.length-1].r=current;
+    else pts.push({date:today,r:current});
+  }
+  const isEx=pts.length<2;
+  const drawn=isEx?[0,0.005,-0.002,0.008,0.004,0.011,0.008,0.015].map(r=>({r})):pts;
+  const W=300,H=44,P=3;
+  const vals=drawn.map(p=>p.r).concat([0]);
+  let min=Math.min(...vals),max=Math.max(...vals);
+  if(min===max){ min-=0.01; max+=0.01; }
+  const x=i=>P+(i/(drawn.length-1))*(W-2*P);
+  const y=v=>P+(1-(v-min)/(max-min))*(H-2*P);
+  const line=drawn.map((p,i)=>`${i===0?"M":"L"}${x(i).toFixed(1)},${y(p.r).toFixed(1)}`).join(" ");
+  const last=drawn[drawn.length-1].r;
+  const col=isEx?"#64748b":(last>=0?"#22c55e":"#f87171");
+  return(
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{width:"100%",height:40,display:"block",opacity:isEx?0.5:1}}>
+      <path d={line} fill="none" stroke={col} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"
+        strokeDasharray={isEx?"5 4":undefined} vectorEffect="non-scaling-stroke"/>
+    </svg>
+  );
+}
+
+function Home({nav,submitted,count,settings,ranking,livePrices}){
   return(
     <div>
       {/* Hero */}
@@ -423,6 +534,19 @@ function Home({nav,submitted,count,settings}){
         </div>
         {count>0&&<p style={{marginTop:20,fontSize:13,color:"#374151"}}>{count} {count===1?"portefólio":"portefólios"} já submetidos</p>}
       </section>
+
+      {/* Liga ao vivo — vencedores */}
+      {ranking&&ranking.length>0&&(
+        <section style={{maxWidth:760,margin:"0 auto",padding:"0 24px 80px"}}>
+          <div style={{display:"flex",justifyContent:"center",marginBottom:24}}>
+            <span style={{display:"inline-flex",alignItems:"center",gap:7,background:"rgba(239,68,68,0.12)",
+              border:"1px solid rgba(239,68,68,0.3)",borderRadius:999,padding:"5px 12px",fontSize:12,fontWeight:700,color:"#f87171",letterSpacing:"0.5px"}}>
+              <span style={{width:7,height:7,borderRadius:"50%",background:"#ef4444",display:"inline-block"}}/>AO VIVO
+            </span>
+          </div>
+          <WinnersGrid top={ranking.slice(0,4)} livePrices={livePrices} nav={nav}/>
+        </section>
+      )}
 
       {/* Como funciona */}
       <section style={{maxWidth:980,margin:"0 auto",padding:"0 24px 80px"}}>
@@ -966,8 +1090,60 @@ function EvolutionChart({portfolioId,currentReturn}){
   );
 }
 
+/* ---- Sector exposure donut ----------------------------------------------- */
+function SectorDonut({stocks}){
+  // Tickers fora do mapa curado são resolvidos via /api/stocks/sector (que
+  // aprende e guarda na BD). Até resolverem, ficam em "A identificar…".
+  const [learned,setLearned]=useState({});
+  useEffect(()=>{
+    const unknown=[...new Set(stocks.map(s=>s.ticker).filter(t=>!SECTORS[String(t).toUpperCase()]))];
+    if(!unknown.length) return;
+    let cancel=false;
+    (async()=>{
+      const updates={};
+      for(const t of unknown){
+        try{
+          const r=await fetch(`/api/stocks/sector?ticker=${encodeURIComponent(t)}`);
+          const d=await r.json();
+          if(d&&d.sector) updates[t]=d.sector;
+        }catch{}
+      }
+      if(!cancel&&Object.keys(updates).length) setLearned(prev=>({...prev,...updates}));
+    })();
+    return()=>{ cancel=true; };
+  },[stocks]);
+  const sec=t=>SECTORS[String(t).toUpperCase()]||learned[t]||"A identificar…";
+  const counts={};
+  stocks.forEach(s=>{ const k=sec(s.ticker); counts[k]=(counts[k]||0)+1; });
+  const total=stocks.length||1;
+  const segs=Object.entries(counts).sort((a,b)=>b[1]-a[1])
+    .map(([name,n],i)=>({name,n,pct:n/total,color:SECTOR_COLORS[i%SECTOR_COLORS.length]}));
+  const R=42,SW=14,C=2*Math.PI*R;
+  let off=0;
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:20,flexWrap:"wrap"}}>
+      <svg viewBox="0 0 100 100" style={{width:120,height:120,flexShrink:0,transform:"rotate(-90deg)"}}>
+        {segs.map((s,i)=>{ const len=s.pct*C; const el=(
+          <circle key={i} cx="50" cy="50" r={R} fill="none" stroke={s.color} strokeWidth={SW}
+            strokeDasharray={`${len.toFixed(2)} ${(C-len).toFixed(2)}`} strokeDashoffset={(-off).toFixed(2)}/>
+        ); off+=len; return el; })}
+      </svg>
+      <div style={{flex:1,minWidth:160,display:"flex",flexDirection:"column",gap:8}}>
+        {segs.map((s,i)=>(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:10,fontSize:13}}>
+            <span style={{width:10,height:10,borderRadius:3,background:s.color,flexShrink:0}}/>
+            <span style={{flex:1,color:"#cbd5e1",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</span>
+            <span style={{color:"#e2e8f0",fontWeight:700,fontFamily:"monospace"}}>{s.n}</span>
+            <span style={{color:"#6b7280",fontFamily:"monospace",minWidth:38,textAlign:"right"}}>{Math.round(s.pct*100)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ---- Detail -------------------------------------------------------------- */
-function Detail({pf,livePrices,spy,nav}){
+function Detail({pf,rank,livePrices,spy,nav}){
   if(!pf) return(
     <div style={{textAlign:"center",padding:80,color:"#4b5563"}}>
       Portefólio não encontrado. <button onClick={()=>nav("ranking")} style={{color:"#22c55e",background:"none",border:"none",cursor:"pointer"}}>Voltar</button>
@@ -993,14 +1169,25 @@ function Detail({pf,livePrices,spy,nav}){
 
       <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,marginBottom:16}}>
         <div style={{display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"flex-end",gap:16}}>
-          <div>
-            <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.5px",marginBottom:4}}>{pf.name}</h1>
-            <p style={{fontSize:13,color:"#4b5563",margin:0}}>Submetido a {dt(pf.submittedAt)}</p>
+          <div style={{display:"flex",alignItems:"center",gap:14,minWidth:0}}>
+            {rank>0&&(
+              <span style={{width:46,height:46,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+                fontSize:rank<=3?22:18,fontWeight:800,
+                color:rank===1?"#fbbf24":rank===2?"#cbd5e1":rank===3?"#f59e0b":"#64748b",
+                border:`2px solid ${rank===1?"rgba(251,191,36,0.6)":rank===2?"rgba(203,213,225,0.5)":rank===3?"rgba(245,158,11,0.5)":"rgba(255,255,255,0.12)"}`,
+                boxShadow:rank===1?"0 0 16px rgba(251,191,36,0.35)":"none"}}>
+                {rank<=3?["🥇","🥈","🥉"][rank-1]:rank}
+              </span>
+            )}
+            <div style={{minWidth:0}}>
+              <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.5px",marginBottom:4}}>{pf.name}</h1>
+              <p style={{fontSize:13,color:"#4b5563",margin:0}}>Submetido a {dt(pf.submittedAt)}</p>
+            </div>
           </div>
           <div style={{textAlign:"right"}}>
-            <div style={{fontSize:11,color:"#4b5563",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.5px"}}>Rentabilidade total</div>
-            <div style={{fontSize:36,fontWeight:800,fontFamily:"monospace",
-              color:st.total>=0?"#4ade80":"#f87171"}}>{pct(st.total)}</div>
+            <div style={{fontSize:36,fontWeight:800,fontFamily:"monospace",lineHeight:1,
+              color:st.total>=0?"#4ade80":"#f87171"}}>{st.total>=0?"▲":"▼"} {pct(Math.abs(st.total)).replace(/[+-]/,"")}</div>
+            <div style={{fontSize:11,color:"#4b5563",marginTop:4,textTransform:"uppercase",letterSpacing:"0.5px"}}>Rentabilidade média</div>
           </div>
         </div>
         <div style={{display:"flex",flexWrap:"wrap",gap:20,marginTop:16,fontSize:13,color:"#6b7280"}}>
@@ -1046,10 +1233,16 @@ function Detail({pf,livePrices,spy,nav}){
         ))}
       </div>
 
-      {/* Evolução (#5) */}
-      <div style={{...GLASS,borderRadius:16,padding:24,margin:"16px 0"}}>
-        <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Evolução da rentabilidade</h3>
-        <EvolutionChart portfolioId={pf.id} currentReturn={st.total}/>
+      {/* Evolução (#5) + Exposição por setor */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:16,margin:"16px 0"}}>
+        <div style={{...GLASS,borderRadius:16,padding:24}}>
+          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Evolução da rentabilidade</h3>
+          <EvolutionChart portfolioId={pf.id} currentReturn={st.total}/>
+        </div>
+        <div style={{...GLASS,borderRadius:16,padding:24}}>
+          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Exposição por setor</h3>
+          <SectorDonut stocks={pf.stocks}/>
+        </div>
       </div>
 
       {/* Destaques (#6) — top 3 melhores / piores desde a submissão */}

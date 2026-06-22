@@ -128,30 +128,61 @@ async function cnbcQuote(symbol) {
   return null;
 }
 
+// --- Quotes: stale-while-revalidate --------------------------------------
+// Serve cached quotes instantly (even slightly stale) and refresh in the
+// background, so users never wait on Yahoo/CNBC and the APIs are hit at most
+// once per FRESH window per ticker. Routes should call flushQuoteRevalidations()
+// via next/server `after()` so background refreshes complete on serverless.
+const QUOTE_FRESH_MS = 60 * 1000;        // within 1 min: serve, no refresh
+const QUOTE_MAX_STALE_MS = 10 * 60 * 1000; // up to 10 min: serve stale + revalidate
+const quoteInflight = new Map();
+
+// Network only (no cache): Yahoo → CNBC.
+async function loadQuote(symbol) {
+  if (yahooAvailable()) {
+    try {
+      const q = await yahooQuote(symbol);
+      if (q != null) return q;
+    } catch {
+      // fall through to CNBC
+    }
+  }
+  return cnbcQuote(symbol);
+}
+
+// Deduplicated background/foreground refresh that updates the cache.
+function revalidateQuote(symbol) {
+  if (quoteInflight.has(symbol)) return quoteInflight.get(symbol);
+  const p = (async () => {
+    try {
+      const q = await loadQuote(symbol);
+      if (q != null) CACHE.set(`quote:${symbol}`, { value: q, at: Date.now() });
+      return q;
+    } finally {
+      quoteInflight.delete(symbol);
+    }
+  })();
+  quoteInflight.set(symbol, p);
+  return p;
+}
+
+// Awaits any in-flight background refreshes. Call from routes via `after()`.
+export function flushQuoteRevalidations() {
+  return Promise.allSettled([...quoteInflight.values()]);
+}
+
 // Returns the full quote object { price, name, exchange, currency } (or null).
 export async function fetchQuoteFull(ticker) {
   const symbol = String(ticker || "").trim().toUpperCase();
   if (!symbol) return null;
 
-  const cacheKey = `quote:${symbol}`;
-  const cached = getCached(cacheKey);
-  if (cached != null) return cached;
+  const e = CACHE.get(`quote:${symbol}`);
+  const age = e ? Date.now() - e.at : Infinity;
+  if (e && age < QUOTE_FRESH_MS) return e.value;                 // fresh
+  if (e && age < QUOTE_MAX_STALE_MS) { revalidateQuote(symbol); return e.value; } // stale: serve now, refresh in bg
 
-  if (yahooAvailable()) {
-    try {
-      const quote = await yahooQuote(symbol);
-      if (quote != null) {
-        setCached(cacheKey, quote);
-        return quote;
-      }
-    } catch {
-      // fall through to CNBC
-    }
-  }
-
-  const quote = await cnbcQuote(symbol);
-  if (quote != null) setCached(cacheKey, quote);
-  return quote;
+  const fresh = await revalidateQuote(symbol);                   // miss/expired: block
+  return fresh != null ? fresh : (e ? e.value : null);
 }
 
 // Convenience wrapper for callers that only need the price.
@@ -203,6 +234,47 @@ async function alphaVantageHistory(symbol) {
       .filter((o) => Number.isFinite(o.close))
       .sort((a, b) => (a.date < b.date ? -1 : 1));
     return out.length ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+// Maps Alpha Vantage's OVERVIEW "Sector" to the app's PT buckets. Unknown values
+// keep a Title-cased version of the raw sector (never "Outros").
+function mapAvSector(raw) {
+  const s = String(raw || "").trim().toUpperCase();
+  if (!s) return null;
+  if (s.includes("TECH")) return "Tecnologia";
+  if (s.includes("FINANC")) return "Financeiro";
+  if (s.includes("COMMUNIC")) return "Comunicação";
+  if (s.includes("CONSUM") || s.includes("TRADE") || s.includes("RETAIL")) return "Consumo";
+  if (s.includes("HEALTH") || s.includes("LIFE SCIENCE") || s.includes("PHARMA")) return "Saúde";
+  if (s.includes("ENERGY")) return "Energia";
+  if (s.includes("INDUSTRI") || s.includes("MANUFACTUR") || s.includes("TRANSPORT")) return "Industrial";
+  if (s.includes("REAL ESTATE")) return "Imobiliário";
+  if (s.includes("UTILIT")) return "Utilities";
+  if (s.includes("MATERIAL")) return "Materiais";
+  return s.charAt(0) + s.slice(1).toLowerCase();
+}
+
+// Real sector for a ticker via Alpha Vantage OVERVIEW (free, 25/day). Cached 24h
+// in-memory; persistence/learning happens in the DB at the route layer.
+export async function fetchSector(ticker) {
+  const symbol = String(ticker || "").trim().toUpperCase();
+  if (!symbol) return null;
+  const cacheKey = `sector:${symbol}`;
+  const cached = getCached(cacheKey);
+  if (cached != null) return cached;
+  const key = process.env.ALPHA_VANTAGE_API_KEY;
+  if (!key) return null;
+  try {
+    const url = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${encodeURIComponent(symbol)}&apikey=${key}`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const sector = mapAvSector(data?.Sector);
+    if (sector) setCached(cacheKey, sector, 24 * 60 * 60 * 1000);
+    return sector;
   } catch {
     return null;
   }
