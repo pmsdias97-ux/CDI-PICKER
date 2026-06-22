@@ -72,6 +72,24 @@ function dlCSV(filename,rows){
   a.download=filename; a.click();
 }
 
+/* ---- Stock logo ----------------------------------------------------------
+   Company logo by ticker via Financial Modeling Prep (free, no key). If the
+   image fails to load (missing ticker, service down), it hides itself so the
+   ticker badge beside it stays as the fallback. White rounded backdrop so
+   transparent/dark logos stay visible on the dark UI.
+--------------------------------------------------------------------------- */
+function StockLogo({ticker,size=28}){
+  const [err,setErr]=useState(false);
+  if(err||!ticker) return null;
+  return(
+    <img
+      src={`https://financialmodelingprep.com/image-stock/${encodeURIComponent(ticker)}.png`}
+      alt="" width={size} height={size} loading="lazy" onError={()=>setErr(true)}
+      style={{width:size,height:size,borderRadius:6,objectFit:"contain",
+        background:"#fff",padding:2,boxSizing:"border-box",flexShrink:0}}/>
+  );
+}
+
 /* ---- Shared game settings (Supabase) ------------------------------------- */
 const DEFAULT_SETTINGS={submissionsOpen:true,gameStartDate:"",gameEndDate:""};
 async function loadGameSettings(){
@@ -296,29 +314,27 @@ function Shell({children,page,nav,submitted,toast}){
 /* ---- Nav ----------------------------------------------------------------- */
 function Nav({page,nav,submitted}){
   return(
-    <nav style={{position:"sticky",top:0,zIndex:50,background:"rgba(8,13,20,0.92)",backdropFilter:"blur(12px)",
-      borderBottom:"1px solid rgba(255,255,255,0.06)",padding:"0 24px",display:"flex",alignItems:"center",height:56}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>nav("home")}>
-        <img src="/logo.png" alt="CDI Picker" width={32} height={32}
-          style={{width:32,height:32,objectFit:"contain",display:"block"}}/>
-        <span style={{fontWeight:700,fontSize:15,letterSpacing:"-0.3px"}}>CDI PICKER</span>
-      </div>
-      <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
-        <NavLink label="Início" active={page==="home"} onClick={()=>nav("home")}/>
-        <NavLink label="Ranking" active={page==="ranking"} onClick={()=>nav("ranking")} locked={!submitted}/>
-        <button onClick={()=>nav("create")} style={{background:"#22c55e",color:"#000",border:"none",borderRadius:8,
-          padding:"8px 16px",fontSize:14,fontWeight:700,cursor:"pointer",letterSpacing:"-0.2px"}}>
-          Criar Portefólio
-        </button>
-      </div>
-    </nav>
+    <div style={{position:"sticky",top:0,zIndex:50,padding:"14px 12px 0",display:"flex",justifyContent:"center",gap:6}}>
+      <NavLink label="Início" active={page==="home"} onClick={()=>nav("home")}/>
+      <NavLink label="Ranking" active={page==="ranking"} onClick={()=>nav("ranking")} locked={!submitted}/>
+      <NavLink label="Criar Portefólio" active={page==="create"} onClick={()=>nav("create")}/>
+    </div>
   );
 }
+// Plain text link; only the page we're on gets the liquid-glass pill.
 function NavLink({label,active,onClick,locked}){
   return(
-    <button onClick={onClick} style={{background:"none",border:"none",cursor:"pointer",
-      color:active?"#e2e8f0":"#6b7280",fontSize:14,fontWeight:active?600:400,padding:"8px 12px",borderRadius:8,
-      transition:"color 0.15s",display:"flex",alignItems:"center",gap:4}}>
+    <button onClick={onClick}
+      onMouseEnter={e=>{ if(!active) e.currentTarget.style.color="#e2e8f0"; }}
+      onMouseLeave={e=>{ if(!active) e.currentTarget.style.color="#9aa4b2"; }}
+      style={{cursor:"pointer",fontSize:14,fontWeight:active?600:500,padding:"8px 16px",borderRadius:999,
+        color:active?"#e2e8f0":"#9aa4b2",
+        background:active?"rgba(255,255,255,0.08)":"transparent",
+        backdropFilter:active?"blur(16px) saturate(180%)":"none",
+        WebkitBackdropFilter:active?"blur(16px) saturate(180%)":"none",
+        border:`1px solid ${active?"rgba(255,255,255,0.14)":"transparent"}`,
+        boxShadow:active?"0 4px 18px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.16)":"none",
+        transition:"color 0.15s",display:"flex",alignItems:"center",gap:4}}>
       {label}{locked&&<span style={{fontSize:10,opacity:0.5}}>🔒</span>}
     </button>
   );
@@ -371,7 +387,7 @@ function Home({nav,submitted,count,settings}){
             {n:"02",icon:"🔍",t:"Escolhe 8 ações",d:"Pesquisa por ticker ou nome da empresa. Tens de selecionar exatamente 8 ações."},
             {n:"03",icon:"🚀",t:"Submete o portefólio",d:"Depois da submissão, tens acesso ao ranking completo e aos portefólios dos outros."},
           ].map(c=>(
-            <div key={c.n} style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:24,position:"relative",overflow:"hidden"}}>
+            <div key={c.n} style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,position:"relative",overflow:"hidden"}}>
               <div style={{position:"absolute",top:16,right:20,fontSize:36,fontWeight:800,color:"#1f2937",lineHeight:1}}>{c.n}</div>
               <div style={{fontSize:28,marginBottom:16}}>{c.icon}</div>
               <h3 style={{fontSize:17,fontWeight:700,marginBottom:8,letterSpacing:"-0.3px"}}>{c.t}</h3>
@@ -383,7 +399,7 @@ function Home({nav,submitted,count,settings}){
 
       {/* Regras */}
       <section style={{maxWidth:980,margin:"0 auto",padding:"0 24px 80px"}}>
-        <div style={{background:"#0d1520",border:"1px solid #1f2937",borderRadius:16,padding:40}}>
+        <div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16,padding:40}}>
           <h2 style={{fontSize:22,fontWeight:700,marginBottom:28,letterSpacing:"-0.3px"}}>📋 Regras do Jogo</h2>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:"12px 40px"}}>
             {[
@@ -508,13 +524,13 @@ function Create({settings,doSubmit,onDone,showToast}){
 
       {/* Step 1 — nome */}
       {step===1&&(
-        <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:32}}>
+        <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:32}}>
           <h2 style={{fontSize:18,fontWeight:700,marginBottom:6}}>O teu nome no Telegram</h2>
           <p style={{fontSize:14,color:"#6b7280",marginBottom:20}}>Escreve exatamente o mesmo nome que aparece no grupo de Telegram da comunidade.</p>
           <input value={name} onChange={e=>setName(e.target.value)}
             onKeyDown={e=>{ if(e.key==="Enter"&&name.trim().length>=2) setStep(2); }}
             placeholder="Ex: João Silva"
-            style={{width:"100%",background:"#0d1520",border:`1px solid ${name.trim().length>=2?"#22c55e":"#1f2937"}`,
+            style={{width:"100%",background:"rgba(0,0,0,0.18)",border:`1px solid ${name.trim().length>=2?"#22c55e":"#1f2937"}`,
               borderRadius:10,padding:"14px 16px",fontSize:16,color:"#e2e8f0",outline:"none",
               boxSizing:"border-box",transition:"border-color 0.2s"}}/>
           <button onClick={()=>{ if(name.trim().length>=2) setStep(2); }}
@@ -532,7 +548,7 @@ function Create({settings,doSubmit,onDone,showToast}){
       {step===2&&(
         <>
           {/* Progresso */}
-          <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:24,marginBottom:16}}>
+          <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,marginBottom:16}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:12}}>
               <span style={{fontWeight:600}}>Ações selecionadas</span>
               <span style={{fontSize:22,fontWeight:800,letterSpacing:"-1px"}}>
@@ -565,7 +581,7 @@ function Create({settings,doSubmit,onDone,showToast}){
 
           {/* Pesquisa — escondida quando já há 8 ações */}
           {picked.length<PORTFOLIO_SIZE&&(
-          <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:24,marginBottom:16}}>
+          <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,marginBottom:16}}>
             <h3 style={{fontSize:15,fontWeight:600,marginBottom:14}}>Pesquisar ação</h3>
             <div style={{display:"flex",gap:8}}>
               <input value={query} onChange={e=>setQuery(e.target.value)}
@@ -577,7 +593,7 @@ function Create({settings,doSubmit,onDone,showToast}){
                 }}
                 placeholder="Pesquisa por ticker (ex: AAPL) ou nome da empresa"
                 disabled={picked.length>=PORTFOLIO_SIZE}
-                style={{flex:1,background:"#0d1520",border:`1px solid ${query.length>=1?"#22c55e":"#1f2937"}`,
+                style={{flex:1,background:"rgba(0,0,0,0.18)",border:`1px solid ${query.length>=1?"#22c55e":"#1f2937"}`,
                   borderRadius:10,padding:"12px 16px",fontSize:14,color:"#e2e8f0",outline:"none",
                   boxSizing:"border-box",transition:"border-color 0.2s",
                   opacity:picked.length>=PORTFOLIO_SIZE?0.5:1}}/>
@@ -606,11 +622,12 @@ function Create({settings,doSubmit,onDone,showToast}){
                   return(
                     <li key={`${s.ticker}-${s.exchange}`} onClick={()=>!already&&add(s)}
                       style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-                        background:already?"#0d1a0d":"#0d1520",
+                        background:already?"rgba(34,197,94,0.12)":"rgba(0,0,0,0.18)",
                         border:`1px solid ${already?"#166534":"#1f2937"}`,
                         borderRadius:10,padding:"10px 14px",cursor:already?"default":"pointer",
                         transition:"border-color 0.15s",opacity:already?0.7:1}}>
                       <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+                        <StockLogo ticker={s.ticker} size={26}/>
                         <span style={{fontWeight:800,fontSize:13,letterSpacing:"0.5px",minWidth:64,color:"#e2e8f0"}}>{s.ticker}</span>
                         <span style={{fontSize:13,color:"#9ca3af",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</span>
                       </div>
@@ -632,13 +649,14 @@ function Create({settings,doSubmit,onDone,showToast}){
 
           {/* Portfolio */}
           {picked.length>0&&(
-            <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:24,marginBottom:16}}>
+            <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,marginBottom:16}}>
               <h3 style={{fontSize:15,fontWeight:600,marginBottom:14}}>O teu portefólio</h3>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {[...picked].reverse().map(s=>(
                   <div key={s.ticker} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-                    background:"#0d1520",border:"1px solid #1f2937",borderRadius:10,padding:"10px 14px"}}>
+                    background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 14px"}}>
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <StockLogo ticker={s.ticker} size={32}/>
                       <span style={{fontWeight:800,fontSize:13,minWidth:56,color:"#e2e8f0"}}>{s.ticker}</span>
                       <div>
                         <div style={{fontSize:13,color:"#9ca3af"}}>{s.name}</div>
@@ -684,7 +702,7 @@ function StepDot({n,active,done,label}){
 function AlreadySubmitted({nav,name}){
   return(
     <div style={{maxWidth:500,margin:"80px auto",padding:"0 20px",textAlign:"center"}}>
-      <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:20,padding:48}}>
+      <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:20,padding:48}}>
         <div style={{fontSize:40,marginBottom:16}}>🔒</div>
         <h1 style={{fontSize:22,fontWeight:700,marginBottom:12}}>Já tens um portefólio submetido</h1>
         <p style={{fontSize:14,color:"#6b7280",marginBottom:28}}>
@@ -731,7 +749,7 @@ function LockedGate({nav,recoverByName,showToast}){
   }
   return(
     <div style={{maxWidth:480,margin:"80px auto",padding:"0 20px",textAlign:"center"}}>
-      <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:20,padding:48}}>
+      <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:20,padding:48}}>
         <div style={{fontSize:40,marginBottom:16}}>🔒</div>
         <h1 style={{fontSize:22,fontWeight:700,marginBottom:12}}>Área bloqueada</h1>
         <p style={{fontSize:14,color:"#6b7280",marginBottom:28}}>
@@ -747,7 +765,7 @@ function LockedGate({nav,recoverByName,showToast}){
             <input value={name} onChange={e=>setName(e.target.value)}
               onKeyDown={e=>{ if(e.key==="Enter") recover(); }}
               placeholder="O teu nome no Telegram"
-              style={{flex:1,background:"#0d1520",border:"1px solid #1f2937",borderRadius:10,
+              style={{flex:1,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
                 padding:"11px 14px",fontSize:14,color:"#e2e8f0",outline:"none",boxSizing:"border-box"}}/>
             <button onClick={recover} disabled={busy||!name.trim()}
               style={{background:"#1a2a1a",border:"1px solid rgba(34,197,94,0.3)",borderRadius:10,
@@ -778,7 +796,7 @@ function Ranking({ranking,myNorm,pricesLoading,onSelect}){
           Ainda não há portefólios submetidos.
         </div>
       ):(
-        <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,overflow:"hidden"}}>
+        <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
           {/* Header */}
           <div style={{display:"grid",gridTemplateColumns:"48px 1fr 110px 80px 80px 110px",
             padding:"10px 20px",borderBottom:"1px solid #1f2937",
@@ -797,7 +815,7 @@ function Ranking({ranking,myNorm,pricesLoading,onSelect}){
                   padding:"14px 20px",borderBottom:"1px solid #0f172a",cursor:"pointer",
                   background:me?"rgba(34,197,94,0.04)":"transparent",
                   transition:"background 0.15s"}}
-                onMouseEnter={e=>e.currentTarget.style.background=me?"rgba(34,197,94,0.08)":"#0d1520"}
+                onMouseEnter={e=>e.currentTarget.style.background=me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)"}
                 onMouseLeave={e=>e.currentTarget.style.background=me?"rgba(34,197,94,0.04)":"transparent"}>
                 <span style={{fontSize:16}}>{medals[i]||<span style={{fontSize:13,color:"#374151",fontWeight:700}}>{i+1}</span>}</span>
                 <span style={{fontWeight:600,fontSize:15,display:"flex",alignItems:"center",gap:8}}>
@@ -840,7 +858,7 @@ function Detail({pf,livePrices,nav}){
         ← Voltar ao ranking
       </button>
 
-      <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:28,marginBottom:16}}>
+      <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,marginBottom:16}}>
         <div style={{display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"flex-end",gap:16}}>
           <div>
             <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.5px",marginBottom:4}}>{pf.name}</h1>
@@ -859,7 +877,7 @@ function Detail({pf,livePrices,nav}){
         </div>
       </div>
 
-      <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,overflow:"hidden"}}>
+      <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
         <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",
           padding:"10px 20px",borderBottom:"1px solid #1f2937",
           fontSize:11,color:"#4b5563",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>
@@ -871,10 +889,15 @@ function Detail({pf,livePrices,nav}){
         {rows.map(s=>(
           <div key={s.ticker} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",
             padding:"14px 20px",borderBottom:"1px solid #0f172a"}}>
-            <div>
-              <span style={{fontWeight:800,fontSize:14,color:"#e2e8f0",marginRight:8}}>{s.ticker}</span>
-              <span style={{fontSize:13,color:"#6b7280"}}>{s.companyName}</span>
-              <div style={{fontSize:11,color:"#374151",marginTop:2}}>{s.exchange} · 12,5%</div>
+            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+              <StockLogo ticker={s.ticker} size={32}/>
+              <div style={{minWidth:0}}>
+                <div>
+                  <span style={{fontWeight:800,fontSize:14,color:"#e2e8f0",marginRight:8}}>{s.ticker}</span>
+                  <span style={{fontSize:13,color:"#6b7280"}}>{s.companyName}</span>
+                </div>
+                <div style={{fontSize:11,color:"#374151",marginTop:2}}>{s.exchange} · 12,5%</div>
+              </div>
             </div>
             <span style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#6b7280",alignSelf:"center"}}>{money(s.initialPrice)}</span>
             <span style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#e2e8f0",alignSelf:"center"}}>{money(s.cur)}</span>
@@ -909,14 +932,14 @@ function Admin({settings,setSettings,portfolios,ranking,livePrices,reload,showTo
 
   if(!authed) return(
     <div style={{maxWidth:400,margin:"80px auto",padding:"0 20px"}}>
-      <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:20,padding:40}}>
+      <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:20,padding:40}}>
         <div style={{fontSize:32,marginBottom:16}}>🛡</div>
         <h1 style={{fontSize:22,fontWeight:700,marginBottom:8}}>Área de Administração</h1>
         <p style={{fontSize:14,color:"#6b7280",marginBottom:20}}>Introduz a palavra-passe de administrador.</p>
         <input type="password" value={pw} onChange={e=>setPw(e.target.value)}
           onKeyDown={e=>{ if(e.key==="Enter") tryAuth(); }}
           placeholder="Palavra-passe"
-          style={{width:"100%",background:"#0d1520",border:"1px solid #1f2937",borderRadius:10,
+          style={{width:"100%",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
             padding:"12px 16px",fontSize:15,color:"#e2e8f0",outline:"none",boxSizing:"border-box",marginBottom:12}}/>
         <button onClick={tryAuth} disabled={checking}
           style={{width:"100%",background:"#22c55e",color:"#000",border:"none",borderRadius:10,
@@ -971,7 +994,7 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
       <h1 style={{fontSize:26,fontWeight:800,marginBottom:24,letterSpacing:"-0.5px"}}>🛡 Administração</h1>
 
       {/* Tabs */}
-      <div style={{display:"flex",gap:4,background:"#0d1520",border:"1px solid #1f2937",borderRadius:12,padding:4,marginBottom:24,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:4,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:4,marginBottom:24,flexWrap:"wrap"}}>
         {TABS.map(([id,label])=>(
           <button key={id} onClick={()=>setTab(id)}
             style={{flex:1,minWidth:"fit-content",padding:"9px 14px",borderRadius:8,border:"none",
@@ -984,7 +1007,7 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
 
       {/* Portefólios */}
       {tab==="portfolios"&&(
-        <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,overflow:"hidden"}}>
+        <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
           {portfolios.length===0?(
             <p style={{padding:40,textAlign:"center",color:"#4b5563"}}>Sem portefólios ainda.</p>
           ):(
@@ -1024,9 +1047,9 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
       {/* Jogo */}
       {tab==="game"&&(
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16}}>
-          <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:24}}>
+          <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24}}>
             <h3 style={{fontWeight:700,marginBottom:16}}>Submissões</h3>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d1520",
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"rgba(0,0,0,0.18)",
               borderRadius:10,padding:"12px 16px"}}>
               <span style={{fontSize:14,color:settings.submissionsOpen?"#4ade80":"#f87171"}}>
                 {settings.submissionsOpen?"Abertas ✓":"Fechadas ✕"}
@@ -1040,22 +1063,22 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
               </button>
             </div>
           </div>
-          <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:24}}>
+          <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24}}>
             <h3 style={{fontWeight:700,marginBottom:16}}>Datas do jogo</h3>
             <label style={{fontSize:12,color:"#4b5563",display:"block",marginBottom:4}}>Início</label>
             <input type="datetime-local" defaultValue={settings.gameStartDate}
               onBlur={e=>saveSt({...settings,gameStartDate:e.target.value})}
-              style={{width:"100%",background:"#0d1520",border:"1px solid #1f2937",borderRadius:8,
+              style={{width:"100%",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,
                 padding:"8px 12px",fontSize:13,color:"#e2e8f0",outline:"none",boxSizing:"border-box",marginBottom:12}}/>
             <label style={{fontSize:12,color:"#4b5563",display:"block",marginBottom:4}}>Fim</label>
             <input type="datetime-local" defaultValue={settings.gameEndDate}
               onBlur={e=>saveSt({...settings,gameEndDate:e.target.value})}
-              style={{width:"100%",background:"#0d1520",border:"1px solid #1f2937",borderRadius:8,
+              style={{width:"100%",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,
                 padding:"8px 12px",fontSize:13,color:"#e2e8f0",outline:"none",boxSizing:"border-box"}}/>
           </div>
-          <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:24,gridColumn:"1/-1"}}>
+          <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,gridColumn:"1/-1"}}>
             <button onClick={reload}
-              style={{background:"#0d1520",border:"1px solid #1f2937",borderRadius:10,padding:"10px 18px",
+              style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 18px",
                 fontSize:14,color:"#6b7280",cursor:"pointer",fontWeight:600}}>
               🔄 Recarregar dados
             </button>
@@ -1071,7 +1094,7 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
             {label:"Exportar detalhe (CSV)",desc:"Uma linha por ação de cada portefólio.",fn:expDetail},
           ].map(c=>(
             <button key={c.label} onClick={c.fn}
-              style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:28,
+              style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,
                 textAlign:"left",cursor:"pointer",transition:"border-color 0.15s"}}
               onMouseEnter={e=>e.currentTarget.style.borderColor="#22c55e"}
               onMouseLeave={e=>e.currentTarget.style.borderColor="#1f2937"}>
