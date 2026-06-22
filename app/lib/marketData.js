@@ -20,12 +20,12 @@ const UA =
 
 function getCached(key) {
   const entry = CACHE.get(key);
-  if (entry && Date.now() - entry.at < CACHE_TTL_MS) return entry.value;
+  if (entry && Date.now() - entry.at < (entry.ttl || CACHE_TTL_MS)) return entry.value;
   return null;
 }
 
-function setCached(key, value) {
-  CACHE.set(key, { value, at: Date.now() });
+function setCached(key, value, ttl) {
+  CACHE.set(key, { value, at: Date.now(), ttl });
 }
 
 async function throttle() {
@@ -158,6 +158,69 @@ export async function fetchQuoteFull(ticker) {
 export async function fetchQuote(ticker) {
   const quote = await fetchQuoteFull(ticker);
   return quote?.price ?? null;
+}
+
+// Daily close history. Returns [{date:'YYYY-MM-DD', close}] ascending, or null.
+// Yahoo's chart 429s this IP for history, so we use Alpha Vantage (free key, but
+// only 25 req/day) with a long 6h cache. Yahoo is tried first opportunistically.
+const AV_HIST_TTL = 6 * 60 * 60 * 1000;
+
+async function yahooHistory(symbol) {
+  if (!yahooAvailable()) return null;
+  try {
+    const url = new URL(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
+    );
+    url.searchParams.set("range", "1y");
+    url.searchParams.set("interval", "1d");
+    const data = await yahooJson(url.toString(), 3600);
+    const result = data.chart?.result?.[0];
+    const ts = result?.timestamp || [];
+    const closes = result?.indicators?.quote?.[0]?.close || [];
+    const out = [];
+    for (let i = 0; i < ts.length; i++) {
+      if (!Number.isFinite(closes[i])) continue;
+      out.push({ date: new Date(ts[i] * 1000).toISOString().slice(0, 10), close: closes[i] });
+    }
+    return out.length ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+async function alphaVantageHistory(symbol) {
+  const key = process.env.ALPHA_VANTAGE_API_KEY;
+  if (!key) return null;
+  try {
+    const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(symbol)}&outputsize=compact&apikey=${key}`;
+    const res = await fetch(url, { next: { revalidate: 21600 } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const ts = data["Time Series (Daily)"];
+    if (!ts) return null; // rate-limited / unknown symbol / API note
+    const out = Object.entries(ts)
+      .map(([date, v]) => ({ date, close: parseFloat(v["4. close"]) }))
+      .filter((o) => Number.isFinite(o.close))
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+    return out.length ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchHistory(ticker) {
+  const symbol = String(ticker || "").trim().toUpperCase();
+  if (!symbol) return null;
+  const cacheKey = `hist:${symbol}`;
+  const cached = getCached(cacheKey);
+  if (cached != null) return cached;
+
+  let out = await yahooHistory(symbol);
+  if (!out) out = await alphaVantageHistory(symbol);
+  if (!out) return null;
+
+  setCached(cacheKey, out, AV_HIST_TTL);
+  return out;
 }
 
 async function yahooSearch(q) {

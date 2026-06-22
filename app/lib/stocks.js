@@ -32,6 +32,18 @@ export async function fetchStockPrices(tickers) {
   return data.prices || {};
 }
 
+// Daily close history [{date,close}] for a ticker (used for the S&P benchmark).
+export async function fetchStockHistory(ticker) {
+  try {
+    const res = await fetch(`/api/stocks/history?ticker=${encodeURIComponent(ticker)}`);
+    const data = await res.json();
+    if (!res.ok) return [];
+    return data.history || [];
+  } catch {
+    return [];
+  }
+}
+
 export async function searchTickers(query) {
   const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`);
   const data = await res.json();

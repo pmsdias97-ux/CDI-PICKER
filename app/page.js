@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabase";
-import { fetchStockInfo, fetchStockPrices, searchTickers } from "./lib/stocks";
+import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } from "./lib/stocks";
 
 /* ============================================================================
    CONVERSAS DE INVESTIDORES
@@ -121,6 +121,7 @@ export default function App(){
   const [loading,setLoading]=useState(true);
   const [settings,setSettings]=useState(null);
   const [portfolios,setPortfolios]=useState([]);
+  const [spyHist,setSpyHist]=useState(null);
   const [myName,setMyName]=useState(null);
   const [hasSubmitted,setHasSubmitted]=useState(false);
   const [livePrices,setLivePrices]=useState({});
@@ -182,6 +183,10 @@ export default function App(){
       await refreshLivePrices(pfs);
     }
 
+    // S&P 500 benchmark history (cached server-side). Non-blocking failure: if
+    // unavailable, the benchmark simply doesn't render.
+    fetchStockHistory("SPY").then(h=>setSpyHist(h&&h.length?h:null)).catch(()=>{});
+
     let submitted=false;
     if(mn?.trim()){
       const { data: userRow, error: userError }=await supabase
@@ -217,6 +222,19 @@ export default function App(){
   const ranking=useMemo(()=>
     portfolios.map(p=>({...p,...pfStats(p,livePrices)})).sort((a,b)=>b.total-a.total)
   ,[portfolios,livePrices]);
+
+  // S&P 500 benchmark: last close + return since a given submission date.
+  const spy=useMemo(()=>{
+    if(!spyHist||!spyHist.length) return null;
+    const last=spyHist[spyHist.length-1].close;
+    const closeOnOrBefore=iso=>{
+      const d=(iso||"").slice(0,10);
+      let v=null;
+      for(const p of spyHist){ if(p.date<=d) v=p.close; else break; }
+      return v??spyHist[0].close;
+    };
+    return { last, returnSince:iso=>last/closeOnOrBefore(iso)-1 };
+  },[spyHist]);
 
   async function doSubmit(name,stocks){
     // All validation + the authoritative price snapshot happen server-side
@@ -284,8 +302,8 @@ export default function App(){
   if(page==="home")   return sh(<Home nav={nav} submitted={submitted} count={portfolios.length} settings={settings}/>);
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
-  if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} onSelect={(k)=>{setDetailKey(k);nav("detail");}}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
-  if(page==="detail") return sh(submitted?<Detail pf={portfolios.find(p=>p.key===detailKey)||myPf} livePrices={livePrices} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} onSelect={(k)=>{setDetailKey(k);nav("detail");}}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="detail") return sh(submitted?<Detail pf={portfolios.find(p=>p.key===detailKey)||myPf} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
   return null;
 }
@@ -400,7 +418,7 @@ function Home({nav,submitted,count,settings}){
       {/* Regras */}
       <section style={{maxWidth:980,margin:"0 auto",padding:"0 24px 80px"}}>
         <div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16,padding:40}}>
-          <h2 style={{fontSize:22,fontWeight:700,marginBottom:28,letterSpacing:"-0.3px"}}>📋 Regras do Jogo</h2>
+          <h2 style={{fontSize:22,fontWeight:700,marginBottom:28,letterSpacing:"-0.3px",textAlign:"center"}}>📋 Regras do Jogo</h2>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:"12px 40px"}}>
             {[
               "Cada participante cria exatamente 1 portefólio com 8 ações",
@@ -781,13 +799,14 @@ function LockedGate({nav,recoverByName,showToast}){
 }
 
 /* ---- Ranking ------------------------------------------------------------- */
-function Ranking({ranking,myNorm,pricesLoading,onSelect}){
+function Ranking({ranking,myNorm,pricesLoading,spy,onSelect}){
   const medals=["🥇","🥈","🥉"];
   return(
     <div style={{maxWidth:900,margin:"0 auto",padding:"40px 20px 80px"}}>
       <h1 style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px",marginBottom:4}}>Ranking Geral</h1>
       <p style={{color:"#4b5563",fontSize:14,marginBottom:28}}>
         Ordenado pela rentabilidade total em tempo real (preço atual vs. preço inicial). {ranking.length} {ranking.length===1?"participante":"participantes"}.
+        {spy?" · “vs S&P” = quanto bates (ou não) o S&P 500 no mesmo período.":""}
         {pricesLoading?" · A atualizar preços de mercado…":""}
       </p>
 
@@ -823,8 +842,13 @@ function Ranking({ranking,myNorm,pricesLoading,onSelect}){
                   {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",
                     borderRadius:999,padding:"2px 8px",fontWeight:700}}>Tu</span>}
                 </span>
-                <span style={{textAlign:"right",fontWeight:800,fontFamily:"monospace",fontSize:15,
-                  color:p.total>=0?"#4ade80":"#f87171"}}>{pct(p.total)}</span>
+                <span style={{textAlign:"right",display:"flex",flexDirection:"column",alignItems:"flex-end",gap:1}}>
+                  <span style={{fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}>{pct(p.total)}</span>
+                  {spy&&(()=>{ const a=p.total-spy.returnSince(p.submittedAt); return(
+                    <span style={{fontSize:10,fontWeight:600,fontFamily:"monospace",color:a>=0?"#4ade80":"#f87171",opacity:0.85}}>
+                      {a>=0?"▲":"▼"} S&P {pct(Math.abs(a)).replace(/[+-]/,"")}
+                    </span>); })()}
+                </span>
                 <span style={{textAlign:"center",color:"#4ade80",fontWeight:600,fontSize:14}}>{p.pos}</span>
                 <span style={{textAlign:"center",color:"#f87171",fontWeight:600,fontSize:14}}>{p.neg}</span>
                 <span style={{textAlign:"right",fontSize:12,color:"#4b5563"}}>{dt(p.submittedAt)}</span>
@@ -838,8 +862,80 @@ function Ranking({ranking,myNorm,pricesLoading,onSelect}){
   );
 }
 
+/* ---- Evolution chart -----------------------------------------------------
+   Lê os snapshots diários (gravados pelo cron) e desenha a evolução da
+   rentabilidade. Acrescenta o ponto "hoje" ao vivo para nunca ficar vazio.
+   Enche-se ao longo dos dias à medida que o cron corre.
+--------------------------------------------------------------------------- */
+function EvolutionChart({portfolioId,currentReturn}){
+  const [snaps,setSnaps]=useState(null);
+  useEffect(()=>{
+    let cancel=false;
+    (async()=>{
+      const { data }=await supabase
+        .from("portfolio_snapshots")
+        .select("date,total_return")
+        .eq("portfolio_id",portfolioId)
+        .order("date",{ascending:true});
+      if(!cancel) setSnaps(data||[]);
+    })();
+    return()=>{ cancel=true; };
+  },[portfolioId]);
+
+  if(snaps===null) return <p style={{fontSize:13,color:"#4b5563",margin:0}}>A carregar evolução…</p>;
+
+  const today=new Date().toISOString().slice(0,10);
+  const series=snaps.map(s=>({date:s.date,r:Number(s.total_return)}));
+  if(typeof currentReturn==="number"){
+    if(series.length&&series[series.length-1].date===today) series[series.length-1].r=currentReturn;
+    else series.push({date:today,r:currentReturn});
+  }
+  if(series.length<2) return(
+    <p style={{fontSize:13,color:"#6b7280",margin:0}}>
+      📈 O gráfico de evolução começa a preencher a partir de amanhã (um ponto por dia).
+    </p>
+  );
+
+  const W=800,H=160,P=8;
+  const vals=series.map(p=>p.r).concat([0]);
+  let min=Math.min(...vals),max=Math.max(...vals);
+  if(min===max){ min-=0.01; max+=0.01; }
+  const pad=(max-min)*0.1; min-=pad; max+=pad;
+  const x=i=>P+(i/(series.length-1))*(W-2*P);
+  const y=v=>P+(1-(v-min)/(max-min))*(H-2*P);
+  const line=series.map((p,i)=>`${i===0?"M":"L"}${x(i).toFixed(1)},${y(p.r).toFixed(1)}`).join(" ");
+  const area=`${line} L${x(series.length-1).toFixed(1)},${(H-P).toFixed(1)} L${x(0).toFixed(1)},${(H-P).toFixed(1)} Z`;
+  const last=series[series.length-1].r;
+  const col=last>=0?"#22c55e":"#f87171";
+  const zeroY=y(0);
+
+  return(
+    <div style={{width:"100%"}}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{width:"100%",height:160,display:"block"}}>
+        <defs>
+          <linearGradient id="evoFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={col} stopOpacity="0.28"/>
+            <stop offset="100%" stopColor={col} stopOpacity="0"/>
+          </linearGradient>
+        </defs>
+        {min<0&&max>0&&(
+          <line x1={P} y1={zeroY} x2={W-P} y2={zeroY} stroke="rgba(255,255,255,0.18)" strokeWidth="1" strokeDasharray="4 4"/>
+        )}
+        <path d={area} fill="url(#evoFill)"/>
+        <path d={line} fill="none" stroke={col} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"/>
+      </svg>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#4b5563",marginTop:6}}>
+        <span>{series[0].date}</span>
+        <span style={{color:col,fontWeight:700,fontFamily:"monospace"}}>{pct(last)}</span>
+        <span>{series[series.length-1].date}</span>
+      </div>
+    </div>
+  );
+}
+
 /* ---- Detail -------------------------------------------------------------- */
-function Detail({pf,livePrices,nav}){
+function Detail({pf,livePrices,spy,nav}){
   if(!pf) return(
     <div style={{textAlign:"center",padding:80,color:"#4b5563"}}>
       Portefólio não encontrado. <button onClick={()=>nav("ranking")} style={{color:"#22c55e",background:"none",border:"none",cursor:"pointer"}}>Voltar</button>
@@ -850,6 +946,11 @@ function Detail({pf,livePrices,nav}){
     const cur=curPrice(s.ticker,s.initialPrice,livePrices);
     return{...s,cur,ret:stockRet(s,livePrices)};
   });
+  const spyRet=spy?spy.returnSince(pf.submittedAt):null;
+  const alpha=spyRet!=null?st.total-spyRet:null;
+  // Destaques (#6) — ações ordenadas por performance desde a submissão.
+  const bySorted=[...rows].sort((a,b)=>b.ret-a.ret);
+  const GLASS={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
   return(
     <div style={{maxWidth:820,margin:"0 auto",padding:"40px 20px 80px"}}>
       <button onClick={()=>nav("ranking")}
@@ -870,10 +971,18 @@ function Detail({pf,livePrices,nav}){
               color:st.total>=0?"#4ade80":"#f87171"}}>{pct(st.total)}</div>
           </div>
         </div>
-        <div style={{display:"flex",gap:20,marginTop:16,fontSize:13,color:"#6b7280"}}>
+        <div style={{display:"flex",flexWrap:"wrap",gap:20,marginTop:16,fontSize:13,color:"#6b7280"}}>
           <span>Valor inicial: <strong style={{color:"#e2e8f0"}}>{money(pf.initialValue||STARTING_VALUE)}</strong></span>
           <span style={{color:"#4ade80"}}>▲ {st.pos} positivas</span>
           <span style={{color:"#f87171"}}>▼ {st.neg} negativas</span>
+          {spyRet!=null&&(
+            <span>S&amp;P 500: <strong style={{color:spyRet>=0?"#4ade80":"#f87171"}}>{pct(spyRet)}</strong></span>
+          )}
+          {alpha!=null&&(
+            <span title="A tua rentabilidade menos a do S&P 500 no mesmo período">
+              Alpha: <strong style={{color:alpha>=0?"#4ade80":"#f87171"}}>{alpha>=0?"+":""}{(alpha*100).toFixed(2)}%</strong>
+            </span>
+          )}
         </div>
       </div>
 
@@ -908,6 +1017,43 @@ function Detail({pf,livePrices,nav}){
           </div>
         ))}
       </div>
+
+      {/* Evolução (#5) */}
+      <div style={{...GLASS,borderRadius:16,padding:24,margin:"16px 0"}}>
+        <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Evolução da rentabilidade</h3>
+        <EvolutionChart portfolioId={pf.id} currentReturn={st.total}/>
+      </div>
+
+      {/* Destaques (#6) — top 3 melhores / piores desde a submissão */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16}}>
+        <div style={{...GLASS,borderRadius:16,padding:24}}>
+          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#4ade80"}}>📈 Melhor performance</h3>
+          <TopList items={bySorted.slice(0,3)}/>
+        </div>
+        <div style={{...GLASS,borderRadius:16,padding:24}}>
+          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#f87171"}}>📉 Pior performance</h3>
+          <TopList items={[...bySorted].reverse().slice(0,3)}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TopList({items}){
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {items.map((s,i)=>(
+        <div key={s.ticker} style={{display:"flex",alignItems:"center",gap:10,
+          background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 12px"}}>
+          <span style={{fontSize:12,fontWeight:700,color:"#4b5563",minWidth:16}}>{i+1}</span>
+          <StockLogo ticker={s.ticker} size={26}/>
+          <div style={{minWidth:0,flex:1}}>
+            <div style={{fontSize:13,fontWeight:800,color:"#e2e8f0"}}>{s.ticker}</div>
+            <div style={{fontSize:11,color:"#6b7280",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.companyName}</div>
+          </div>
+          <span style={{fontFamily:"monospace",fontSize:14,fontWeight:700,color:s.ret>=0?"#4ade80":"#f87171"}}>{pct(s.ret)}</span>
+        </div>
+      ))}
     </div>
   );
 }
