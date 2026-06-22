@@ -212,6 +212,7 @@ export default function App(){
   const [dayChange,setDayChange]=useState({}); // variação do dia por ticker
   const [pricesLoading,setPricesLoading]=useState(false);
   const [detailKey,setDetailKey]=useState(null);
+  const [duelKeys,setDuelKeys]=useState(null); // [keyA, keyB] para o duelo 1v1
   const [toast,setToast]=useState(null);
 
   const showToast=useCallback((msg,kind="ok")=>{ setToast({msg,kind}); setTimeout(()=>setToast(null),3500); },[]);
@@ -403,7 +404,8 @@ export default function App(){
   if(page==="home")   return sh(<Home nav={nav} submitted={submitted} count={portfolios.length} settings={settings} ranking={ranking} livePrices={livePrices}/>);
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
-  if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} onSelect={(k)=>{setDetailKey(k);nav("detail");}}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} onSelect={(k)=>{setDetailKey(k);nav("detail");}} onCompare={(a,b)=>{setDuelKeys([a,b]);nav("duel");}}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="duel")   return sh(submitted?<Duel a={ranking.find(p=>p.key===duelKeys?.[0])} b={ranking.find(p=>p.key===duelKeys?.[1])} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="detail") return sh(submitted?<Detail pf={portfolios.find(p=>p.key===detailKey)||myPf} rank={(()=>{const k=(portfolios.find(p=>p.key===detailKey)||myPf)?.key; const i=ranking.findIndex(r=>r.key===k); return i>=0?i+1:0;})()} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
   return null;
@@ -1138,11 +1140,26 @@ function LockedGate({nav,recoverByName,showToast}){
 }
 
 /* ---- Ranking ------------------------------------------------------------- */
-function Ranking({ranking,myNorm,pricesLoading,spy,onSelect}){
+function Ranking({ranking,myNorm,pricesLoading,spy,onSelect,onCompare}){
   const medals=["🥇","🥈","🥉"];
+  const [cmp,setCmp]=useState(false);
+  const [sel,setSel]=useState([]);
+  const toggleSel=k=>setSel(s=>s.includes(k)?s.filter(x=>x!==k):(s.length>=2?[s[1],k]:[...s,k]));
+  const nameByKey=k=>ranking.find(p=>p.key===k)?.name||"";
   return(
-    <div style={{maxWidth:900,margin:"0 auto",padding:"40px 20px 80px"}}>
-      <h1 style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px",marginBottom:4}}>Ranking Geral</h1>
+    <div style={{maxWidth:900,margin:"0 auto",padding:"40px 20px 120px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+        <h1 style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px",marginBottom:4}}>Ranking Geral</h1>
+        {ranking.length>=2&&(
+          <button onClick={()=>{ setCmp(v=>!v); setSel([]); }}
+            style={{cursor:"pointer",fontSize:13,fontWeight:700,borderRadius:999,padding:"8px 16px",
+              color:cmp?"#0a0a0a":"#cbd5e1",
+              background:cmp?"#3b82f6":"rgba(255,255,255,0.06)",
+              border:`1px solid ${cmp?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.12)"}`}}>
+            1v1
+          </button>
+        )}
+      </div>
       <p style={{color:"#4b5563",fontSize:14,marginBottom:28}}>
         Ordenado pela rentabilidade total em tempo real (preço atual vs. preço inicial). {ranking.length} {ranking.length===1?"participante":"participantes"}.
         {spy?" · Alpha = a tua rentabilidade menos a do S&P 500 no mesmo período (positivo = bates o mercado).":""}
@@ -1170,14 +1187,17 @@ function Ranking({ranking,myNorm,pricesLoading,spy,onSelect}){
             const me=p.normName===myNorm;
             const spyRet=spy?spy.returnFor(p):null;
             const alpha=spyRet==null?null:p.total-spyRet;
+            const picked=cmp&&sel.includes(p.key);
+            const baseBg=picked?"rgba(59,130,246,0.16)":me?"rgba(34,197,94,0.04)":"transparent";
             return(
-              <div key={p.key} onClick={()=>onSelect(p.key)}
+              <div key={p.key} onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
                 style={{display:"grid",gridTemplateColumns:"40px 1fr 100px 100px 64px 64px 110px",
                   padding:"14px 20px",borderBottom:"1px solid #0f172a",cursor:"pointer",
-                  background:me?"rgba(34,197,94,0.04)":"transparent",
+                  background:baseBg,
+                  boxShadow:picked?"inset 3px 0 0 #3b82f6":"none",
                   transition:"background 0.15s"}}
-                onMouseEnter={e=>e.currentTarget.style.background=me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)"}
-                onMouseLeave={e=>e.currentTarget.style.background=me?"rgba(34,197,94,0.04)":"transparent"}>
+                onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)"; }}
+                onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
                 <span style={{fontSize:16}}>{medals[i]||<span style={{fontSize:13,color:"#374151",fontWeight:700}}>{i+1}</span>}</span>
                 <span style={{fontWeight:600,fontSize:15,display:"flex",alignItems:"center",gap:8}}>
                   {p.name}
@@ -1195,7 +1215,26 @@ function Ranking({ranking,myNorm,pricesLoading,spy,onSelect}){
           })}
         </div>
       )}
-      <p style={{marginTop:12,fontSize:12,color:"#1f2937",textAlign:"right"}}>Clica numa linha para ver as 8 ações.</p>
+      <p style={{marginTop:12,fontSize:12,color:"#1f2937",textAlign:"right"}}>
+        {cmp?"Seleciona 2 membros para comparar.":"Clica numa linha para ver as 8 ações."}
+      </p>
+      {cmp&&(
+        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:70,
+          display:"flex",alignItems:"center",gap:14,padding:"12px 16px",borderRadius:14,maxWidth:"92vw",
+          background:"rgba(15,23,42,0.92)",backdropFilter:"blur(18px) saturate(170%)",WebkitBackdropFilter:"blur(18px) saturate(170%)",
+          border:"1px solid rgba(255,255,255,0.12)",boxShadow:"0 12px 36px rgba(0,0,0,0.5)"}}>
+          <span style={{fontSize:13,color:"#cbd5e1",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+            {sel.length===0?"Escolhe 2 membros…":sel.length===1?`${nameByKey(sel[0])} vs …`:`${nameByKey(sel[0])} vs ${nameByKey(sel[1])}`}
+          </span>
+          <button onClick={()=>sel.length===2&&onCompare(sel[0],sel[1])} disabled={sel.length!==2}
+            style={{cursor:sel.length===2?"pointer":"not-allowed",border:"none",borderRadius:10,padding:"9px 18px",
+              fontSize:14,fontWeight:700,whiteSpace:"nowrap",
+              background:sel.length===2?"linear-gradient(180deg,#3b82f6,#2563eb)":"rgba(255,255,255,0.08)",
+              color:sel.length===2?"#fff":"#64748b"}}>
+            Ver
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1355,13 +1394,16 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav}){
   }).filter(Boolean).sort((a,b)=>b.ret-a.ret);
   const GLASS={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
   return(
-    <div style={{maxWidth:820,margin:"0 auto",padding:"40px 20px 80px"}}>
+    <div style={{maxWidth:1320,margin:"0 auto",padding:"40px 20px 80px"}}>
+      <style>{`.cdiDetail{display:grid;gap:16px;grid-template-columns:1fr}@media(min-width:1000px){.cdiDetail{grid-template-columns:minmax(0,1fr) minmax(0,1.12fr);align-items:start}}`}</style>
       <button onClick={()=>nav("ranking")}
         style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:14,marginBottom:24,
           display:"flex",alignItems:"center",gap:6,padding:0}}>
         ← Voltar ao ranking
       </button>
 
+      <div className="cdiDetail">
+      <div>{/* coluna esquerda: portefólio */}
       <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,marginBottom:16}}>
         <div style={{display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"flex-end",gap:16}}>
           <div style={{display:"flex",alignItems:"center",gap:14,minWidth:0}}>
@@ -1427,9 +1469,11 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav}){
           </div>
         ))}
       </div>
+      </div>{/* /coluna esquerda */}
 
+      <div>{/* coluna direita: análises */}
       {/* Evolução (#5) + Exposição por setor */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:16,margin:"16px 0"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16,marginBottom:16}}>
         <div style={{...GLASS,borderRadius:16,padding:24}}>
           <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Evolução da rentabilidade</h3>
           <EvolutionChart portfolioId={pf.id} currentReturn={st.total}/>
@@ -1441,20 +1485,46 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav}){
       </div>
 
       {/* Destaques — melhor/pior performance DO DIA */}
+      <div style={{display:"flex",justifyContent:"center",marginBottom:14}}>
+        <span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:12,fontWeight:700,
+          letterSpacing:"0.5px",textTransform:"uppercase",color:"#94a3b8",
+          borderRadius:999,padding:"5px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)"}}>
+          Performance de hoje
+        </span>
+      </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16}}>
-        <div style={{...GLASS,borderRadius:16,padding:24}}>
-          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#4ade80",textAlign:"center"}}>Melhor performance do dia</h3>
+        <div style={{...GLASS,borderRadius:16,padding:24,
+          background:"linear-gradient(160deg, rgba(34,197,94,0.12), rgba(34,197,94,0.03))",
+          border:"1px solid rgba(34,197,94,0.20)"}}>
+          <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><DayChip up/></div>
           {byDay.length?<TopList items={byDay.slice(0,3)}/>:<p style={{fontSize:13,color:"#6b7280",textAlign:"center",margin:0}}>Sem variação do dia disponível.</p>}
         </div>
-        <div style={{...GLASS,borderRadius:16,padding:24}}>
-          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#f87171",textAlign:"center"}}>Pior performance do dia</h3>
+        <div style={{...GLASS,borderRadius:16,padding:24,
+          background:"linear-gradient(160deg, rgba(239,68,68,0.12), rgba(239,68,68,0.03))",
+          border:"1px solid rgba(239,68,68,0.20)"}}>
+          <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><DayChip/></div>
           {byDay.length?<TopList items={[...byDay].reverse().slice(0,3)}/>:<p style={{fontSize:13,color:"#6b7280",textAlign:"center",margin:0}}>Sem variação do dia disponível.</p>}
         </div>
       </div>
+      </div>{/* /coluna direita */}
+      </div>{/* /cdiDetail */}
     </div>
   );
 }
 
+// Seta que distingue a box "melhor" (▲) da "pior" (▼).
+function DayChip({up}){
+  const c=up?"#4ade80":"#f87171";
+  const bg=up?"rgba(34,197,94,0.15)":"rgba(239,68,68,0.15)";
+  const bd=up?"rgba(34,197,94,0.3)":"rgba(239,68,68,0.3)";
+  return(
+    <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",
+      width:26,height:26,borderRadius:"50%",fontSize:12,fontWeight:800,
+      color:c,background:bg,border:`1px solid ${bd}`}}>
+      {up?"▲":"▼"}
+    </span>
+  );
+}
 function TopList({items}){
   return(
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -1470,6 +1540,183 @@ function TopList({items}){
           <span style={{fontFamily:"monospace",fontSize:14,fontWeight:700,color:s.ret>=0?"#4ade80":"#f87171"}}>{pct(s.ret)}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ---- Duelo 1v1 ----------------------------------------------------------- */
+const DUEL_A="#3b82f6", DUEL_B="#f59e0b"; // cores de identidade A (azul) / B (âmbar)
+function DuelChart({a,b,curA,curB}){
+  const [snaps,setSnaps]=useState(null);
+  useEffect(()=>{
+    let cancel=false;
+    (async()=>{
+      const { data }=await supabase
+        .from("portfolio_snapshots").select("portfolio_id,date,total_return")
+        .in("portfolio_id",[a.id,b.id]).order("date",{ascending:true});
+      if(!cancel) setSnaps(data||[]);
+    })();
+    return()=>{ cancel=true; };
+  },[a.id,b.id]);
+  if(snaps===null) return <p style={{fontSize:13,color:"#4b5563",margin:0}}>A carregar evolução…</p>;
+  const today=new Date().toISOString().slice(0,10);
+  const build=(id,cur)=>{
+    const s=snaps.filter(x=>x.portfolio_id===id).map(x=>({date:x.date,r:Number(x.total_return)}));
+    if(typeof cur==="number"){
+      if(s.length&&s[s.length-1].date===today) s[s.length-1].r=cur; else s.push({date:today,r:cur});
+    }
+    return s;
+  };
+  const sa=build(a.id,curA), sb=build(b.id,curB);
+  const isExample=sa.length<2&&sb.length<2;
+  if(isExample) return(
+    <p style={{fontSize:13,color:"#6b7280",margin:0,textAlign:"center",padding:"20px 0"}}>
+      📈 O gráfico de evolução começa a preencher a partir de amanhã (um ponto por dia).
+    </p>
+  );
+  const W=760,H=200,P=8;
+  const all=[...sa.map(p=>p.r),...sb.map(p=>p.r),0];
+  let min=Math.min(...all),max=Math.max(...all);
+  if(min===max){ min-=0.01; max+=0.01; }
+  const pad=(max-min)*0.12; min-=pad; max+=pad;
+  const dates=[...new Set([...sa,...sb].map(p=>p.date))].sort();
+  const xByDate={}; dates.forEach((d,i)=>{ xByDate[d]=P+(dates.length<2?0:(i/(dates.length-1))*(W-2*P)); });
+  const y=v=>P+(1-(v-min)/(max-min))*(H-2*P);
+  const path=s=>s.map((p,i)=>`${i===0?"M":"L"}${xByDate[p.date].toFixed(1)},${y(p.r).toFixed(1)}`).join(" ");
+  const COLA=DUEL_A, COLB=DUEL_B;
+  const zeroY=y(0);
+  return(
+    <div>
+      <div style={{display:"flex",gap:16,marginBottom:10,fontSize:12}}>
+        <span style={{display:"flex",alignItems:"center",gap:6,color:"#cbd5e1"}}><span style={{width:10,height:3,borderRadius:2,background:COLA}}/>{a.name}</span>
+        <span style={{display:"flex",alignItems:"center",gap:6,color:"#cbd5e1"}}><span style={{width:10,height:3,borderRadius:2,background:COLB}}/>{b.name}</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{width:"100%",height:160,display:"block"}}>
+        {min<0&&max>0&&<line x1={P} y1={zeroY} x2={W-P} y2={zeroY} stroke="rgba(255,255,255,0.18)" strokeWidth="1" strokeDasharray="4 4"/>}
+        {sa.length>1&&<path d={path(sa)} fill="none" stroke={COLA} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>}
+        {sb.length>1&&<path d={path(sb)} fill="none" stroke={COLB} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>}
+      </svg>
+    </div>
+  );
+}
+function DuelMetric({label,a,b,fmt,better}){
+  // better: "high" (maior vence) ou "low" (menor vence)
+  const aw=better==="low"?a<b:a>b, bw=better==="low"?b<a:b>a;
+  const cell=(val,win)=>(
+    <span style={{display:"inline-block",fontFamily:"monospace",fontWeight:800,fontSize:15,
+      padding:"4px 11px",borderRadius:8,
+      color:win?"#4ade80":"#94a3b8",
+      background:win?"rgba(34,197,94,0.13)":"transparent",
+      border:`1px solid ${win?"rgba(34,197,94,0.25)":"transparent"}`}}>{fmt(val)}</span>
+  );
+  return(
+    <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",gap:14,padding:"9px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+      <div style={{textAlign:"right"}}>{cell(a,aw)}</div>
+      <span style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.6px",whiteSpace:"nowrap"}}>{label}</span>
+      <div style={{textAlign:"left"}}>{cell(b,bw)}</div>
+    </div>
+  );
+}
+function DuelHoldings({title,tickers,color}){
+  if(!tickers.length) return null;
+  return(
+    <div style={{marginBottom:14}}>
+      <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>{title}</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+        {tickers.map(t=>(
+          <span key={t} style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(0,0,0,0.18)",
+            border:`1px solid ${color||"rgba(255,255,255,0.08)"}`,borderRadius:999,padding:"5px 10px 5px 6px",fontSize:12,fontWeight:700,color:"#e2e8f0"}}>
+            <StockLogo ticker={t} size={18}/>{t}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+function Duel({a,b,livePrices,spy,nav}){
+  if(!a||!b) return(
+    <div style={{textAlign:"center",padding:80,color:"#4b5563"}}>
+      Duelo inválido. <button onClick={()=>nav("ranking")} style={{color:"#22c55e",background:"none",border:"none",cursor:"pointer"}}>Voltar</button>
+    </div>
+  );
+  const GLASS={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
+  const sa=pfStats(a,livePrices), sb=pfStats(b,livePrices);
+  const alphaA=spy?a.total-spy.returnFor(a):null, alphaB=spy?b.total-spy.returnFor(b):null;
+  const diff=a.total-b.total;
+  const leader=diff>=0?a:b, gap=Math.abs(diff);
+  const setA=new Set(a.stocks.map(s=>s.ticker)), setB=new Set(b.stocks.map(s=>s.ticker));
+  const common=[...setA].filter(t=>setB.has(t));
+  const onlyA=[...setA].filter(t=>!setB.has(t));
+  const onlyB=[...setB].filter(t=>!setA.has(t));
+  return(
+    <div style={{maxWidth:980,margin:"0 auto",padding:"40px 20px 80px"}}>
+      <button onClick={()=>nav("ranking")}
+        style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:14,marginBottom:24,display:"flex",alignItems:"center",gap:6,padding:0}}>
+        ← Voltar ao ranking
+      </button>
+
+      {/* Cabeçalho do duelo */}
+      <div style={{...GLASS,borderRadius:16,padding:28,marginBottom:16}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",gap:16}}>
+          <div style={{textAlign:"right"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8,marginBottom:6}}>
+              <span style={{fontSize:16,fontWeight:800,letterSpacing:"-0.3px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</span>
+              <span style={{width:9,height:9,borderRadius:"50%",background:DUEL_A,flexShrink:0,boxShadow:`0 0 8px ${DUEL_A}`}}/>
+            </div>
+            <div style={{fontSize:30,fontWeight:800,fontFamily:"monospace",letterSpacing:"-1px",color:sa.total>=0?"#4ade80":"#f87171"}}>{pct(sa.total)}</div>
+          </div>
+          <div style={{width:44,height:44,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,
+            fontSize:13,fontWeight:800,color:"#cbd5e1",letterSpacing:"0.5px",
+            background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)"}}>VS</div>
+          <div style={{textAlign:"left"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+              <span style={{width:9,height:9,borderRadius:"50%",background:DUEL_B,flexShrink:0,boxShadow:`0 0 8px ${DUEL_B}`}}/>
+              <span style={{fontSize:16,fontWeight:800,letterSpacing:"-0.3px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{b.name}</span>
+            </div>
+            <div style={{fontSize:30,fontWeight:800,fontFamily:"monospace",letterSpacing:"-1px",color:sb.total>=0?"#4ade80":"#f87171"}}>{pct(sb.total)}</div>
+          </div>
+        </div>
+        <div style={{textAlign:"center",marginTop:18}}>
+          <span style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(251,191,36,0.12)",border:"1px solid rgba(251,191,36,0.3)",
+            borderRadius:999,padding:"7px 18px",fontSize:13,fontWeight:700,color:"#fbbf24"}}>
+            {gap<1e-9?"Empate técnico":`🏆 ${leader.name} lidera por ${(gap*100).toFixed(2)}%`}
+          </span>
+        </div>
+      </div>
+
+      {/* Evolução sobreposta */}
+      <div style={{...GLASS,borderRadius:16,padding:24,marginBottom:16}}>
+        <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Evolução da rentabilidade</h3>
+        <DuelChart a={a} b={b} curA={sa.total} curB={sb.total}/>
+      </div>
+
+      {/* Confronto de métricas */}
+      <div style={{...GLASS,borderRadius:16,padding:"8px 24px 16px",marginBottom:16}}>
+        <DuelMetric label="Rentab. média" a={sa.total} b={sb.total} better="high" fmt={pct}/>
+        {alphaA!=null&&alphaB!=null&&<DuelMetric label="Alpha" a={alphaA} b={alphaB} better="high" fmt={pct}/>}
+        <DuelMetric label="Positivas" a={sa.pos} b={sb.pos} better="high" fmt={v=>String(v)}/>
+        <DuelMetric label="Negativas" a={sa.neg} b={sb.neg} better="low" fmt={v=>String(v)}/>
+      </div>
+
+      {/* Carteiras: comum vs exclusivas */}
+      <div style={{...GLASS,borderRadius:16,padding:24,marginBottom:16}}>
+        <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Carteiras</h3>
+        <DuelHoldings title="Em comum" tickers={common} color="rgba(255,255,255,0.14)"/>
+        <DuelHoldings title={`Só ${a.name}`} tickers={onlyA} color="rgba(59,130,246,0.4)"/>
+        <DuelHoldings title={`Só ${b.name}`} tickers={onlyB} color="rgba(245,158,11,0.4)"/>
+      </div>
+
+      {/* Exposição por setor lado a lado */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16}}>
+        <div style={{...GLASS,borderRadius:16,padding:24}}>
+          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Setores · {a.name}</h3>
+          <SectorDonut stocks={a.stocks}/>
+        </div>
+        <div style={{...GLASS,borderRadius:16,padding:24}}>
+          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Setores · {b.name}</h3>
+          <SectorDonut stocks={b.stocks}/>
+        </div>
+      </div>
     </div>
   );
 }
