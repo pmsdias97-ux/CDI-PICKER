@@ -14,6 +14,34 @@ const MAX_SHORTS = 2;
 const STARTING_VALUE = 10000;
 const PER_STOCK = STARTING_VALUE / PORTFOLIO_SIZE;
 
+// Feriados do mercado US (NYSE/NASDAQ). Atualizar ~1×/ano. Datas em ET (YYYY-MM-DD).
+const MARKET_HOLIDAYS_US = new Set([
+  // 2026
+  "2026-01-01","2026-01-19","2026-02-16","2026-04-03","2026-05-25","2026-06-19",
+  "2026-07-03","2026-09-07","2026-11-26","2026-12-25",
+  // 2027
+  "2027-01-01","2027-01-18","2027-02-15","2027-03-26","2027-05-31","2027-06-18",
+  "2027-07-05","2027-09-06","2027-11-25","2027-12-24",
+]);
+// Estado do mercado pela hora de Nova Iorque (sem API). Devolve {state,label}.
+function marketStatus(){
+  try{
+    const date=new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+    const parts=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",weekday:"short",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());
+    const get=t=>parts.find(p=>p.type===t)?.value;
+    const wd=get("weekday");
+    let h=parseInt(get("hour"),10); if(h===24) h=0;
+    const m=parseInt(get("minute"),10);
+    const t=h*60+m;
+    const weekend=wd==="Sat"||wd==="Sun";
+    if(weekend||MARKET_HOLIDAYS_US.has(date)) return{state:"closed",label:"Mercado fechado"};
+    if(t>=570&&t<960) return{state:"open",label:"Mercado aberto"};
+    if(t>=240&&t<570) return{state:"pre",label:"Pré-mercado"};
+    if(t>=960&&t<1200) return{state:"after",label:"After-hours"};
+    return{state:"closed",label:"Mercado fechado"};
+  }catch{ return{state:"closed",label:"Mercado fechado"}; }
+}
+
 // Mapa curado de setores (sem APIs). Tickers fora do mapa caem em "Outros".
 const SECTORS = {
   // Tecnologia
@@ -387,6 +415,7 @@ function Shell({children,page,nav,submitted,toast}){
       background:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",
       backgroundAttachment:"fixed",
       color:"#e2e8f0",fontFamily:"system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",overflowX:"hidden"}}>
+      <MarketStatus/>
       <Nav page={page} nav={nav} submitted={submitted} />
       <main>{children}</main>
       {toast&&(
@@ -397,6 +426,37 @@ function Shell({children,page,nav,submitted,toast}){
           {toast.kind==="error"?"⚠ ":""}{toast.msg}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---- Indicador de estado do mercado -------------------------------------- */
+const MARKET_DOT={open:"#34d399",pre:"#fbbf24",after:"#fbbf24",closed:"#94a3b8"};
+function MarketStatus(){
+  const [st,setSt]=useState(null); // null no servidor → evita mismatch SSR
+  useEffect(()=>{
+    setSt(marketStatus());
+    const id=setInterval(()=>setSt(marketStatus()),60_000);
+    return()=>clearInterval(id);
+  },[]);
+  if(!st) return null;
+  const c=MARKET_DOT[st.state]||"#94a3b8";
+  const live=st.state==="open";
+  return(
+    <div style={{position:"fixed",top:12,right:14,zIndex:60}}>
+      <style>{`
+        @keyframes mktPulse{0%{box-shadow:0 0 0 0 var(--mk)}70%{box-shadow:0 0 0 6px transparent}100%{box-shadow:0 0 0 0 transparent}}
+        @media(max-width:480px){.mktLabel{display:none}}
+      `}</style>
+      <div title={st.label} style={{display:"inline-flex",alignItems:"center",gap:8,
+        padding:"6px 12px 6px 11px",borderRadius:999,
+        background:"rgba(255,255,255,0.05)",backdropFilter:"blur(18px) saturate(170%)",WebkitBackdropFilter:"blur(18px) saturate(170%)",
+        border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 6px 22px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.10)"}}>
+        <span style={{"--mk":`${c}90`,width:8,height:8,borderRadius:"50%",background:c,flexShrink:0,
+          boxShadow:`0 0 8px ${c}, 0 0 0 0 ${c}90`,
+          animation:live?"mktPulse 2s ease-out infinite":"none"}}/>
+        <span className="mktLabel" style={{fontSize:12,fontWeight:600,color:"#cbd5e1",letterSpacing:"0.2px",whiteSpace:"nowrap"}}>{st.label}</span>
+      </div>
     </div>
   );
 }
