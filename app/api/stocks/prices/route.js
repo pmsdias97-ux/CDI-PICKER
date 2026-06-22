@@ -1,10 +1,14 @@
 import { fetchQuote } from "../../../lib/marketData";
+import { isValidTicker, rateLimited } from "../../../lib/apiGuards";
 
 export async function GET(request) {
+  const rl = rateLimited(request, "stocks-prices", { max: 60, windowMs: 60_000 });
+  if (!rl.ok) return Response.json({ error: "Demasiados pedidos." }, { status: 429 });
+
   const raw = new URL(request.url).searchParams.get("tickers") || "";
   const tickers = [...new Set(
     raw.split(",").map((t) => t.trim().toUpperCase()).filter(Boolean)
-  )];
+  )].filter(isValidTicker).slice(0, 100);
 
   if (!tickers.length) {
     return Response.json({ prices: {}, errors: {} });

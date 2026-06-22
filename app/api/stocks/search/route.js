@@ -1,8 +1,12 @@
 import { searchSymbols } from "../../../lib/marketData";
+import { rateLimited } from "../../../lib/apiGuards";
 
 export async function GET(request) {
-  const q = new URL(request.url).searchParams.get("q");
-  if (!q?.trim()) {
+  const rl = rateLimited(request, "stocks-search", { max: 90, windowMs: 60_000 });
+  if (!rl.ok) return Response.json({ error: "Demasiados pedidos.", results: [] }, { status: 429 });
+
+  const q = (new URL(request.url).searchParams.get("q") || "").slice(0, 60);
+  if (!q.trim()) {
     return Response.json({ results: [] });
   }
 

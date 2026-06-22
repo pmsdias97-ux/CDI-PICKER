@@ -1,9 +1,16 @@
 import { fetchQuoteFull } from "../../../lib/marketData";
+import { isValidTicker, rateLimited } from "../../../lib/apiGuards";
 
 export async function GET(request) {
+  const rl = rateLimited(request, "stocks-price", { max: 60, windowMs: 60_000 });
+  if (!rl.ok) return Response.json({ error: "Demasiados pedidos." }, { status: 429 });
+
   const ticker = new URL(request.url).searchParams.get("ticker");
   if (!ticker?.trim()) {
     return Response.json({ error: "Ticker em falta." }, { status: 400 });
+  }
+  if (!isValidTicker(ticker)) {
+    return Response.json({ error: "Ticker inválido." }, { status: 400 });
   }
 
   try {

@@ -12,7 +12,6 @@ const TICKER_RE = /^[A-Z0-9.\-]{1,12}$/;
 const PORTFOLIO_SIZE = 8;
 const STARTING_VALUE = 10000;
 const PER_STOCK = STARTING_VALUE / PORTFOLIO_SIZE;
-const DEFAULT_ADMIN_PW = "CDI_2000!26";
 
 /* ---- Storage helpers -----------------------------------------------------
    Per-visitor identity only (the Telegram name), in browser localStorage so it
@@ -90,17 +89,8 @@ async function loadGameSettings(){
     };
   }catch{ return null; }
 }
-async function saveGameSettings(s){
-  try{
-    const { error }=await supabase.from("game_settings").upsert({
-      id:1,
-      submissions_open:s.submissionsOpen,
-      game_start_date:s.gameStartDate||null,
-      game_end_date:s.gameEndDate||null,
-    });
-    return !error;
-  }catch{ return false; }
-}
+// Settings are written through the admin API route (service_role key); the
+// browser only reads them via loadGameSettings above.
 
 /* ---- Keys ---------------------------------------------------------------- */
 const K={MYNAME:"ci_myname"};
@@ -211,64 +201,23 @@ export default function App(){
   ,[portfolios,livePrices]);
 
   async function doSubmit(name,stocks){
-    // Any Telegram name is valid; submitting registers it in `users` automatically.
-    const gs=await loadGameSettings();
-    if(gs&&!gs.submissionsOpen) return{error:"As submissões estão fechadas de momento."};
-
+    // All validation + the authoritative price snapshot happen server-side
+    // (/api/portfolio/submit) using the service_role key — the browser never
+    // writes to the database directly, so initial_price can't be forged.
     const trimmedName=name.trim();
     if(!trimmedName) return{error:"Escreve o teu nome."};
-    const { data: existingUser, error: lookupError }=await supabase
-      .from("users")
-      .select("id, has_submitted_portfolio, telegram_name")
-      .ilike("telegram_name", trimmedName)
-      .maybeSingle();
-    if(lookupError) return{error:"Não foi possível verificar o nome. Tenta novamente."};
-    if(existingUser?.has_submitted_portfolio)
-      return{error:"Já existe um portefólio com esse nome. Cada membro só pode participar uma vez."};
-
-    const { data: userRow, error: userError }=await supabase
-      .from("users")
-      .insert({ telegram_name: trimmedName, has_submitted_portfolio: false })
-      .select("id")
-      .single();
-    if(userError||!userRow) return{error:"Não foi possível registar o utilizador. Tenta novamente."};
-
-    const { data: portfolioRow, error: portfolioError }=await supabase
-      .from("portfolios")
-      .insert({ user_id: userRow.id, locked: true, initial_value: STARTING_VALUE })
-      .select("id")
-      .single();
-    if(portfolioError||!portfolioRow){
-      return{error:"Não foi possível criar o portefólio. Tenta novamente."};
+    let res,data;
+    try{
+      res=await fetch("/api/portfolio/submit",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ name:trimmedName, stocks:stocks.map(s=>({ticker:s.ticker,name:s.name})) }),
+      });
+      data=await res.json();
+    }catch{
+      return{error:"Falha de ligação. Tenta novamente."};
     }
-
-    const tickers=stocks.map(s=>s.ticker);
-    const prices=await fetchStockPrices(tickers);
-    for(const s of stocks){
-      if(typeof prices[s.ticker]!=="number"){
-        return{error:`Não foi possível obter o preço de ${s.ticker}. Verifica o ticker ou tenta mais tarde.`};
-      }
-    }
-
-    const stockRows=stocks.map(s=>{
-      const price=prices[s.ticker];
-      return{
-        portfolio_id: portfolioRow.id,
-        ticker: s.ticker,
-        company_name: s.name,
-        initial_price: price,
-        current_price: price,
-        initial_weight: 12.5,
-      };
-    });
-    const { error: stocksError }=await supabase.from("portfolio_stocks").insert(stockRows);
-    if(stocksError) return{error:"Não foi possível guardar as ações. Tenta novamente."};
-
-    const { error: updateError }=await supabase
-      .from("users")
-      .update({ has_submitted_portfolio: true })
-      .eq("id", userRow.id);
-    if(updateError) return{error:"Portefólio guardado, mas falhou a confirmação. Contacta o administrador."};
+    if(!res.ok||!data?.ok) return{error:data?.error||"Não foi possível submeter o portefólio."};
 
     sset(K.MYNAME, trimmedName);
     setMyName(trimmedName);
@@ -944,7 +893,19 @@ function Detail({pf,livePrices,nav}){
 function Admin({settings,setSettings,portfolios,ranking,livePrices,reload,showToast}){
   const [authed,setAuthed]=useState(false);
   const [pw,setPw]=useState("");
-  const tryAuth=()=>pw===DEFAULT_ADMIN_PW?setAuthed(true):showToast("Palavra-passe incorreta.","error");
+  const [checking,setChecking]=useState(false);
+  // The password is validated server-side; on success we keep it in memory only
+  // to authorize subsequent admin actions (it is sent with each request).
+  const tryAuth=async()=>{
+    if(checking||!pw) return;
+    setChecking(true);
+    try{
+      const res=await fetch("/api/admin/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
+      if(res.ok) setAuthed(true);
+      else showToast("Palavra-passe incorreta.","error");
+    }catch{ showToast("Falha de ligação.","error"); }
+    finally{ setChecking(false); }
+  };
 
   if(!authed) return(
     <div style={{maxWidth:400,margin:"80px auto",padding:"0 20px"}}>
@@ -957,31 +918,36 @@ function Admin({settings,setSettings,portfolios,ranking,livePrices,reload,showTo
           placeholder="Palavra-passe"
           style={{width:"100%",background:"#0d1520",border:"1px solid #1f2937",borderRadius:10,
             padding:"12px 16px",fontSize:15,color:"#e2e8f0",outline:"none",boxSizing:"border-box",marginBottom:12}}/>
-        <button onClick={tryAuth}
+        <button onClick={tryAuth} disabled={checking}
           style={{width:"100%",background:"#22c55e",color:"#000",border:"none",borderRadius:10,
-            padding:"13px",fontSize:15,fontWeight:700,cursor:"pointer"}}>Entrar</button>
+            padding:"13px",fontSize:15,fontWeight:700,cursor:checking?"not-allowed":"pointer",opacity:checking?0.6:1}}>
+          {checking?"A verificar…":"Entrar"}</button>
       </div>
     </div>
   );
-  return <AdminPanel {...{settings,setSettings,portfolios,ranking,livePrices,reload,showToast}}/>;
+  return <AdminPanel {...{settings,setSettings,portfolios,ranking,livePrices,reload,showToast,pw}}/>;
 }
 
-function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,showToast}){
+function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,showToast,pw}){
   const [tab,setTab]=useState("portfolios");
 
   async function saveSt(next){
     setSettings(next);
-    const ok=await saveGameSettings(next);
-    showToast(ok?"Definições guardadas.":"Falha ao guardar — falta criar a tabela game_settings na Supabase.",ok?"ok":"error");
+    try{
+      const res=await fetch("/api/admin/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,settings:next})});
+      const data=await res.json();
+      showToast(res.ok&&data?.ok?"Definições guardadas.":(data?.error||"Falha ao guardar."),res.ok&&data?.ok?"ok":"error");
+    }catch{ showToast("Falha de ligação.","error"); }
   }
   async function delPf(p){
     if(!confirm(`Eliminar o portefólio de "${p.name}"?`)) return;
-    const { error:e1 }=await supabase.from("portfolio_stocks").delete().eq("portfolio_id",p.id);
-    const { error:e2 }=await supabase.from("portfolios").delete().eq("id",p.id);
-    if(e1||e2){ showToast("Não foi possível eliminar o portefólio.","error"); return; }
-    if(p.userId) await supabase.from("users").update({has_submitted_portfolio:false}).eq("id",p.userId);
-    await reload();
-    showToast("Portefólio eliminado.");
+    try{
+      const res=await fetch("/api/admin/delete-portfolio",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,portfolioId:p.id,userId:p.userId})});
+      const data=await res.json();
+      if(!res.ok||!data?.ok){ showToast(data?.error||"Não foi possível eliminar o portefólio.","error"); return; }
+      await reload();
+      showToast("Portefólio eliminado.");
+    }catch{ showToast("Falha de ligação.","error"); }
   }
 
   function expSummary(){
