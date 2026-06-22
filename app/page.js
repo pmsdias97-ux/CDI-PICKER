@@ -12,7 +12,7 @@ const TICKER_RE = /^[A-Z0-9.\-]{1,12}$/;
 const PORTFOLIO_SIZE = 8;
 const STARTING_VALUE = 10000;
 const PER_STOCK = STARTING_VALUE / PORTFOLIO_SIZE;
-const DEFAULT_ADMIN_PW = "admin123";
+const DEFAULT_ADMIN_PW = "CDI_2000!26";
 
 /* ---- Storage helpers -----------------------------------------------------
    Per-visitor identity only (the Telegram name), in browser localStorage so it
