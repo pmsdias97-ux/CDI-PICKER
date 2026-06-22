@@ -44,6 +44,7 @@ function mapPortfolioFromSupabase(row){
     submittedAt:row.created_at||null,
     locked:row.locked,
     initialValue:row.initial_value,
+    spyInitialPrice:row.spy_initial_price!=null?Number(row.spy_initial_price):null,
     stocks:(row.portfolio_stocks||[]).map(s=>({
       ticker:s.ticker,
       companyName:s.company_name,
@@ -132,7 +133,8 @@ export default function App(){
   const showToast=useCallback((msg,kind="ok")=>{ setToast({msg,kind}); setTimeout(()=>setToast(null),3500); },[]);
 
   const refreshLivePrices=useCallback(async(pfs)=>{
-    const tickers=[...new Set((pfs||[]).flatMap(p=>p.stocks.map(s=>s.ticker)))];
+    // Inclui "SPY" para o benchmark (preço ao vivo do S&P 500 agora).
+    const tickers=[...new Set([...(pfs||[]).flatMap(p=>p.stocks.map(s=>s.ticker)),"SPY"])];
     if(!tickers.length){ setLivePrices({}); return; }
     setPricesLoading(true);
     try{
@@ -159,6 +161,7 @@ export default function App(){
         created_at,
         locked,
         initial_value,
+        spy_initial_price,
         users (
           telegram_name,
           has_submitted_portfolio
@@ -223,18 +226,29 @@ export default function App(){
     portfolios.map(p=>({...p,...pfStats(p,livePrices)})).sort((a,b)=>b.total-a.total)
   ,[portfolios,livePrices]);
 
-  // S&P 500 benchmark: last close + return since a given submission date.
+  // S&P 500 benchmark — alinhado no tempo: "se tivesses metido no SPY em vez das
+  // 8 ações, no mesmo período". Usa o preço do SPY AGORA (ao vivo) vs o preço do
+  // SPY NO MOMENTO da submissão (guardado em spy_initial_price). Para portefólios
+  // antigos sem esse valor, recorre ao histórico (fecho na data de submissão).
   const spy=useMemo(()=>{
-    if(!spyHist||!spyHist.length) return null;
-    const last=spyHist[spyHist.length-1].close;
+    const now=(livePrices&&typeof livePrices.SPY==="number")?livePrices.SPY:null;
+    if(now==null) return null;
     const closeOnOrBefore=iso=>{
+      if(!spyHist||!spyHist.length) return null;
       const d=(iso||"").slice(0,10);
       let v=null;
       for(const p of spyHist){ if(p.date<=d) v=p.close; else break; }
       return v??spyHist[0].close;
     };
-    return { last, returnSince:iso=>last/closeOnOrBefore(iso)-1 };
-  },[spyHist]);
+    const returnFor=pf=>{
+      const base=(pf&&typeof pf.spyInitialPrice==="number"&&pf.spyInitialPrice>0)
+        ? pf.spyInitialPrice
+        : closeOnOrBefore(pf?.submittedAt);
+      if(base==null||!base) return null;
+      return now/base-1;
+    };
+    return { now, returnFor };
+  },[livePrices,spyHist]);
 
   async function doSubmit(name,stocks){
     // All validation + the authoritative price snapshot happen server-side
@@ -806,7 +820,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,onSelect}){
       <h1 style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px",marginBottom:4}}>Ranking Geral</h1>
       <p style={{color:"#4b5563",fontSize:14,marginBottom:28}}>
         Ordenado pela rentabilidade total em tempo real (preço atual vs. preço inicial). {ranking.length} {ranking.length===1?"participante":"participantes"}.
-        {spy?" · “vs S&P” = quanto bates (ou não) o S&P 500 no mesmo período.":""}
+        {spy?" · Alpha = a tua rentabilidade menos a do S&P 500 no mesmo período (positivo = bates o mercado).":""}
         {pricesLoading?" · A atualizar preços de mercado…":""}
       </p>
 
@@ -817,20 +831,23 @@ function Ranking({ranking,myNorm,pricesLoading,spy,onSelect}){
       ):(
         <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
           {/* Header */}
-          <div style={{display:"grid",gridTemplateColumns:"48px 1fr 110px 80px 80px 110px",
+          <div style={{display:"grid",gridTemplateColumns:"40px 1fr 100px 100px 64px 64px 110px",
             padding:"10px 20px",borderBottom:"1px solid #1f2937",
             fontSize:11,color:"#4b5563",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>
             <span>#</span><span>Membro</span>
             <span style={{textAlign:"right"}}>Rentab.</span>
+            <span style={{textAlign:"right"}}>Alpha</span>
             <span style={{textAlign:"center"}}>Pos.</span>
             <span style={{textAlign:"center"}}>Neg.</span>
             <span style={{textAlign:"right"}}>Submissão</span>
           </div>
           {ranking.map((p,i)=>{
             const me=p.normName===myNorm;
+            const spyRet=spy?spy.returnFor(p):null;
+            const alpha=spyRet==null?null:p.total-spyRet;
             return(
               <div key={p.key} onClick={()=>onSelect(p.key)}
-                style={{display:"grid",gridTemplateColumns:"48px 1fr 110px 80px 80px 110px",
+                style={{display:"grid",gridTemplateColumns:"40px 1fr 100px 100px 64px 64px 110px",
                   padding:"14px 20px",borderBottom:"1px solid #0f172a",cursor:"pointer",
                   background:me?"rgba(34,197,94,0.04)":"transparent",
                   transition:"background 0.15s"}}
@@ -842,16 +859,12 @@ function Ranking({ranking,myNorm,pricesLoading,spy,onSelect}){
                   {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",
                     borderRadius:999,padding:"2px 8px",fontWeight:700}}>Tu</span>}
                 </span>
-                <span style={{textAlign:"right",display:"flex",flexDirection:"column",alignItems:"flex-end",gap:1}}>
-                  <span style={{fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}>{pct(p.total)}</span>
-                  {spy&&(()=>{ const a=p.total-spy.returnSince(p.submittedAt); return(
-                    <span style={{fontSize:10,fontWeight:600,fontFamily:"monospace",color:a>=0?"#4ade80":"#f87171",opacity:0.85}}>
-                      {a>=0?"▲":"▼"} S&P {pct(Math.abs(a)).replace(/[+-]/,"")}
-                    </span>); })()}
-                </span>
-                <span style={{textAlign:"center",color:"#4ade80",fontWeight:600,fontSize:14}}>{p.pos}</span>
-                <span style={{textAlign:"center",color:"#f87171",fontWeight:600,fontSize:14}}>{p.neg}</span>
-                <span style={{textAlign:"right",fontSize:12,color:"#4b5563"}}>{dt(p.submittedAt)}</span>
+                <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}>{pct(p.total)}</span>
+                <span style={{textAlign:"right",alignSelf:"center",fontFamily:"monospace",fontSize:13,fontWeight:600,
+                  color:alpha==null?"#4b5563":alpha>=0?"#4ade80":"#f87171"}}>{alpha==null?"—":`${alpha>=0?"+":""}${(alpha*100).toFixed(2)}%`}</span>
+                <span style={{textAlign:"center",alignSelf:"center",color:"#4ade80",fontWeight:600,fontSize:14}}>{p.pos}</span>
+                <span style={{textAlign:"center",alignSelf:"center",color:"#f87171",fontWeight:600,fontSize:14}}>{p.neg}</span>
+                <span style={{textAlign:"right",alignSelf:"center",fontSize:12,color:"#4b5563"}}>{dt(p.submittedAt)}</span>
               </div>
             );
           })}
@@ -946,7 +959,7 @@ function Detail({pf,livePrices,spy,nav}){
     const cur=curPrice(s.ticker,s.initialPrice,livePrices);
     return{...s,cur,ret:stockRet(s,livePrices)};
   });
-  const spyRet=spy?spy.returnSince(pf.submittedAt):null;
+  const spyRet=spy?spy.returnFor(pf):null;
   const alpha=spyRet!=null?st.total-spyRet:null;
   // Destaques (#6) — ações ordenadas por performance desde a submissão.
   const bySorted=[...rows].sort((a,b)=>b.ret-a.ret);
@@ -972,12 +985,8 @@ function Detail({pf,livePrices,spy,nav}){
           </div>
         </div>
         <div style={{display:"flex",flexWrap:"wrap",gap:20,marginTop:16,fontSize:13,color:"#6b7280"}}>
-          <span>Valor inicial: <strong style={{color:"#e2e8f0"}}>{money(pf.initialValue||STARTING_VALUE)}</strong></span>
           <span style={{color:"#4ade80"}}>▲ {st.pos} positivas</span>
           <span style={{color:"#f87171"}}>▼ {st.neg} negativas</span>
-          {spyRet!=null&&(
-            <span>S&amp;P 500: <strong style={{color:spyRet>=0?"#4ade80":"#f87171"}}>{pct(spyRet)}</strong></span>
-          )}
           {alpha!=null&&(
             <span title="A tua rentabilidade menos a do S&P 500 no mesmo período">
               Alpha: <strong style={{color:alpha>=0?"#4ade80":"#f87171"}}>{alpha>=0?"+":""}{(alpha*100).toFixed(2)}%</strong>

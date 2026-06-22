@@ -77,8 +77,14 @@ export async function POST(request) {
     userId = userRow.id;
   }
 
+  // S&P 500 price at submission, to benchmark "what if you'd bought SPY instead"
+  // over the exact same period. Best-effort: null if unavailable.
+  const spyAtSubmission = await fetchQuote("SPY");
+
   const { data: pfRow, error: pfErr } = await supabase
-    .from("portfolios").insert({ user_id: userId, locked: true, initial_value: STARTING_VALUE }).select("id").single();
+    .from("portfolios")
+    .insert({ user_id: userId, locked: true, initial_value: STARTING_VALUE, spy_initial_price: typeof spyAtSubmission === "number" ? spyAtSubmission : null })
+    .select("id").single();
   if (pfErr || !pfRow) return Response.json({ error: "Não foi possível criar o portefólio." }, { status: 500 });
 
   const stockRows = tickers.map((t) => ({
