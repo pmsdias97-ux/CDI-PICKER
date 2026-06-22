@@ -60,7 +60,7 @@ function pfStats(p,livePrices){
   return{ total:rets.reduce((a,b)=>a+b,0)/rets.length, pos:rets.filter(r=>r>0).length, neg:rets.filter(r=>r<0).length };
 }
 function pct(x,dp=2){ const v=(x*100).toFixed(dp); return `${x>=0?"+":""}${v}%`; }
-function money(x){ return new Intl.NumberFormat("pt-PT",{style:"currency",currency:"EUR",minimumFractionDigits:2}).format(x); }
+function money(x){ return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2}).format(x); }
 function dt(iso){
   if(!iso) return "—";
   try{ return new Date(iso).toLocaleString("pt-PT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); }
@@ -302,7 +302,10 @@ export default function App(){
   const nav=(p)=>setPage(p);
 
   if(loading) return(
-    <div style={{minHeight:"100vh",background:"#080d14",display:"flex",alignItems:"center",justifyContent:"center",color:"#4b5563",fontFamily:"system-ui,sans-serif"}}>
+    <div style={{minHeight:"100vh",
+      background:"radial-gradient(1200px 600px at 50% -10%, rgba(37,99,235,0.18) 0%, transparent 60%), linear-gradient(180deg,#0b1730 0%,#0a1226 55%,#070d1c 100%)",
+      backgroundAttachment:"fixed",
+      display:"flex",alignItems:"center",justifyContent:"center",color:"#4b5563",fontFamily:"system-ui,sans-serif"}}>
       A carregar…
     </div>
   );
@@ -321,7 +324,10 @@ export default function App(){
 /* ---- Shell --------------------------------------------------------------- */
 function Shell({children,page,nav,submitted,toast}){
   return(
-    <div style={{minHeight:"100vh",background:"#080d14",color:"#e2e8f0",fontFamily:"system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",overflowX:"hidden"}}>
+    <div style={{minHeight:"100vh",
+      background:"radial-gradient(1200px 600px at 50% -10%, rgba(37,99,235,0.18) 0%, transparent 60%), linear-gradient(180deg,#0b1730 0%,#0a1226 55%,#070d1c 100%)",
+      backgroundAttachment:"fixed",
+      color:"#e2e8f0",fontFamily:"system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",overflowX:"hidden"}}>
       <Nav page={page} nav={nav} submitted={submitted} />
       <main>{children}</main>
       {toast&&(
@@ -373,16 +379,18 @@ function Home({nav,submitted,count,settings}){
     <div>
       {/* Hero */}
       <section style={{textAlign:"center",padding:"100px 24px 80px",maxWidth:780,margin:"0 auto"}}>
-        <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(34,197,94,0.1)",
-          border:"1px solid rgba(34,197,94,0.25)",borderRadius:999,padding:"6px 16px",fontSize:13,
-          color:"#4ade80",marginBottom:32}}>
-          <span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
-          Jogo ativo — Submissões {settings?.submissionsOpen?"abertas":"fechadas"}
-        </div>
-        <h1 style={{fontSize:"clamp(40px,6vw,72px)",fontWeight:800,lineHeight:1.1,letterSpacing:"-2px",margin:"0 0 20px"}}>
+        <img src="/logo.png" alt="Conversas de Investidores"
+          style={{display:"block",width:"clamp(120px,18vw,180px)",height:"auto",margin:"0 auto 32px"}}/>
+        <h1 style={{fontSize:"clamp(40px,6vw,72px)",fontWeight:800,lineHeight:1.1,letterSpacing:"-2px",margin:"0 0 24px"}}>
           Conversas de{" "}
           <span style={{color:"#22c55e"}}>Investidores</span>
         </h1>
+        <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(34,197,94,0.1)",
+          border:"1px solid rgba(34,197,94,0.25)",borderRadius:999,padding:"6px 16px",fontSize:13,
+          color:"#4ade80",marginBottom:24}}>
+          <span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
+          Jogo ativo — Submissões {settings?.submissionsOpen?"abertas":"fechadas"}
+        </div>
         <p style={{fontSize:18,color:"#6b7280",lineHeight:1.6,maxWidth:560,margin:"0 auto 40px"}}>
           O jogo de portefólios da nossa comunidade. Escolhe as tuas 8 ações,
           submete o teu portefólio e compete com os outros membros pelo melhor retorno.
@@ -430,7 +438,7 @@ function Home({nav,submitted,count,settings}){
             {[
               "Cada participante cria exatamente 1 portefólio com 8 ações",
               "Cada ação representa 12,5% do portefólio (peso igual)",
-              "O portefólio começa com um valor fictício de 10.000€",
+              "O portefólio começa com um valor fictício de $10,000",
               "O preço de cada ação é registado no momento da submissão",
               "Não podes ver os outros portefólios antes de submeter o teu",
               "Depois de submetido, o portefólio fica bloqueado",
