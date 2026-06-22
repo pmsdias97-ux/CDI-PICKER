@@ -3,6 +3,7 @@ import { fetchQuote } from "../../../lib/marketData";
 import { isValidTicker, rateLimited } from "../../../lib/apiGuards";
 
 const PORTFOLIO_SIZE = 8;
+const MAX_SHORTS = 2;
 const STARTING_VALUE = 10000;
 
 export async function POST(request) {
@@ -38,6 +39,13 @@ export async function POST(request) {
   const nameByTicker = new Map(
     stocks.map((s) => [String(s?.ticker || "").trim().toUpperCase(), String(s?.name || "").trim().slice(0, 120)])
   );
+  const sideByTicker = new Map(
+    stocks.map((s) => [String(s?.ticker || "").trim().toUpperCase(), s?.side === "short" ? "short" : "long"])
+  );
+  const shortCount = [...sideByTicker.values()].filter((v) => v === "short").length;
+  if (shortCount > MAX_SHORTS) {
+    return Response.json({ error: `Máximo de ${MAX_SHORTS} posições short.` }, { status: 400 });
+  }
 
   let supabase;
   try { supabase = getSupabaseAdmin(); }
@@ -94,6 +102,7 @@ export async function POST(request) {
     initial_price: prices[t],
     current_price: prices[t],
     initial_weight: 12.5,
+    side: sideByTicker.get(t) || "long",
   }));
   const { error: stocksErr } = await supabase.from("portfolio_stocks").insert(stockRows);
   if (stocksErr) {

@@ -10,6 +10,7 @@ import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } fr
 
 const TICKER_RE = /^[A-Z0-9.\-]{1,12}$/;
 const PORTFOLIO_SIZE = 8;
+const MAX_SHORTS = 2;
 const STARTING_VALUE = 10000;
 const PER_STOCK = STARTING_VALUE / PORTFOLIO_SIZE;
 
@@ -59,7 +60,9 @@ function curPrice(ticker,initPrice,livePrices){
 }
 function stockRet(s,livePrices){
   const c=curPrice(s.ticker,s.initialPrice,livePrices);
-  return s.initialPrice?c/s.initialPrice-1:0;
+  const base=s.initialPrice?c/s.initialPrice-1:0;
+  // Short: rentabilidade é o espelho da variação da ação (cai 10% -> +10%).
+  return s.side==="short"?-base:base;
 }
 function mapPortfolioFromSupabase(row){
   const user=row.users;
@@ -78,6 +81,7 @@ function mapPortfolioFromSupabase(row){
       ticker:s.ticker,
       companyName:s.company_name,
       exchange:"",
+      side:s.side==="short"?"short":"long",
       initialPrice:Number(s.initial_price),
       initialWeight:Number(s.initial_weight)/100,
       allocated:PER_STOCK,
@@ -119,6 +123,17 @@ function Monogram({ticker,size}){
       background:`linear-gradient(135deg,hsl(${h},55%,42%),hsl(${(h+40)%360},55%,32%))`}}>
       {label}
     </div>
+  );
+}
+function SideBadge({side}){
+  const short=side==="short";
+  return(
+    <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.5px",borderRadius:5,padding:"2px 6px",
+      color:short?"#fbbf24":"#4ade80",
+      background:short?"rgba(245,158,11,0.15)":"rgba(34,197,94,0.13)",
+      border:`1px solid ${short?"rgba(245,158,11,0.35)":"rgba(34,197,94,0.3)"}`}}>
+      {short?"SHORT":"LONG"}
+    </span>
   );
 }
 function StockLogo({ticker,size=28}){
@@ -214,7 +229,8 @@ export default function App(){
           company_name,
           initial_price,
           current_price,
-          initial_weight
+          initial_weight,
+          side
         )
       `);
     if(pfError){
@@ -304,7 +320,7 @@ export default function App(){
       res=await fetch("/api/portfolio/submit",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({ name:trimmedName, stocks:stocks.map(s=>({ticker:s.ticker,name:s.name})) }),
+        body:JSON.stringify({ name:trimmedName, stocks:stocks.map(s=>({ticker:s.ticker,name:s.name,side:s.side==="short"?"short":"long"})) }),
       });
       data=await res.json();
     }catch{
@@ -575,6 +591,7 @@ function Home({nav,submitted,count,settings,ranking,livePrices}){
             {[
               "Cada participante cria exatamente 1 portefólio com 8 ações",
               "Cada ação representa 12,5% do portefólio (peso igual)",
+              "Podes abrir até 2 posições short (aposta na descida: a ação cai, ganhas)",
               "O portefólio começa com um valor fictício de $10,000",
               "O preço de cada ação é registado no momento da submissão",
               "Não podes ver os outros portefólios antes de submeter o teu",
@@ -616,6 +633,8 @@ function Create({settings,doSubmit,onDone,showToast}){
   const [picked,setPicked]=useState([]);
   const [submitting,setSubmitting]=useState(false);
   const [addingManual,setAddingManual]=useState(false);
+  const [shortMode,setShortMode]=useState(false); // próxima posição: false=long, true=short
+  const shortCount=picked.filter(p=>p.side==="short").length;
 
   useEffect(()=>{
     const q=query.trim();
@@ -639,12 +658,26 @@ function Create({settings,doSubmit,onDone,showToast}){
 
   const noResults=query.trim().length>=2&&!searching&&results.length===0;
   const has=t=>picked.some(p=>p.ticker===t);
-  const add=s=>{ if(picked.length>=PORTFOLIO_SIZE||has(s.ticker)) return; setPicked(p=>[...p,s]); setQuery(""); };
+  const add=s=>{
+    if(picked.length>=PORTFOLIO_SIZE||has(s.ticker)) return;
+    const side=shortMode?"short":"long";
+    if(side==="short"&&shortCount>=MAX_SHORTS){
+      showToast(`Máximo de ${MAX_SHORTS} posições short.`,"error");
+      return;
+    }
+    setPicked(p=>[...p,{...s,side}]);
+    setQuery("");
+    setShortMode(false); // volta automaticamente a long
+  };
   const addManual=async()=>{
     if(addingManual||picked.length>=PORTFOLIO_SIZE) return;
     const ticker=query.trim().toUpperCase();
     if(!TICKER_RE.test(ticker)){
       showToast("Ticker inválido. Usa letras, números, ponto ou hífen (ex: AAPL, MC.PA).","error");
+      return;
+    }
+    if(shortMode&&shortCount>=MAX_SHORTS){
+      showToast(`Máximo de ${MAX_SHORTS} posições short.`,"error");
       return;
     }
     if(has(ticker)){ setQuery(""); return; }
@@ -752,7 +785,26 @@ function Create({settings,doSubmit,onDone,showToast}){
           {/* Pesquisa — escondida quando já há 8 ações */}
           {picked.length<PORTFOLIO_SIZE&&(
           <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,marginBottom:16}}>
-            <h3 style={{fontSize:15,fontWeight:600,marginBottom:14}}>Pesquisar ação</h3>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+              <h3 style={{fontSize:15,fontWeight:600,margin:0}}>Pesquisar ação</h3>
+              <div style={{display:"flex",gap:6,background:"rgba(0,0,0,0.25)",borderRadius:10,padding:3}}>
+                <button onClick={()=>setShortMode(false)}
+                  style={{border:"none",cursor:"pointer",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:700,
+                    background:!shortMode?"rgba(34,197,94,0.18)":"transparent",color:!shortMode?"#4ade80":"#6b7280"}}>
+                  Long
+                </button>
+                <button onClick={()=>{ if(shortCount<MAX_SHORTS) setShortMode(true); else showToast(`Máximo de ${MAX_SHORTS} posições short.`,"error"); }}
+                  style={{border:"none",cursor:"pointer",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:700,
+                    background:shortMode?"rgba(245,158,11,0.2)":"transparent",color:shortMode?"#fbbf24":"#6b7280"}}>
+                  Short {shortCount}/{MAX_SHORTS}
+                </button>
+              </div>
+            </div>
+            {shortMode&&(
+              <p style={{margin:"0 0 12px",fontSize:12,color:"#fbbf24"}}>
+                📉 Modo SHORT — a próxima ação que adicionares fica short (aposta na descida). Depois volta a Long.
+              </p>
+            )}
             <div style={{display:"flex",gap:8}}>
               <input value={query} onChange={e=>setQuery(e.target.value)}
                 onKeyDown={e=>{
@@ -763,15 +815,15 @@ function Create({settings,doSubmit,onDone,showToast}){
                 }}
                 placeholder="Pesquisa por ticker (ex: AAPL) ou nome da empresa"
                 disabled={picked.length>=PORTFOLIO_SIZE}
-                style={{flex:1,background:"rgba(0,0,0,0.18)",border:`1px solid ${query.length>=1?"#22c55e":"#1f2937"}`,
+                style={{flex:1,background:"rgba(0,0,0,0.18)",border:`1px solid ${shortMode?"#f59e0b":query.length>=1?"#22c55e":"#1f2937"}`,
                   borderRadius:10,padding:"12px 16px",fontSize:14,color:"#e2e8f0",outline:"none",
                   boxSizing:"border-box",transition:"border-color 0.2s",
                   opacity:picked.length>=PORTFOLIO_SIZE?0.5:1}}/>
               <button onClick={addManual} disabled={picked.length>=PORTFOLIO_SIZE||!query.trim()||addingManual}
-                style={{background:"#1a2a1a",border:"1px solid rgba(34,197,94,0.3)",borderRadius:10,
-                  padding:"0 16px",fontSize:13,color:"#4ade80",cursor:"pointer",fontWeight:600,whiteSpace:"nowrap",
+                style={{background:shortMode?"#2a2010":"#1a2a1a",border:`1px solid ${shortMode?"rgba(245,158,11,0.4)":"rgba(34,197,94,0.3)"}`,borderRadius:10,
+                  padding:"0 16px",fontSize:13,color:shortMode?"#fbbf24":"#4ade80",cursor:"pointer",fontWeight:600,whiteSpace:"nowrap",
                   opacity:picked.length>=PORTFOLIO_SIZE||!query.trim()||addingManual?0.5:1}}>
-                {addingManual?"A verificar…":"Adicionar"}
+                {addingManual?"A verificar…":shortMode?"Adicionar short":"Adicionar"}
               </button>
             </div>
 
@@ -828,6 +880,7 @@ function Create({settings,doSubmit,onDone,showToast}){
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
                       <StockLogo ticker={s.ticker} size={32}/>
                       <span style={{fontWeight:800,fontSize:13,minWidth:56,color:"#e2e8f0"}}>{s.ticker}</span>
+                      <SideBadge side={s.side}/>
                       <div>
                         <div style={{fontSize:13,color:"#9ca3af"}}>{s.name}</div>
                         <div style={{fontSize:11,color:"#374151"}}>{s.exchange||"—"} · preço obtido na submissão</div>
@@ -1216,8 +1269,9 @@ function Detail({pf,rank,livePrices,spy,nav}){
             <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
               <StockLogo ticker={s.ticker} size={32}/>
               <div style={{minWidth:0}}>
-                <div>
-                  <span style={{fontWeight:800,fontSize:14,color:"#e2e8f0",marginRight:8}}>{s.ticker}</span>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <span style={{fontWeight:800,fontSize:14,color:"#e2e8f0"}}>{s.ticker}</span>
+                  <SideBadge side={s.side}/>
                   <span style={{fontSize:13,color:"#6b7280"}}>{s.companyName}</span>
                 </div>
                 <div style={{fontSize:11,color:"#374151",marginTop:2}}>{s.exchange} · 12,5%</div>
@@ -1269,7 +1323,7 @@ function TopList({items}){
           <span style={{fontSize:12,fontWeight:700,color:"#4b5563",minWidth:16}}>{i+1}</span>
           <StockLogo ticker={s.ticker} size={26}/>
           <div style={{minWidth:0,flex:1}}>
-            <div style={{fontSize:13,fontWeight:800,color:"#e2e8f0"}}>{s.ticker}</div>
+            <div style={{fontSize:13,fontWeight:800,color:"#e2e8f0",display:"flex",alignItems:"center",gap:6}}>{s.ticker}{s.side==="short"&&<SideBadge side="short"/>}</div>
             <div style={{fontSize:11,color:"#6b7280",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.companyName}</div>
           </div>
           <span style={{fontFamily:"monospace",fontSize:14,fontWeight:700,color:s.ret>=0?"#4ade80":"#f87171"}}>{pct(s.ret)}</span>

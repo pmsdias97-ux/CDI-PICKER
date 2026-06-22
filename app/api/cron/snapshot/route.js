@@ -17,7 +17,7 @@ export async function GET(request) {
   // Only portfolios whose user has submitted.
   const { data: rows, error } = await supabase
     .from("portfolios")
-    .select("id, users!inner(has_submitted_portfolio), portfolio_stocks(ticker, initial_price)");
+    .select("id, users!inner(has_submitted_portfolio), portfolio_stocks(ticker, initial_price, side)");
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
   const portfolios = (rows || []).filter((r) => r.users?.has_submitted_portfolio);
@@ -39,7 +39,8 @@ export async function GET(request) {
     const rets = stocks.map((s) => {
       const init = Number(s.initial_price);
       const cur = typeof prices[s.ticker] === "number" ? prices[s.ticker] : init;
-      return init ? cur / init - 1 : 0;
+      const base = init ? cur / init - 1 : 0;
+      return s.side === "short" ? -base : base; // short = espelho
     });
     const total = rets.reduce((a, b) => a + b, 0) / rets.length;
     snapshots.push({ portfolio_id: pf.id, date, total_return: total });
