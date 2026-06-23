@@ -228,17 +228,18 @@ function CompetitionTimer({settings}){
   if(isNaN(target)) return null;
   const diff=target-now;
   if(diff<=0) return null;
-  const d=Math.floor(diff/86400000), h=Math.floor((diff%86400000)/3600000);
-  const cd=d>=7?`${d} dias`:d>=1?`${d}d ${h}h`:`${h}h`;
+  const d=Math.ceil(diff/86400000);
+  const cd=d===1?"1 dia":`${d} dias`;
   const accent=started?"#fbbf24":"#fcd34d";
-  const label=started?`🏆 Vencedor a ${fmtDateShort(settings.gameEndDate)}`:"⏳ Submissões fecham";
+  const label=started?`🏆 Vencedor a ${fmtDateShort(settings.gameEndDate)}`:"";
   return(
     <div style={{display:"flex",justifyContent:"center"}}>
+      <style>{`@keyframes cdtPulse{0%,100%{transform:scale(1);opacity:0.92}50%{transform:scale(1.04);opacity:1}}`}</style>
       <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:10,flexWrap:"wrap",
-        maxWidth:"100%",padding:"8px 16px",borderRadius:999,textAlign:"center",
+        maxWidth:"100%",padding:"8px 16px",borderRadius:999,textAlign:"center",animation:"cdtPulse 2.4s ease-in-out infinite",
         background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",
         border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 6px 22px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"}}>
-        <span style={{fontSize:13,color:"#cbd5e1",fontWeight:600,whiteSpace:"nowrap"}}>{label}</span>
+        {label&&<span style={{fontSize:13,color:"#cbd5e1",fontWeight:600,whiteSpace:"nowrap"}}>{label}</span>}
         <span style={{fontSize:13,fontWeight:800,fontFamily:"monospace",color:accent,whiteSpace:"nowrap"}}>faltam {cd}</span>
       </div>
     </div>
@@ -1350,7 +1351,6 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
         {spy?" · Alpha = a tua rentabilidade menos a do S&P 500 no mesmo período (positivo = bates o mercado).":""}
         {pricesLoading?" · A atualizar preços de mercado…":""}
       </p>
-      <div style={{marginBottom:24}}><CompetitionTimer settings={settings}/></div>
 
       {ranking.length===0?(
         <div style={{textAlign:"center",padding:80,color:"#4b5563"}}>
@@ -1365,7 +1365,13 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
             </div>
           )}
           <div>
-            {sectionTitle("Oficial",preLaunch?"em espera · começa 1 de julho":"a decorrer",preLaunch?"#fbbf24":"#4ade80")}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",margin:"0 0 12px"}}>
+              <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+                <h2 style={{fontSize:18,fontWeight:800,letterSpacing:"-0.3px",margin:0}}>Oficial</h2>
+                <span style={{fontSize:12,fontWeight:700,color:preLaunch?"#fbbf24":"#4ade80"}}>{preLaunch?"em espera · começa 1 de julho":"a decorrer"}</span>
+              </div>
+              <CompetitionTimer settings={settings}/>
+            </div>
             {officials.length>0
               ? (preLaunch?pendingList([...officials].sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||"")))):tableFor(officials))
               : <div style={{background:"rgba(255,255,255,0.04)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:16,
