@@ -1587,7 +1587,7 @@ function DuelChart({a,b,curA,curB}){
   const zeroY=y(0);
   return(
     <div>
-      <div style={{display:"flex",gap:16,marginBottom:10,fontSize:12}}>
+      <div style={{display:"flex",gap:16,marginBottom:10,fontSize:12,justifyContent:"center"}}>
         <span style={{display:"flex",alignItems:"center",gap:6,color:"#cbd5e1"}}><span style={{width:10,height:3,borderRadius:2,background:COLA}}/>{a.name}</span>
         <span style={{display:"flex",alignItems:"center",gap:6,color:"#cbd5e1"}}><span style={{width:10,height:3,borderRadius:2,background:COLB}}/>{b.name}</span>
       </div>
@@ -1620,9 +1620,9 @@ function DuelMetric({label,a,b,fmt,better}){
 function DuelHoldings({title,tickers,color}){
   if(!tickers.length) return null;
   return(
-    <div style={{marginBottom:14}}>
+    <div style={{marginBottom:14,textAlign:"center"}}>
       <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>{title}</div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center"}}>
         {tickers.map(t=>(
           <span key={t} style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(0,0,0,0.18)",
             border:`1px solid ${color||"rgba(255,255,255,0.08)"}`,borderRadius:999,padding:"5px 10px 5px 6px",fontSize:12,fontWeight:700,color:"#e2e8f0"}}>
@@ -1630,6 +1630,32 @@ function DuelHoldings({title,tickers,color}){
           </span>
         ))}
       </div>
+    </div>
+  );
+}
+function PickCell({s,kind}){
+  const up=kind==="best";
+  const col=up?"#4ade80":"#f87171";
+  const bg=up?"rgba(34,197,94,0.10)":"rgba(239,68,68,0.10)";
+  const bd=up?"rgba(34,197,94,0.20)":"rgba(239,68,68,0.20)";
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:8,background:bg,border:`1px solid ${bd}`,borderRadius:9,padding:"6px 10px"}}>
+      <span style={{color:col,fontSize:11,fontWeight:800,width:12,textAlign:"center"}}>{up?"▲":"▼"}</span>
+      <StockLogo ticker={s.ticker} size={20}/>
+      <span style={{fontSize:12.5,fontWeight:800,color:"#e2e8f0"}}>{s.ticker}</span>
+      {s.side==="short"&&<SideBadge side="short"/>}
+      <span style={{flex:1}}/>
+      <span style={{fontFamily:"monospace",fontWeight:800,fontSize:13,color:col}}>{pct(s.ret)}</span>
+    </div>
+  );
+}
+function DuelPicksSide({rows}){
+  const best=rows.reduce((m,s)=>s.ret>m.ret?s:m,rows[0]);
+  const worst=rows.reduce((m,s)=>s.ret<m.ret?s:m,rows[0]);
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:14,textAlign:"left"}}>
+      <PickCell s={best} kind="best"/>
+      <PickCell s={worst} kind="worst"/>
     </div>
   );
 }
@@ -1641,6 +1667,8 @@ function Duel({a,b,livePrices,spy,nav}){
   );
   const GLASS={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
   const sa=pfStats(a,livePrices), sb=pfStats(b,livePrices);
+  const ra=a.stocks.map(s=>({...s,ret:stockRet(s,livePrices)}));
+  const rb=b.stocks.map(s=>({...s,ret:stockRet(s,livePrices)}));
   const alphaA=spy?a.total-spy.returnFor(a):null, alphaB=spy?b.total-spy.returnFor(b):null;
   const diff=a.total-b.total;
   const leader=diff>=0?a:b, gap=Math.abs(diff);
@@ -1657,23 +1685,25 @@ function Duel({a,b,livePrices,spy,nav}){
 
       {/* Cabeçalho do duelo */}
       <div style={{...GLASS,borderRadius:16,padding:28,marginBottom:16}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",gap:16}}>
-          <div style={{textAlign:"right"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"start",gap:16}}>
+          <div style={{textAlign:"right",minWidth:0}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8,marginBottom:6}}>
               <span style={{fontSize:16,fontWeight:800,letterSpacing:"-0.3px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</span>
               <span style={{width:9,height:9,borderRadius:"50%",background:DUEL_A,flexShrink:0,boxShadow:`0 0 8px ${DUEL_A}`}}/>
             </div>
             <div style={{fontSize:30,fontWeight:800,fontFamily:"monospace",letterSpacing:"-1px",color:sa.total>=0?"#4ade80":"#f87171"}}>{pct(sa.total)}</div>
+            <DuelPicksSide rows={ra}/>
           </div>
-          <div style={{width:44,height:44,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,
+          <div style={{width:44,height:44,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:30,
             fontSize:13,fontWeight:800,color:"#cbd5e1",letterSpacing:"0.5px",
             background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)"}}>VS</div>
-          <div style={{textAlign:"left"}}>
+          <div style={{textAlign:"left",minWidth:0}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
               <span style={{width:9,height:9,borderRadius:"50%",background:DUEL_B,flexShrink:0,boxShadow:`0 0 8px ${DUEL_B}`}}/>
               <span style={{fontSize:16,fontWeight:800,letterSpacing:"-0.3px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{b.name}</span>
             </div>
             <div style={{fontSize:30,fontWeight:800,fontFamily:"monospace",letterSpacing:"-1px",color:sb.total>=0?"#4ade80":"#f87171"}}>{pct(sb.total)}</div>
+            <DuelPicksSide rows={rb}/>
           </div>
         </div>
         <div style={{textAlign:"center",marginTop:18}}>
@@ -1762,7 +1792,21 @@ function Admin({settings,setSettings,portfolios,ranking,livePrices,reload,showTo
 
 function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,showToast,pw}){
   const [tab,setTab]=useState("portfolios");
+  const [editKey,setEditKey]=useState(null);
+  const [editName,setEditName]=useState("");
 
+  async function saveName(p){
+    const name=editName.trim();
+    if(name.length<2){ showToast("Nome demasiado curto.","error"); return; }
+    try{
+      const res=await fetch("/api/admin/rename",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,userId:p.userId,name})});
+      const data=await res.json();
+      if(!res.ok||!data?.ok){ showToast(data?.error||"Não foi possível guardar o nome.","error"); return; }
+      setEditKey(null);
+      await reload();
+      showToast("Nome atualizado.");
+    }catch{ showToast("Falha de ligação.","error"); }
+  }
   async function saveSt(next){
     setSettings(next);
     try{
@@ -1830,14 +1874,32 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
               {ranking.map(p=>(
                 <div key={p.key} style={{display:"grid",gridTemplateColumns:"1fr 2fr 100px 120px 44px",
                   padding:"12px 20px",borderBottom:"1px solid #0f172a",alignItems:"center"}}>
-                  <span style={{fontWeight:600,fontSize:14}}>{p.name}</span>
-                  <span style={{fontSize:11,color:"#374151",fontFamily:"monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  {editKey===p.key?(
+                    <span style={{display:"flex",alignItems:"center",gap:6}}>
+                      <input value={editName} onChange={e=>setEditName(e.target.value)}
+                        onKeyDown={e=>{ if(e.key==="Enter") saveName(p); if(e.key==="Escape") setEditKey(null); }}
+                        autoFocus
+                        style={{flex:1,minWidth:0,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,
+                          padding:"6px 10px",fontSize:13,color:"#e2e8f0",outline:"none"}}/>
+                      <button onClick={()=>saveName(p)} title="Guardar" style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:15,padding:2}}>✓</button>
+                      <button onClick={()=>setEditKey(null)} title="Cancelar" style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:15,padding:2}}>✕</button>
+                    </span>
+                  ):(
+                    <span style={{fontWeight:600,fontSize:14,display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+                      <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
+                      <button onClick={()=>{ setEditKey(p.key); setEditName(p.name); }} title="Editar nome"
+                        style={{background:"none",border:"none",cursor:"pointer",color:"#4b5563",fontSize:12,padding:0,flexShrink:0}}
+                        onMouseEnter={e=>e.currentTarget.style.color="#cbd5e1"}
+                        onMouseLeave={e=>e.currentTarget.style.color="#4b5563"}>✎</button>
+                    </span>
+                  )}
+                  <span style={{fontSize:11,color:"#e2e8f0",fontFamily:"monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                     {p.stocks.map(s=>s.ticker).join(" · ")}
                   </span>
                   <span style={{textAlign:"right",fontFamily:"monospace",fontWeight:700,color:p.total>=0?"#4ade80":"#f87171"}}>
                     {pct(p.total)}
                   </span>
-                  <span style={{textAlign:"right",fontSize:11,color:"#374151"}}>{dt(p.submittedAt)}</span>
+                  <span style={{textAlign:"right",fontSize:11,color:"#cbd5e1"}}>{dt(p.submittedAt)}</span>
                   <button onClick={()=>delPf(p)}
                     style={{background:"none",border:"none",cursor:"pointer",color:"#374151",padding:8,
                       borderRadius:6,fontSize:16}}
