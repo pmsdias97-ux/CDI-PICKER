@@ -160,7 +160,7 @@ function Monogram({ticker,size}){
 function SideBadge({side}){
   if(side!=="short") return null;
   return(
-    <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.5px",borderRadius:5,padding:"2px 6px",
+    <span style={{fontSize:"clamp(8px,2.2vw,10px)",fontWeight:800,letterSpacing:"0.5px",borderRadius:5,padding:"1px 5px",flexShrink:0,
       color:"#fbbf24",background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.35)"}}>
       SHORT
     </span>
