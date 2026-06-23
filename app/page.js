@@ -895,7 +895,7 @@ function Create({settings,doSubmit,onDone,showToast}){
           <p style={{fontSize:14,color:"#6b7280",marginBottom:12}}>Escolhe um código secreto de 3 números. Vais precisar dele (com o teu nome) para voltares a aceder ao teu portefólio.</p>
           <input value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,3))}
             onKeyDown={e=>{ if(e.key==="Enter"&&step1ok) setStep(2); }}
-            inputMode="numeric" placeholder="Ex: 482" maxLength={3}
+            type="password" inputMode="numeric" autoComplete="off" placeholder="• • •" maxLength={3}
             style={{width:"100%",background:"rgba(0,0,0,0.18)",border:`1px solid ${pinOk?"#22c55e":"#1f2937"}`,
               borderRadius:10,padding:"14px 16px",fontSize:22,letterSpacing:"6px",fontFamily:"monospace",color:"#e2e8f0",outline:"none",
               boxSizing:"border-box",transition:"border-color 0.2s"}}/>
@@ -1162,7 +1162,7 @@ function LockedGate({nav,recoverByName,showToast}){
             <div style={{display:"flex",gap:8}}>
               <input value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,3))}
                 onKeyDown={e=>{ if(e.key==="Enter") recover(); }}
-                inputMode="numeric" maxLength={3} placeholder="Código (3 dígitos)"
+                type="password" inputMode="numeric" autoComplete="off" maxLength={3} placeholder="Código"
                 style={{flex:1,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
                   padding:"11px 14px",fontSize:16,letterSpacing:"4px",fontFamily:"monospace",color:"#e2e8f0",outline:"none",boxSizing:"border-box"}}/>
               <button onClick={recover} disabled={busy||!canRecover}
