@@ -736,7 +736,8 @@ function Home({nav,submitted,count,settings,ranking,livePrices}){
           O jogo de portefólios da nossa comunidade. Escolhe as tuas 8 ações,
           submete o teu portefólio e compete com os outros membros pelo melhor retorno.
         </p>
-        <div style={{display:"flex",justifyContent:"center",gap:12,flexWrap:"wrap"}}>
+        <style>{`@media(max-width:520px){.heroBtns{flex-wrap:nowrap;gap:8px}.heroBtns>button{flex:1;min-width:0;padding-left:8px;padding-right:8px;font-size:13px;white-space:nowrap}}`}</style>
+        <div className="heroBtns" style={{display:"flex",justifyContent:"center",gap:12,flexWrap:"wrap"}}>
           {submitted?(
             <>
               <Btn onClick={()=>nav("ranking")} primary>Ver Ranking</Btn>
@@ -1183,12 +1184,18 @@ function StepDot({n,active,done,label}){
 /* ---- AlreadySubmitted ---------------------------------------------------- */
 function AlreadySubmitted({nav,name}){
   return(
-    <div style={{maxWidth:500,margin:"80px auto",padding:"0 20px",textAlign:"center"}}>
-      <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:20,padding:48}}>
+    <div style={{maxWidth:500,margin:"40px auto 80px",padding:"0 20px"}}>
+      <button onClick={()=>nav("home")}
+        style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:14,marginBottom:20,
+          display:"flex",alignItems:"center",gap:6,padding:0}}>
+        ← Voltar ao início
+      </button>
+      <div style={{textAlign:"center",background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:20,padding:48}}>
         <div style={{fontSize:40,marginBottom:16}}>🔒</div>
         <h1 style={{fontSize:22,fontWeight:700,marginBottom:12}}>Já tens um portefólio submetido</h1>
-        <p style={{fontSize:14,color:"#6b7280",marginBottom:28}}>
-          Submeteste como <strong style={{color:"#e2e8f0"}}>{name}</strong>. O portefólio fica bloqueado após a submissão — só um administrador o pode alterar.
+        <p style={{fontSize:14,color:"#6b7280",marginBottom:28,lineHeight:1.6}}>
+          Submeteste como <strong style={{color:"#e2e8f0"}}>{name}</strong>.<br/>
+          O portefólio fica bloqueado após a submissão — só um administrador o pode alterar.
         </p>
         <Btn onClick={()=>nav("ranking")} primary>Ver o ranking</Btn>
       </div>
@@ -1644,9 +1651,9 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav}){
                 <span style={{fontWeight:800,fontSize:14,color:"#e2e8f0"}}>{s.ticker}</span>
                 <SideBadge side={s.side}/>
               </div>
-              <span style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#6b7280"}}>{money(s.initialPrice,s.currency)}</span>
-              <span style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#e2e8f0"}}>{money(s.cur,s.currency)}</span>
-              <span style={{textAlign:"right",fontFamily:"monospace",fontSize:15,fontWeight:700,
+              <span style={{textAlign:"right",fontFamily:"monospace",fontSize:"clamp(10.5px,2.7vw,13px)",color:"#6b7280",whiteSpace:"nowrap"}}>{money(s.initialPrice,s.currency)}</span>
+              <span style={{textAlign:"right",fontFamily:"monospace",fontSize:"clamp(10.5px,2.7vw,13px)",color:"#e2e8f0",whiteSpace:"nowrap"}}>{money(s.cur,s.currency)}</span>
+              <span style={{textAlign:"right",fontFamily:"monospace",fontSize:"clamp(11px,2.9vw,15px)",fontWeight:700,whiteSpace:"nowrap",
                 color:s.ret>=0?"#4ade80":"#f87171"}}>
                 {s.ret>=0?"▲":"▼"} {pct(Math.abs(s.ret)).replace(/[+-]/,"")}
               </span>
