@@ -727,7 +727,6 @@ function Home({nav,submitted,count,settings,ranking,livePrices}){
         <div style={{display:"inline-flex",alignItems:"center",gap:10,maxWidth:"min(92vw,460px)",
           background:"rgba(34,197,94,0.10)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:16,
           padding:"11px 18px",marginBottom:24,boxShadow:"0 4px 18px rgba(0,0,0,0.18)"}}>
-          <span style={{width:8,height:8,borderRadius:"50%",background:"#4ade80",flexShrink:0,boxShadow:"0 0 8px #4ade80"}}/>
           <span style={{fontSize:"clamp(12px,3.4vw,14px)",lineHeight:1.45,color:"#4ade80",fontWeight:600,textAlign:"center"}}>
             {isPreLaunch(settings)?<>Submissões abertas até 30 de junho<br/>começa 1 de julho</>:`Jogo ativo — Submissões ${settings?.submissionsOpen?"abertas":"fechadas"}`}
           </span>
@@ -1246,23 +1245,22 @@ function LockedGate({nav,recoverByName,showToast}){
           <p style={{fontSize:13,color:"#6b7280",marginBottom:12}}>
             Já submeteste o teu portefólio? Escreve o teu nome do Telegram e o teu código de 3 dígitos para voltares a aceder.
           </p>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <div style={{display:"flex",flexDirection:"column",gap:8,maxWidth:260,margin:"0 auto"}}>
             <input value={name} onChange={e=>setName(e.target.value)}
               onKeyDown={e=>{ if(e.key==="Enter") recover(); }}
               placeholder="O teu nome no Telegram"
-              style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
+              style={{width:"100%",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
                 padding:"11px 14px",fontSize:14,color:"#e2e8f0",outline:"none",boxSizing:"border-box",textAlign:"center"}}/>
-            <style>{`@media(max-width:520px){.recRow{flex-direction:column;align-items:center}}`}</style>
-            <div className="recRow" style={{display:"flex",gap:8,alignItems:"center",justifyContent:"center"}}>
+            <div style={{display:"flex",gap:8,alignItems:"stretch"}}>
               <input value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,3))}
                 onKeyDown={e=>{ if(e.key==="Enter") recover(); }}
                 type="text" inputMode="numeric" autoComplete="off" maxLength={3} placeholder="Código"
-                style={{width:120,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
+                style={{width:120,flexShrink:0,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
                   padding:"11px 14px",fontSize:16,letterSpacing:"6px",fontFamily:"monospace",color:"#e2e8f0",outline:"none",boxSizing:"border-box",
                   textAlign:"center",WebkitTextSecurity:"disc",textSecurity:"disc"}}/>
               <button onClick={recover} disabled={busy||!canRecover}
-                style={{background:"#1a2a1a",border:"1px solid rgba(34,197,94,0.3)",borderRadius:10,
-                  padding:"11px 18px",fontSize:14,color:"#4ade80",fontWeight:700,
+                style={{flex:1,background:"#1a2a1a",border:"1px solid rgba(34,197,94,0.3)",borderRadius:10,
+                  padding:"11px 14px",fontSize:14,color:"#4ade80",fontWeight:700,
                   cursor:busy||!canRecover?"default":"pointer",opacity:busy||!canRecover?0.5:1,whiteSpace:"nowrap"}}>
                 {busy?"A verificar…":"Aceder"}
               </button>
@@ -1639,24 +1637,21 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav}){
           <span style={{textAlign:"right"}}>Rentab.</span>
         </div>
         {bySorted.map(s=>(
-          <div key={s.ticker} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",
-            padding:"14px 20px",borderBottom:"1px solid #0f172a"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-              <StockLogo ticker={s.ticker} size={32}/>
-              <div style={{minWidth:0}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                  <span style={{fontWeight:800,fontSize:14,color:"#e2e8f0"}}>{s.ticker}</span>
-                  <SideBadge side={s.side}/>
-                  <span style={{fontSize:13,color:"#6b7280"}}>{s.companyName}</span>
-                </div>
+          <div key={s.ticker} style={{padding:"14px 20px",borderBottom:"1px solid #0f172a"}}>
+            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",alignItems:"center",gap:4}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+                <StockLogo ticker={s.ticker} size={32}/>
+                <span style={{fontWeight:800,fontSize:14,color:"#e2e8f0"}}>{s.ticker}</span>
+                <SideBadge side={s.side}/>
               </div>
+              <span style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#6b7280"}}>{money(s.initialPrice,s.currency)}</span>
+              <span style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#e2e8f0"}}>{money(s.cur,s.currency)}</span>
+              <span style={{textAlign:"right",fontFamily:"monospace",fontSize:15,fontWeight:700,
+                color:s.ret>=0?"#4ade80":"#f87171"}}>
+                {s.ret>=0?"▲":"▼"} {pct(Math.abs(s.ret)).replace(/[+-]/,"")}
+              </span>
             </div>
-            <span style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#6b7280",alignSelf:"center"}}>{money(s.initialPrice,s.currency)}</span>
-            <span style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#e2e8f0",alignSelf:"center"}}>{money(s.cur,s.currency)}</span>
-            <span style={{textAlign:"right",fontFamily:"monospace",fontSize:15,fontWeight:700,alignSelf:"center",
-              color:s.ret>=0?"#4ade80":"#f87171"}}>
-              {s.ret>=0?"▲":"▼"} {pct(Math.abs(s.ret)).replace(/[+-]/,"")}
-            </span>
+            <div style={{fontSize:13,color:"#6b7280",marginTop:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.companyName}</div>
           </div>
         ))}
       </div>
