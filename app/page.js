@@ -111,6 +111,7 @@ function mapPortfolioFromSupabase(row){
       side:s.side==="short"?"short":"long",
       initialPrice:Number(s.initial_price),
       initialWeight:Number(s.initial_weight)/100,
+      currency:s.currency||"USD",
       allocated:PER_STOCK,
     })),
   };
@@ -120,7 +121,10 @@ function pfStats(p,livePrices){
   return{ total:rets.reduce((a,b)=>a+b,0)/rets.length, pos:rets.filter(r=>r>0).length, neg:rets.filter(r=>r<0).length };
 }
 function pct(x,dp=2){ const v=(x*100).toFixed(dp); return `${x>=0?"+":""}${v}%`; }
-function money(x){ return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2}).format(x); }
+function money(x,cur){
+  try{ return new Intl.NumberFormat("en-US",{style:"currency",currency:cur||"USD",minimumFractionDigits:2}).format(x); }
+  catch{ return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2}).format(x); }
+}
 function dt(iso){
   if(!iso) return "—";
   try{ return new Date(iso).toLocaleString("pt-PT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}); }
@@ -203,6 +207,44 @@ function submissionsClosed(s){
   if(s.gameStartDate){ const d=new Date(s.gameStartDate); if(!isNaN(d)&&Date.now()>=d.getTime()) return true; }
   return false;
 }
+function fmtDateShort(iso){
+  try{ return new Intl.DateTimeFormat("pt-PT",{day:"2-digit",month:"2-digit",year:"numeric"}).format(new Date(iso)); }
+  catch{ return ""; }
+}
+// Contador da competição: antes do arranque conta até ao fim das submissões;
+// depois mostra a data do vencedor + contagem decrescente. Elegante e responsivo.
+function CompetitionTimer({settings}){
+  const [now,setNow]=useState(null);
+  useEffect(()=>{
+    setNow(Date.now());
+    const id=setInterval(()=>setNow(Date.now()),60_000);
+    return()=>clearInterval(id);
+  },[]);
+  if(!settings||now==null) return null;
+  const started=settings.competitionStarted;
+  const targetStr=started?settings.gameEndDate:settings.gameStartDate;
+  if(!targetStr) return null;
+  const target=new Date(targetStr).getTime();
+  if(isNaN(target)) return null;
+  const diff=target-now;
+  if(diff<=0) return null;
+  const d=Math.floor(diff/86400000), h=Math.floor((diff%86400000)/3600000);
+  const cd=d>=7?`${d} dias`:d>=1?`${d}d ${h}h`:`${h}h`;
+  const accent=started?"#fbbf24":"#fcd34d";
+  const label=started?`🏆 Vencedor a ${fmtDateShort(settings.gameEndDate)}`:"⏳ Submissões fecham";
+  return(
+    <div style={{display:"flex",justifyContent:"center"}}>
+      <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:10,flexWrap:"wrap",
+        maxWidth:"100%",padding:"8px 16px",borderRadius:999,textAlign:"center",
+        background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",
+        border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 6px 22px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"}}>
+        <span style={{fontSize:13,color:"#cbd5e1",fontWeight:600,whiteSpace:"nowrap"}}>{label}</span>
+        <span style={{fontSize:13,fontWeight:800,fontFamily:"monospace",color:accent,whiteSpace:"nowrap"}}>faltam {cd}</span>
+      </div>
+    </div>
+  );
+}
+
 // Settings are written through the admin API route (service_role key); the
 // browser only reads them via loadGameSettings above.
 
@@ -271,7 +313,8 @@ export default function App(){
           initial_price,
           current_price,
           initial_weight,
-          side
+          side,
+          currency
         )
       `);
     if(pfError){
@@ -419,7 +462,7 @@ export default function App(){
   if(page==="home")   return sh(<Home nav={nav} submitted={submitted} count={portfolios.length} settings={settings} ranking={ranking} livePrices={livePrices}/>);
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
-  if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} preLaunch={isPreLaunch(settings)} onSelect={(k)=>{setDetailKey(k);nav("detail");}} onCompare={(a,b)=>{setDuelKeys([a,b]);nav("duel");}}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} preLaunch={isPreLaunch(settings)} settings={settings} onSelect={(k)=>{setDetailKey(k);nav("detail");}} onCompare={(a,b)=>{setDuelKeys([a,b]);nav("duel");}}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="duel")   return sh(submitted?<Duel a={ranking.find(p=>p.key===duelKeys?.[0])} b={ranking.find(p=>p.key===duelKeys?.[1])} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="detail") return sh(submitted?<Detail pf={portfolios.find(p=>p.key===detailKey)||myPf} rank={(()=>{
     const pf=portfolios.find(p=>p.key===detailKey)||myPf;
@@ -682,6 +725,7 @@ function Home({nav,submitted,count,settings,ranking,livePrices}){
           <span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
           {isPreLaunch(settings)?"Submissões abertas até 30 de junho · começa 1 de julho":`Jogo ativo — Submissões ${settings?.submissionsOpen?"abertas":"fechadas"}`}
         </div>
+        <div style={{marginBottom:28}}><CompetitionTimer settings={settings}/></div>
         <p style={{fontSize:18,color:"#6b7280",lineHeight:1.6,maxWidth:560,margin:"0 auto 40px"}}>
           O jogo de portefólios da nossa comunidade. Escolhe as tuas 8 ações,
           submete o teu portefólio e compete com os outros membros pelo melhor retorno.
@@ -848,13 +892,25 @@ function Create({settings,doSubmit,onDone,showToast}){
     // rentabilidade nunca poderia ser calculada. A própria cotação devolve o
     // nome completo e a bolsa, por isso funciona para qualquer ticker.
     setAddingManual(true);
-    const info=await fetchStockInfo(ticker);
+    let info=await fetchStockInfo(ticker);
+    let resolved=ticker;
+    // Se o ticker simples não resolver, tenta sufixos de bolsas europeias/globais
+    // (ex.: RMS → RMS.PA = Hermès). Só quando não foi indicado um sufixo.
+    if(info==null&&!ticker.includes(".")){
+      const SUFFIXES=["PA","AS","DE","MC","MI","LS","L","SW","BR","ST","HE","CO","OL","VI","IR"];
+      for(const sfx of SUFFIXES){
+        const cand=`${ticker}.${sfx}`;
+        const r=await fetchStockInfo(cand);
+        if(r){ info=r; resolved=cand; break; }
+      }
+    }
     setAddingManual(false);
     if(info==null){
-      showToast(`Não encontrámos cotação para "${ticker}". Verifica o ticker (ex.: AAPL, MC.PA, GALP.LS).`,"error");
+      showToast(`Não encontrámos cotação para "${ticker}". Verifica o ticker (ex.: AAPL, RMS.PA, GALP.LS).`,"error");
       return;
     }
-    add({ ticker, name: info.name||ticker, exchange: info.exchange||"", currency: info.currency||"USD" });
+    if(has(resolved)){ setQuery(""); return; }
+    add({ ticker:resolved, name: info.name||resolved, exchange: info.exchange||"", currency: info.currency||"USD" });
   };
   const rem=t=>setPicked(p=>p.filter(s=>s.ticker!==t));
   const progress=picked.length/PORTFOLIO_SIZE;
@@ -1191,7 +1247,7 @@ function LockedGate({nav,recoverByName,showToast}){
 }
 
 /* ---- Ranking ------------------------------------------------------------- */
-function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,onSelect,onCompare}){
+function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,onCompare}){
   const medals=["🥇","🥈","🥉"];
   const [cmp,setCmp]=useState(false);
   const [sel,setSel]=useState([]);
@@ -1294,6 +1350,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,onSelect,onCompare}
         {spy?" · Alpha = a tua rentabilidade menos a do S&P 500 no mesmo período (positivo = bates o mercado).":""}
         {pricesLoading?" · A atualizar preços de mercado…":""}
       </p>
+      <div style={{marginBottom:24}}><CompetitionTimer settings={settings}/></div>
 
       {ranking.length===0?(
         <div style={{textAlign:"center",padding:80,color:"#4b5563"}}>
@@ -1565,8 +1622,8 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav}){
                 </div>
               </div>
             </div>
-            <span style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#6b7280",alignSelf:"center"}}>{money(s.initialPrice)}</span>
-            <span style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#e2e8f0",alignSelf:"center"}}>{money(s.cur)}</span>
+            <span style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#6b7280",alignSelf:"center"}}>{money(s.initialPrice,s.currency)}</span>
+            <span style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#e2e8f0",alignSelf:"center"}}>{money(s.cur,s.currency)}</span>
             <span style={{textAlign:"right",fontFamily:"monospace",fontSize:15,fontWeight:700,alignSelf:"center",
               color:s.ret>=0?"#4ade80":"#f87171"}}>
               {s.ret>=0?"▲":"▼"} {pct(Math.abs(s.ret)).replace(/[+-]/,"")}

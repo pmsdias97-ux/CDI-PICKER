@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
-import { fetchQuote } from "../../../lib/marketData";
+import { fetchQuote, fetchQuoteFull } from "../../../lib/marketData";
 import { isValidTicker, rateLimited } from "../../../lib/apiGuards";
 
 const PORTFOLIO_SIZE = 8;
@@ -75,13 +75,16 @@ export async function POST(request) {
   }
 
   // Authoritative prices fetched on the server — clients can't forge initial_price.
+  // Também guardamos a moeda da cotação (EUR, USD, …) para mostrar o símbolo certo.
   const prices = {};
+  const currencies = {};
   for (const t of tickers) {
-    const p = await fetchQuote(t);
-    if (typeof p !== "number") {
+    const q = await fetchQuoteFull(t);
+    if (!q || typeof q.price !== "number") {
       return Response.json({ error: `Não foi possível obter o preço de ${t}. Verifica o ticker ou tenta mais tarde.` }, { status: 502 });
     }
-    prices[t] = p;
+    prices[t] = q.price;
+    currencies[t] = q.currency || "USD";
   }
 
   // Reuse an existing (non-submitted) user row if present, else create one.
@@ -114,6 +117,7 @@ export async function POST(request) {
     current_price: prices[t],
     initial_weight: 12.5,
     side: sideByTicker.get(t) || "long",
+    currency: currencies[t] || "USD",
   }));
   const { error: stocksErr } = await supabase.from("portfolio_stocks").insert(stockRows);
   if (stocksErr) {
