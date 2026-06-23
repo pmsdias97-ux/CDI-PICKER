@@ -484,7 +484,7 @@ function Shell({children,page,nav,submitted,toast}){
   return(
     <div style={{minHeight:"100vh",position:"relative",
       background:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",
-      backgroundAttachment:"fixed",
+      backgroundColor:"#070d1c",
       color:"#e2e8f0",fontFamily:"system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",overflowX:"hidden"}}>
       <style>{`@media(max-width:640px){.navWide{display:none}}`}</style>
       <header style={{position:"sticky",top:0,zIndex:50,padding:"12px 14px"}}>
@@ -642,10 +642,10 @@ function WinnerCard({p,rank,livePrices,series,onClick}){
         backdropFilter:"blur(22px) saturate(170%)",WebkitBackdropFilter:"blur(22px) saturate(170%)",
         border:`1px solid ${isTop?"rgba(251,191,36,0.38)":"rgba(255,255,255,0.10)"}`,
         boxShadow:baseShadow,transition:"transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease"}}>
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18}}>
-        <div style={{width:34,height:34,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
-          fontSize:14,fontWeight:800,...badge}}>{rank}</div>
-        <span style={{fontWeight:700,fontSize:17,letterSpacing:"-0.4px",flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
+      <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:18}}>
+        <div style={{width:32,height:32,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+          fontSize:13,fontWeight:800,...badge}}>{rank}</div>
+        <span style={{fontWeight:700,fontSize:"clamp(12.5px,3.4vw,16px)",letterSpacing:"-0.4px",flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
       </div>
       <div style={{marginBottom:18}}>
         <div style={{display:"flex",alignItems:"baseline",gap:8}}>
@@ -728,8 +728,8 @@ function Home({nav,submitted,count,settings,ranking,livePrices}){
           background:"rgba(34,197,94,0.10)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:16,
           padding:"11px 18px",marginBottom:24,boxShadow:"0 4px 18px rgba(0,0,0,0.18)"}}>
           <span style={{width:8,height:8,borderRadius:"50%",background:"#4ade80",flexShrink:0,boxShadow:"0 0 8px #4ade80"}}/>
-          <span style={{fontSize:"clamp(12px,3.4vw,14px)",lineHeight:1.45,color:"#4ade80",fontWeight:600,textAlign:"left"}}>
-            {isPreLaunch(settings)?"Submissões abertas até 30 de junho · começa 1 de julho":`Jogo ativo — Submissões ${settings?.submissionsOpen?"abertas":"fechadas"}`}
+          <span style={{fontSize:"clamp(12px,3.4vw,14px)",lineHeight:1.45,color:"#4ade80",fontWeight:600,textAlign:"center"}}>
+            {isPreLaunch(settings)?<>Submissões abertas até 30 de junho<br/>começa 1 de julho</>:`Jogo ativo — Submissões ${settings?.submissionsOpen?"abertas":"fechadas"}`}
           </span>
         </div>
         <div style={{marginBottom:28}}><CompetitionTimer settings={settings}/></div>
@@ -1251,14 +1251,15 @@ function LockedGate({nav,recoverByName,showToast}){
               onKeyDown={e=>{ if(e.key==="Enter") recover(); }}
               placeholder="O teu nome no Telegram"
               style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
-                padding:"11px 14px",fontSize:14,color:"#e2e8f0",outline:"none",boxSizing:"border-box"}}/>
-            <style>{`@media(max-width:520px){.recRow{flex-direction:column;align-items:flex-start}}`}</style>
-            <div className="recRow" style={{display:"flex",gap:8,alignItems:"center"}}>
+                padding:"11px 14px",fontSize:14,color:"#e2e8f0",outline:"none",boxSizing:"border-box",textAlign:"center"}}/>
+            <style>{`@media(max-width:520px){.recRow{flex-direction:column;align-items:center}}`}</style>
+            <div className="recRow" style={{display:"flex",gap:8,alignItems:"center",justifyContent:"center"}}>
               <input value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,3))}
                 onKeyDown={e=>{ if(e.key==="Enter") recover(); }}
-                type="password" inputMode="numeric" autoComplete="off" maxLength={3} placeholder="Código"
+                type="text" inputMode="numeric" autoComplete="off" maxLength={3} placeholder="Código"
                 style={{width:120,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
-                  padding:"11px 14px",fontSize:16,letterSpacing:"4px",fontFamily:"monospace",color:"#e2e8f0",outline:"none",boxSizing:"border-box"}}/>
+                  padding:"11px 14px",fontSize:16,letterSpacing:"6px",fontFamily:"monospace",color:"#e2e8f0",outline:"none",boxSizing:"border-box",
+                  textAlign:"center",WebkitTextSecurity:"disc",textSecurity:"disc"}}/>
               <button onClick={recover} disabled={busy||!canRecover}
                 style={{background:"#1a2a1a",border:"1px solid rgba(34,197,94,0.3)",borderRadius:10,
                   padding:"11px 18px",fontSize:14,color:"#4ade80",fontWeight:700,
@@ -1305,7 +1306,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
             onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)"; }}
             onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
             <span style={{fontSize:16}}>{medals[i]||<span style={{fontSize:13,color:"#374151",fontWeight:700}}>{i+1}</span>}</span>
-            <span style={{fontWeight:600,fontSize:15,display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+            <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
               <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
             </span>
@@ -1333,7 +1334,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
               background:me?"rgba(34,197,94,0.04)":"transparent",transition:"background 0.15s"}}
             onMouseEnter={me?(e=>e.currentTarget.style.background="rgba(34,197,94,0.08)"):undefined}
             onMouseLeave={me?(e=>e.currentTarget.style.background="rgba(34,197,94,0.04)"):undefined}>
-            <span style={{fontWeight:600,fontSize:15,display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+            <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
               <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
             </span>
@@ -1346,8 +1347,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
     </div>
   );
   const sectionTitle=(txt,sub,subColor)=>(
-    <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"0 0 12px",flexWrap:"wrap"}}>
-      <h2 style={{fontSize:18,fontWeight:800,letterSpacing:"-0.3px",margin:0}}>{txt}</h2>
+    <div style={{display:"flex",alignItems:"baseline",justifyContent:"center",gap:10,margin:"0 0 12px",flexWrap:"wrap"}}>
+      <h2 style={{fontSize:18,fontWeight:800,letterSpacing:"-0.3px",margin:0,textAlign:"center"}}>{txt}</h2>
       {sub&&<span style={{fontSize:12,fontWeight:700,color:subColor||"#94a3b8"}}>{sub}</span>}
     </div>
   );
@@ -1541,14 +1542,14 @@ function SectorDonut({stocks}){
   const R=42,SW=14,C=2*Math.PI*R;
   let off=0;
   return(
-    <div style={{display:"flex",alignItems:"center",gap:20,flexWrap:"wrap"}}>
-      <svg viewBox="0 0 100 100" style={{width:120,height:120,flexShrink:0,transform:"rotate(-90deg)"}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:16,flexWrap:"wrap"}}>
+      <svg viewBox="0 0 100 100" style={{width:"clamp(96px,26vw,120px)",height:"auto",flexShrink:0,transform:"rotate(-90deg)"}}>
         {segs.map((s,i)=>{ const len=s.pct*C; const el=(
           <circle key={i} cx="50" cy="50" r={R} fill="none" stroke={s.color} strokeWidth={SW}
             strokeDasharray={`${len.toFixed(2)} ${(C-len).toFixed(2)}`} strokeDashoffset={(-off).toFixed(2)}/>
         ); off+=len; return el; })}
       </svg>
-      <div style={{flex:1,minWidth:160,display:"flex",flexDirection:"column",gap:8}}>
+      <div style={{flex:1,minWidth:120,display:"flex",flexDirection:"column",gap:8}}>
         {segs.map((s,i)=>(
           <div key={i} style={{display:"flex",alignItems:"center",gap:10,fontSize:13}}>
             <span style={{width:10,height:10,borderRadius:3,background:s.color,flexShrink:0}}/>
@@ -1599,8 +1600,8 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav}){
       <div className="cdiDetail">
       <div>{/* coluna esquerda: portefólio */}
       <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,marginBottom:16}}>
-        <div style={{display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"flex-end",gap:16}}>
-          <div style={{display:"flex",alignItems:"center",gap:14,minWidth:0}}>
+        <div style={{textAlign:"center"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14,marginBottom:16,minWidth:0}}>
             {rank>0&&(
               <span style={{width:46,height:46,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
                 fontSize:rank<=3?22:18,fontWeight:800,
@@ -1610,25 +1611,21 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav}){
                 {rank<=3?["🥇","🥈","🥉"][rank-1]:rank}
               </span>
             )}
-            <div style={{minWidth:0}}>
-              <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.5px",marginBottom:4}}>{pf.name}</h1>
-              <p style={{fontSize:13,color:"#4b5563",margin:0}}>Submetido a {dt(pf.submittedAt)}</p>
-            </div>
+            <h1 style={{fontSize:"clamp(22px,5vw,26px)",fontWeight:800,letterSpacing:"-0.5px",margin:0,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pf.name}</h1>
           </div>
-          <div style={{textAlign:"right"}}>
-            <div style={{fontSize:36,fontWeight:800,fontFamily:"monospace",lineHeight:1,
-              color:st.total>=0?"#4ade80":"#f87171"}}>{st.total>=0?"▲":"▼"} {pct(Math.abs(st.total)).replace(/[+-]/,"")}</div>
-            <div style={{fontSize:11,color:"#4b5563",marginTop:4,textTransform:"uppercase",letterSpacing:"0.5px"}}>Rentabilidade média</div>
+          <div style={{fontSize:"clamp(34px,9vw,42px)",fontWeight:800,fontFamily:"monospace",lineHeight:1,
+            color:st.total>=0?"#4ade80":"#f87171"}}>{st.total>=0?"▲":"▼"} {pct(Math.abs(st.total)).replace(/[+-]/,"")}</div>
+          <div style={{fontSize:11,color:"#4b5563",marginTop:6,textTransform:"uppercase",letterSpacing:"0.5px"}}>Rentabilidade média</div>
+          <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"10px 24px",marginTop:18,fontSize:13,color:"#6b7280"}}>
+            <span style={{color:"#4ade80"}}>▲ {st.pos} positivas</span>
+            <span style={{color:"#f87171"}}>▼ {st.neg} negativas</span>
+            {alpha!=null&&(
+              <span title="A tua rentabilidade menos a do S&P 500 no mesmo período">
+                Alpha: <strong style={{color:alpha>=0?"#4ade80":"#f87171"}}>{alpha>=0?"+":""}{(alpha*100).toFixed(2)}%</strong>
+              </span>
+            )}
           </div>
-        </div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:20,marginTop:16,fontSize:13,color:"#6b7280"}}>
-          <span style={{color:"#4ade80"}}>▲ {st.pos} positivas</span>
-          <span style={{color:"#f87171"}}>▼ {st.neg} negativas</span>
-          {alpha!=null&&(
-            <span title="A tua rentabilidade menos a do S&P 500 no mesmo período">
-              Alpha: <strong style={{color:alpha>=0?"#4ade80":"#f87171"}}>{alpha>=0?"+":""}{(alpha*100).toFixed(2)}%</strong>
-            </span>
-          )}
+          <p style={{fontSize:13,color:"#4b5563",margin:"16px 0 0"}}>Submetido a {dt(pf.submittedAt)}</p>
         </div>
       </div>
 
@@ -1833,13 +1830,13 @@ function PickCell({s,kind}){
   const bg=up?"rgba(34,197,94,0.10)":"rgba(239,68,68,0.10)";
   const bd=up?"rgba(34,197,94,0.20)":"rgba(239,68,68,0.20)";
   return(
-    <div style={{display:"flex",alignItems:"center",gap:6,background:bg,border:`1px solid ${bd}`,borderRadius:9,padding:"6px 8px",minWidth:0,overflow:"hidden"}}>
-      <span style={{color:col,fontSize:11,fontWeight:800,width:11,textAlign:"center",flexShrink:0}}>{up?"▲":"▼"}</span>
-      <span style={{flexShrink:0,display:"inline-flex"}}><StockLogo ticker={s.ticker} size={20}/></span>
-      <span style={{fontSize:12.5,fontWeight:800,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{s.ticker}</span>
+    <div style={{display:"flex",alignItems:"center",gap:5,background:bg,border:`1px solid ${bd}`,borderRadius:9,padding:"5px 7px",minWidth:0,overflow:"hidden"}}>
+      <span style={{color:col,fontSize:10,fontWeight:800,width:9,textAlign:"center",flexShrink:0}}>{up?"▲":"▼"}</span>
+      <span style={{flexShrink:0,display:"inline-flex"}}><StockLogo ticker={s.ticker} size={18}/></span>
+      <span style={{fontSize:"clamp(10px,2.5vw,12.5px)",fontWeight:800,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{s.ticker}</span>
       {s.side==="short"&&<span style={{flexShrink:0}}><SideBadge side="short"/></span>}
-      <span style={{flex:1,minWidth:4}}/>
-      <span style={{fontFamily:"monospace",fontWeight:800,fontSize:12.5,color:col,flexShrink:0,whiteSpace:"nowrap"}}>{pct(s.ret)}</span>
+      <span style={{flex:1,minWidth:3}}/>
+      <span style={{fontFamily:"monospace",fontWeight:800,fontSize:"clamp(10px,2.5vw,12.5px)",color:col,flexShrink:0,whiteSpace:"nowrap"}}>{pct(s.ret)}</span>
     </div>
   );
 }
@@ -1931,13 +1928,13 @@ function Duel({a,b,livePrices,spy,nav}){
       </div>
 
       {/* Exposição por setor lado a lado */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16}}>
-        <div style={{...GLASS,borderRadius:16,padding:24}}>
-          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Setores · {a.name}</h3>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"clamp(8px,2vw,16px)"}}>
+        <div style={{...GLASS,borderRadius:16,padding:"clamp(12px,3vw,24px)"}}>
+          <h3 style={{fontSize:15,fontWeight:700,marginBottom:14,color:"#e2e8f0",textAlign:"center",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</h3>
           <SectorDonut stocks={a.stocks}/>
         </div>
-        <div style={{...GLASS,borderRadius:16,padding:24}}>
-          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Setores · {b.name}</h3>
+        <div style={{...GLASS,borderRadius:16,padding:"clamp(12px,3vw,24px)"}}>
+          <h3 style={{fontSize:15,fontWeight:700,marginBottom:14,color:"#e2e8f0",textAlign:"center",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.name}</h3>
           <SectorDonut stocks={b.stocks}/>
         </div>
       </div>
