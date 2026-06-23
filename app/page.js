@@ -848,7 +848,26 @@ function Create({settings,doSubmit,onDone,showToast}){
   const [submitting,setSubmitting]=useState(false);
   const [addingManual,setAddingManual]=useState(false);
   const [shortMode,setShortMode]=useState(false); // próxima posição: false=long, true=short
+  const [checkingName,setCheckingName]=useState(false);
   const shortCount=picked.filter(p=>p.side==="short").length;
+
+  // Valida o nome cedo (passo 1) para o utilizador não escolher 8 ações em vão.
+  const proceedToStocks=async()=>{
+    if(checkingName) return;
+    const nm=name.trim();
+    if(nm.length<2||!/^\d{3}$/.test(pin)) return;
+    setCheckingName(true);
+    try{
+      const r=await fetch("/api/portfolio/check-name",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:nm})});
+      const d=await r.json().catch(()=>({}));
+      if(d.available===false){
+        showToast("Já existe um portefólio registado com esse nome. Por favor, usa outro nome.","error");
+        return;
+      }
+    }catch{ /* se a verificação falhar, deixa avançar; o submit valida na mesma */ }
+    finally{ setCheckingName(false); }
+    setStep(2);
+  };
 
   useEffect(()=>{
     const q=query.trim();
@@ -960,7 +979,7 @@ function Create({settings,doSubmit,onDone,showToast}){
           <h2 style={{fontSize:18,fontWeight:700,marginBottom:6}}>O teu nome no Telegram</h2>
           <p style={{fontSize:14,color:"#6b7280",marginBottom:20}}>Escreve exatamente o mesmo nome que aparece no grupo de Telegram da comunidade.</p>
           <input value={name} onChange={e=>setName(e.target.value)}
-            onKeyDown={e=>{ if(e.key==="Enter"&&step1ok) setStep(2); }}
+            onKeyDown={e=>{ if(e.key==="Enter"&&step1ok) proceedToStocks(); }}
             placeholder="Ex: João Silva"
             style={{width:"100%",background:"rgba(0,0,0,0.18)",border:`1px solid ${name.trim().length>=2?"#22c55e":"#1f2937"}`,
               borderRadius:10,padding:"14px 16px",fontSize:16,color:"#e2e8f0",outline:"none",
@@ -968,7 +987,7 @@ function Create({settings,doSubmit,onDone,showToast}){
           <h2 style={{fontSize:18,fontWeight:700,marginBottom:6}}>Código de 3 dígitos</h2>
           <p style={{fontSize:14,color:"#6b7280",marginBottom:12}}>Escolhe um código secreto de 3 números. Vais precisar dele (com o teu nome) para voltares a aceder ao teu portefólio.</p>
           <input value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,3))}
-            onKeyDown={e=>{ if(e.key==="Enter"&&step1ok) setStep(2); }}
+            onKeyDown={e=>{ if(e.key==="Enter"&&step1ok) proceedToStocks(); }}
             type="password" inputMode="numeric" autoComplete="off" placeholder="• • •" maxLength={3}
             style={{width:"100%",background:"rgba(0,0,0,0.18)",border:`1px solid ${pinOk?"#22c55e":"#1f2937"}`,
               borderRadius:10,padding:"14px 16px",fontSize:22,letterSpacing:"6px",fontFamily:"monospace",color:"#e2e8f0",outline:"none",
@@ -976,13 +995,13 @@ function Create({settings,doSubmit,onDone,showToast}){
           <p style={{fontSize:12,color:"#fbbf24",marginTop:10,lineHeight:1.5}}>
             ⚠ Guarda bem este código — só números, sem ele não consegues recuperar o teu portefólio noutro dispositivo.
           </p>
-          <button onClick={()=>{ if(step1ok) setStep(2); }}
-            disabled={!step1ok||submClosed}
+          <button onClick={()=>{ if(step1ok) proceedToStocks(); }}
+            disabled={!step1ok||submClosed||checkingName}
             style={{width:"100%",marginTop:16,background:step1ok&&!submClosed?"#22c55e":"#1f2937",
               color:step1ok&&!submClosed?"#000":"#4b5563",border:"none",borderRadius:10,
-              padding:"14px",fontSize:16,fontWeight:700,cursor:step1ok?"pointer":"not-allowed",
-              transition:"background 0.2s"}}>
-            Continuar →
+              padding:"14px",fontSize:16,fontWeight:700,cursor:step1ok&&!checkingName?"pointer":"not-allowed",
+              transition:"background 0.2s",opacity:checkingName?0.7:1}}>
+            {checkingName?"A verificar…":"Continuar →"}
           </button>
         </div>
         );
