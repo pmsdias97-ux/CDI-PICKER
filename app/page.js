@@ -421,7 +421,16 @@ export default function App(){
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} preLaunch={isPreLaunch(settings)} onSelect={(k)=>{setDetailKey(k);nav("detail");}} onCompare={(a,b)=>{setDuelKeys([a,b]);nav("duel");}}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="duel")   return sh(submitted?<Duel a={ranking.find(p=>p.key===duelKeys?.[0])} b={ranking.find(p=>p.key===duelKeys?.[1])} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
-  if(page==="detail") return sh(submitted?<Detail pf={portfolios.find(p=>p.key===detailKey)||myPf} rank={(()=>{const k=(portfolios.find(p=>p.key===detailKey)||myPf)?.key; const i=ranking.findIndex(r=>r.key===k); return i>=0?i+1:0;})()} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="detail") return sh(submitted?<Detail pf={portfolios.find(p=>p.key===detailKey)||myPf} rank={(()=>{
+    const pf=portfolios.find(p=>p.key===detailKey)||myPf;
+    if(!pf) return 0;
+    // Classificação dentro do próprio grupo (demo entre demos; oficial entre oficiais).
+    // "Em espera" (oficial antes de arrancar) não tem classificação.
+    if(pf.official&&isPreLaunch(settings)) return 0;
+    const group=ranking.filter(r=>r.official===pf.official);
+    const i=group.findIndex(r=>r.key===pf.key);
+    return i>=0?i+1:0;
+  })()} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
   return null;
 }
@@ -429,7 +438,7 @@ export default function App(){
 /* ---- Shell --------------------------------------------------------------- */
 function Shell({children,page,nav,submitted,toast}){
   return(
-    <div style={{minHeight:"100vh",
+    <div style={{minHeight:"100vh",position:"relative",
       background:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",
       backgroundAttachment:"fixed",
       color:"#e2e8f0",fontFamily:"system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",overflowX:"hidden"}}>
@@ -459,7 +468,7 @@ function MarketStatus(){
   if(!st) return null;
   const c=st.open?"#34d399":"#f87171";
   return(
-    <div style={{position:"fixed",top:12,right:14,zIndex:60}}>
+    <div style={{position:"absolute",top:12,right:14,zIndex:60}}>
       <style>{`
         @keyframes mktPulse{0%{box-shadow:0 0 8px var(--mk),0 0 0 0 var(--mk)}70%{box-shadow:0 0 8px var(--mk),0 0 0 6px transparent}100%{box-shadow:0 0 8px var(--mk),0 0 0 0 transparent}}
         @media(max-width:480px){.mktLabel{display:none}}
@@ -590,12 +599,14 @@ function WinnerCard({p,rank,livePrices,series,onClick}){
           fontSize:14,fontWeight:800,...badge}}>{rank}</div>
         <span style={{fontWeight:700,fontSize:17,letterSpacing:"-0.4px",flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
       </div>
-      <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:18}}>
-        <span style={{fontSize:13,color:col}}>{up?"▲":"▼"}</span>
-        <span style={{fontFamily:"'SF Mono',ui-monospace,monospace",fontWeight:800,fontSize:30,letterSpacing:"-1.5px",color:col}}>
-          {pct(Math.abs(p.total)).replace(/[+-]/,"")}
-        </span>
-        <span style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.5px",marginLeft:"auto"}}>rentab. média</span>
+      <div style={{marginBottom:18}}>
+        <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+          <span style={{fontSize:13,color:col}}>{up?"▲":"▼"}</span>
+          <span style={{fontFamily:"'SF Mono',ui-monospace,monospace",fontWeight:800,fontSize:30,letterSpacing:"-1.5px",color:col}}>
+            {pct(Math.abs(p.total)).replace(/[+-]/,"")}
+          </span>
+        </div>
+        <span style={{display:"block",fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.5px",marginTop:2}}>rentab. média</span>
       </div>
       <div style={{display:"flex",gap:4,marginBottom:14}}>
         {p.stocks.map(s=>{ const g=stockRet(s,livePrices)>=0; return(
@@ -1190,15 +1201,13 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,onSelect,onCompare}
   const officials=ranking.filter(p=>p.official);
   const tableFor=(list)=>(
     <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
-      <div style={{display:"grid",gridTemplateColumns:"40px 1fr 100px 100px 64px 64px 110px",
-        padding:"10px 20px",borderBottom:"1px solid #1f2937",
+      <div className="rkRow" style={{padding:"10px 20px",borderBottom:"1px solid #1f2937",
         fontSize:11,color:"#4b5563",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>
         <span>#</span><span>Membro</span>
         <span style={{textAlign:"right"}}>Rentab.</span>
         <span style={{textAlign:"right"}}>Alpha</span>
-        <span style={{textAlign:"center"}}>Pos.</span>
-        <span style={{textAlign:"center"}}>Neg.</span>
-        <span style={{textAlign:"right"}}>Submissão</span>
+        <span style={{textAlign:"center"}}>🟢/🔴</span>
+        <span className="rkHide" style={{textAlign:"right"}}>Submissão</span>
       </div>
       {list.map((p,i)=>{
         const me=p.normName===myNorm;
@@ -1207,9 +1216,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,onSelect,onCompare}
         const picked=cmp&&sel.includes(p.key);
         const baseBg=picked?"rgba(59,130,246,0.16)":me?"rgba(34,197,94,0.04)":"transparent";
         return(
-          <div key={p.key} onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
-            style={{display:"grid",gridTemplateColumns:"40px 1fr 100px 100px 64px 64px 110px",
-              padding:"14px 20px",borderBottom:"1px solid #0f172a",cursor:"pointer",
+          <div key={p.key} className="rkRow" onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
+            style={{padding:"14px 20px",borderBottom:"1px solid #0f172a",cursor:"pointer",
               background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":"none",transition:"background 0.15s"}}
             onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)"; }}
             onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
@@ -1221,9 +1229,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,onSelect,onCompare}
             <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}>{pct(p.total)}</span>
             <span style={{textAlign:"right",alignSelf:"center",fontFamily:"monospace",fontSize:13,fontWeight:600,
               color:alpha==null?"#4b5563":alpha>=0?"#4ade80":"#f87171"}}>{alpha==null?"—":`${alpha>=0?"+":""}${(alpha*100).toFixed(2)}%`}</span>
-            <span style={{textAlign:"center",alignSelf:"center",color:"#4ade80",fontWeight:600,fontSize:14}}>{p.pos}</span>
-            <span style={{textAlign:"center",alignSelf:"center",color:"#f87171",fontWeight:600,fontSize:14}}>{p.neg}</span>
-            <span style={{textAlign:"right",alignSelf:"center",fontSize:12,color:"#4b5563"}}>{dt(p.submittedAt)}</span>
+            <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:14,fontWeight:700}}>
+              <span style={{color:"#4ade80"}}>{p.pos}</span><span style={{color:"#4b5563"}}>/</span><span style={{color:"#f87171"}}>{p.neg}</span>
+            </span>
+            <span className="rkHide" style={{textAlign:"right",alignSelf:"center",fontSize:12,color:"#4b5563"}}>{dt(p.submittedAt)}</span>
           </div>
         );
       })}
@@ -1261,6 +1270,13 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,onSelect,onCompare}
   );
   return(
     <div style={{maxWidth:900,margin:"0 auto",padding:"40px 20px 120px"}}>
+      <style>{`
+        .rkRow{display:grid;grid-template-columns:40px 1fr 100px 100px 92px 110px;gap:8px}
+        @media(max-width:640px){
+          .rkRow{grid-template-columns:26px 1fr 64px 64px 56px;gap:6px}
+          .rkHide{display:none}
+        }
+      `}</style>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
         <h1 style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px",marginBottom:4}}>Ranking Geral</h1>
         {ranking.length>=2&&(
@@ -1294,7 +1310,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,onSelect,onCompare}
           <div>
             {sectionTitle("Oficial",preLaunch?"em espera · começa 1 de julho":"a decorrer",preLaunch?"#fbbf24":"#4ade80")}
             {officials.length>0
-              ? (preLaunch?pendingList(officials):tableFor(officials))
+              ? (preLaunch?pendingList([...officials].sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||"")))):tableFor(officials))
               : <div style={{background:"rgba(255,255,255,0.04)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:16,
                   padding:40,textAlign:"center",color:"#64748b",fontSize:14}}>
                   Ainda sem inscrições. Os portefólios submetidos a partir de agora entram aqui — admissão oficial a 1 de julho.
