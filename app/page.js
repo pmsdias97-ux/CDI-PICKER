@@ -351,18 +351,19 @@ export default function App(){
     return { now, returnFor };
   },[livePrices,spyHist]);
 
-  async function doSubmit(name,stocks){
+  async function doSubmit(name,stocks,pin){
     // All validation + the authoritative price snapshot happen server-side
     // (/api/portfolio/submit) using the service_role key — the browser never
     // writes to the database directly, so initial_price can't be forged.
     const trimmedName=name.trim();
     if(!trimmedName) return{error:"Escreve o teu nome."};
+    if(!/^\d{3}$/.test(String(pin||""))) return{error:"Escolhe um código de 3 dígitos (só números)."};
     let res,data;
     try{
       res=await fetch("/api/portfolio/submit",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({ name:trimmedName, stocks:stocks.map(s=>({ticker:s.ticker,name:s.name,side:s.side==="short"?"short":"long"})) }),
+        body:JSON.stringify({ name:trimmedName, pin:String(pin), stocks:stocks.map(s=>({ticker:s.ticker,name:s.name,side:s.side==="short"?"short":"long"})) }),
       });
       data=await res.json();
     }catch{
@@ -378,22 +379,23 @@ export default function App(){
     return{ok:true};
   }
 
-  // Returning member with no local identity (closed window, cleared storage,
-  // other device): re-identify by Telegram name against Supabase. No password —
-  // the name already is the unique, validated identity.
-  async function recoverByName(rawName){
+  // Returning member (closed window / outro dispositivo): re-identifica por nome
+  // + código de 3 dígitos (anti-impersonação), validado no servidor.
+  async function recoverByName(rawName,pin){
     const name=(rawName||"").trim();
     if(!name) return{error:"Escreve o teu nome."};
-    const { data, error }=await supabase
-      .from("users")
-      .select("telegram_name, has_submitted_portfolio")
-      .ilike("telegram_name", name)
-      .maybeSingle();
-    if(error) return{error:"Não foi possível verificar o nome. Tenta novamente."};
-    if(!data||data.has_submitted_portfolio!==true)
-      return{error:"Não encontrámos um portefólio submetido com esse nome."};
-    sset(K.MYNAME, data.telegram_name);
-    setMyName(data.telegram_name);
+    if(!/^\d{3}$/.test(String(pin||""))) return{error:"Escreve o teu código de 3 dígitos."};
+    let res,data;
+    try{
+      res=await fetch("/api/portfolio/recover",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ name, pin:String(pin) }),
+      });
+      data=await res.json();
+    }catch{ return{error:"Falha de ligação. Tenta novamente."}; }
+    if(!res.ok||!data?.ok) return{error:data?.error||"Não foi possível verificar o nome/código."};
+    sset(K.MYNAME, data.name||name);
+    setMyName(data.name||name);
     setHasSubmitted(true);
     setPage("ranking");
     return{ok:true};
@@ -776,6 +778,7 @@ function Home({nav,submitted,count,settings,ranking,livePrices}){
 function Create({settings,doSubmit,onDone,showToast}){
   const [step,setStep]=useState(1); // 1=name 2=stocks
   const [name,setName]=useState("");
+  const [pin,setPin]=useState("");
   const [query,setQuery]=useState("");
   const [results,setResults]=useState([]);
   const [searching,setSearching]=useState(false);
@@ -849,7 +852,7 @@ function Create({settings,doSubmit,onDone,showToast}){
   async function submit(){
     if(picked.length!==PORTFOLIO_SIZE||!name.trim()||submitting) return;
     setSubmitting(true);
-    const r=await doSubmit(name,picked);
+    const r=await doSubmit(name,picked,pin);
     setSubmitting(false);
     if(r.error){ showToast(r.error,"error"); return; }
     onDone();
@@ -874,27 +877,42 @@ function Create({settings,doSubmit,onDone,showToast}){
         </div>
       )}
 
-      {/* Step 1 — nome */}
-      {step===1&&(
+      {/* Step 1 — nome + código */}
+      {step===1&&(()=>{
+        const pinOk=/^\d{3}$/.test(pin);
+        const step1ok=name.trim().length>=2&&pinOk;
+        return(
         <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:32}}>
           <h2 style={{fontSize:18,fontWeight:700,marginBottom:6}}>O teu nome no Telegram</h2>
           <p style={{fontSize:14,color:"#6b7280",marginBottom:20}}>Escreve exatamente o mesmo nome que aparece no grupo de Telegram da comunidade.</p>
           <input value={name} onChange={e=>setName(e.target.value)}
-            onKeyDown={e=>{ if(e.key==="Enter"&&name.trim().length>=2) setStep(2); }}
+            onKeyDown={e=>{ if(e.key==="Enter"&&step1ok) setStep(2); }}
             placeholder="Ex: João Silva"
             style={{width:"100%",background:"rgba(0,0,0,0.18)",border:`1px solid ${name.trim().length>=2?"#22c55e":"#1f2937"}`,
               borderRadius:10,padding:"14px 16px",fontSize:16,color:"#e2e8f0",outline:"none",
+              boxSizing:"border-box",transition:"border-color 0.2s",marginBottom:20}}/>
+          <h2 style={{fontSize:18,fontWeight:700,marginBottom:6}}>Código de 3 dígitos</h2>
+          <p style={{fontSize:14,color:"#6b7280",marginBottom:12}}>Escolhe um código secreto de 3 números. Vais precisar dele (com o teu nome) para voltares a aceder ao teu portefólio.</p>
+          <input value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,3))}
+            onKeyDown={e=>{ if(e.key==="Enter"&&step1ok) setStep(2); }}
+            inputMode="numeric" placeholder="Ex: 482" maxLength={3}
+            style={{width:"100%",background:"rgba(0,0,0,0.18)",border:`1px solid ${pinOk?"#22c55e":"#1f2937"}`,
+              borderRadius:10,padding:"14px 16px",fontSize:22,letterSpacing:"6px",fontFamily:"monospace",color:"#e2e8f0",outline:"none",
               boxSizing:"border-box",transition:"border-color 0.2s"}}/>
-          <button onClick={()=>{ if(name.trim().length>=2) setStep(2); }}
-            disabled={name.trim().length<2||submClosed}
-            style={{width:"100%",marginTop:16,background:name.trim().length>=2&&!submClosed?"#22c55e":"#1f2937",
-              color:name.trim().length>=2&&!submClosed?"#000":"#4b5563",border:"none",borderRadius:10,
-              padding:"14px",fontSize:16,fontWeight:700,cursor:name.trim().length>=2?"pointer":"not-allowed",
+          <p style={{fontSize:12,color:"#fbbf24",marginTop:10,lineHeight:1.5}}>
+            ⚠ Guarda bem este código — só números, sem ele não consegues recuperar o teu portefólio noutro dispositivo.
+          </p>
+          <button onClick={()=>{ if(step1ok) setStep(2); }}
+            disabled={!step1ok||submClosed}
+            style={{width:"100%",marginTop:16,background:step1ok&&!submClosed?"#22c55e":"#1f2937",
+              color:step1ok&&!submClosed?"#000":"#4b5563",border:"none",borderRadius:10,
+              padding:"14px",fontSize:16,fontWeight:700,cursor:step1ok?"pointer":"not-allowed",
               transition:"background 0.2s"}}>
             Continuar →
           </button>
         </div>
-      )}
+        );
+      })()}
 
       {/* Step 2 — ações */}
       {step===2&&(
@@ -1111,11 +1129,13 @@ function Confirm({nav,name}){
 /* ---- Locked gate --------------------------------------------------------- */
 function LockedGate({nav,recoverByName,showToast}){
   const [name,setName]=useState("");
+  const [pin,setPin]=useState("");
   const [busy,setBusy]=useState(false);
+  const canRecover=name.trim().length>=2&&/^\d{3}$/.test(pin);
   async function recover(){
-    if(busy) return;
+    if(busy||!canRecover) return;
     setBusy(true);
-    const r=await recoverByName(name);
+    const r=await recoverByName(name,pin);
     setBusy(false);
     if(r?.error) showToast(r.error,"error");
   }
@@ -1131,20 +1151,27 @@ function LockedGate({nav,recoverByName,showToast}){
 
         <div style={{marginTop:32,paddingTop:24,borderTop:"1px solid #1f2937"}}>
           <p style={{fontSize:13,color:"#6b7280",marginBottom:12}}>
-            Já submeteste o teu portefólio? Escreve o teu nome do Telegram para voltares a aceder.
+            Já submeteste o teu portefólio? Escreve o teu nome do Telegram e o teu código de 3 dígitos para voltares a aceder.
           </p>
-          <div style={{display:"flex",gap:8}}>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
             <input value={name} onChange={e=>setName(e.target.value)}
               onKeyDown={e=>{ if(e.key==="Enter") recover(); }}
               placeholder="O teu nome no Telegram"
-              style={{flex:1,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
+              style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
                 padding:"11px 14px",fontSize:14,color:"#e2e8f0",outline:"none",boxSizing:"border-box"}}/>
-            <button onClick={recover} disabled={busy||!name.trim()}
-              style={{background:"#1a2a1a",border:"1px solid rgba(34,197,94,0.3)",borderRadius:10,
-                padding:"11px 18px",fontSize:14,color:"#4ade80",fontWeight:700,
-                cursor:busy||!name.trim()?"default":"pointer",opacity:busy||!name.trim()?0.5:1,whiteSpace:"nowrap"}}>
-              {busy?"A verificar…":"Ver ranking"}
-            </button>
+            <div style={{display:"flex",gap:8}}>
+              <input value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,3))}
+                onKeyDown={e=>{ if(e.key==="Enter") recover(); }}
+                inputMode="numeric" maxLength={3} placeholder="Código (3 dígitos)"
+                style={{flex:1,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
+                  padding:"11px 14px",fontSize:16,letterSpacing:"4px",fontFamily:"monospace",color:"#e2e8f0",outline:"none",boxSizing:"border-box"}}/>
+              <button onClick={recover} disabled={busy||!canRecover}
+                style={{background:"#1a2a1a",border:"1px solid rgba(34,197,94,0.3)",borderRadius:10,
+                  padding:"11px 18px",fontSize:14,color:"#4ade80",fontWeight:700,
+                  cursor:busy||!canRecover?"default":"pointer",opacity:busy||!canRecover?0.5:1,whiteSpace:"nowrap"}}>
+                {busy?"A verificar…":"Aceder"}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1856,6 +1883,18 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
   const [tab,setTab]=useState("portfolios");
   const [editKey,setEditKey]=useState(null);
   const [editName,setEditName]=useState("");
+  const [pins,setPins]=useState({}); // { user_id: pin } — códigos dos membros
+  useEffect(()=>{
+    let cancel=false;
+    (async()=>{
+      try{
+        const res=await fetch("/api/admin/pins",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
+        const data=await res.json();
+        if(!cancel&&res.ok&&data?.pins) setPins(data.pins);
+      }catch{}
+    })();
+    return()=>{ cancel=true; };
+  },[pw,portfolios]);
 
   async function startCompetition(){
     if(!confirm("Iniciar a competição AGORA?\n\nVai fixar o preço de partida de TODOS os portefólios com a cotação ao vivo deste momento (todos começam iguais). Faz isto no dia 1 à abertura do mercado.")) return;
@@ -1960,6 +1999,8 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
                   ):(
                     <span style={{fontWeight:600,fontSize:14,display:"flex",alignItems:"center",gap:8,minWidth:0}}>
                       <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
+                      {pins[p.userId]&&<span title="Código do membro" style={{fontSize:11,fontFamily:"monospace",fontWeight:700,color:"#cbd5e1",
+                        background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,padding:"2px 7px",flexShrink:0}}>🔑 {pins[p.userId]}</span>}
                       {p.official&&isPreLaunch(settings)&&<span style={{fontSize:9,background:"rgba(251,191,36,0.15)",color:"#fbbf24",
                         border:"1px solid rgba(251,191,36,0.3)",borderRadius:999,padding:"2px 6px",fontWeight:700,flexShrink:0,whiteSpace:"nowrap"}}>EM ESPERA</span>}
                       <button onClick={()=>{ setEditKey(p.key); setEditName(p.name); }} title="Editar nome"

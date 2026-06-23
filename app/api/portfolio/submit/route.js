@@ -15,10 +15,14 @@ export async function POST(request) {
   let body;
   try { body = await request.json(); } catch { body = null; }
   const name = String(body?.name || "").trim();
+  const pin = String(body?.pin || "");
   const stocks = Array.isArray(body?.stocks) ? body.stocks : [];
 
   if (!name || name.length < 2 || name.length > 80) {
     return Response.json({ error: "Escreve o teu nome." }, { status: 400 });
+  }
+  if (!/^\d{3}$/.test(pin)) {
+    return Response.json({ error: "Escolhe um código de 3 dígitos (só números)." }, { status: 400 });
   }
   if (stocks.length !== PORTFOLIO_SIZE) {
     return Response.json({ error: `Tens de escolher exatamente ${PORTFOLIO_SIZE} ações.` }, { status: 400 });
@@ -88,6 +92,9 @@ export async function POST(request) {
     if (userErr || !userRow) return Response.json({ error: "Não foi possível registar o utilizador." }, { status: 500 });
     userId = userRow.id;
   }
+
+  // Código de 3 dígitos do membro (anti-impersonação) — só no servidor.
+  await supabase.from("member_pins").upsert({ user_id: userId, pin });
 
   // S&P 500 price at submission, to benchmark "what if you'd bought SPY instead"
   // over the exact same period. Best-effort: null if unavailable.
