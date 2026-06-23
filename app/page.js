@@ -645,7 +645,7 @@ function WinnerCard({p,rank,livePrices,series,onClick}){
       <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:18}}>
         <div style={{width:32,height:32,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
           fontSize:13,fontWeight:800,...badge}}>{rank}</div>
-        <span style={{fontWeight:700,fontSize:"clamp(12.5px,3.4vw,16px)",letterSpacing:"-0.4px",flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
+        <span style={{fontWeight:700,fontSize:"clamp(12.5px,3.4vw,16px)",letterSpacing:"-0.4px",flex:1,minWidth:0,lineHeight:1.2,overflowWrap:"anywhere"}}>{p.name}</span>
       </div>
       <div style={{marginBottom:18}}>
         <div style={{display:"flex",alignItems:"baseline",gap:8}}>
@@ -1312,7 +1312,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
             onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
             <span style={{fontSize:16}}>{medals[i]||<span style={{fontSize:13,color:"#374151",fontWeight:700}}>{i+1}</span>}</span>
             <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
-              <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
+              <span style={{overflowWrap:"anywhere",lineHeight:1.2}}>{p.name}</span>
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
             </span>
             <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}>{pct(p.total)}</span>
@@ -1340,7 +1340,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
             onMouseEnter={me?(e=>e.currentTarget.style.background="rgba(34,197,94,0.08)"):undefined}
             onMouseLeave={me?(e=>e.currentTarget.style.background="rgba(34,197,94,0.04)"):undefined}>
             <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
-              <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
+              <span style={{overflowWrap:"anywhere",lineHeight:1.2}}>{p.name}</span>
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
             </span>
             <span style={{fontSize:12,color:me?"#4ade80":"#4b5563",whiteSpace:"nowrap",flexShrink:0}}>
@@ -1616,7 +1616,7 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav}){
                 {rank<=3?["🥇","🥈","🥉"][rank-1]:rank}
               </span>
             )}
-            <h1 style={{fontSize:"clamp(22px,5vw,26px)",fontWeight:800,letterSpacing:"-0.5px",margin:0,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pf.name}</h1>
+            <h1 style={{fontSize:"clamp(22px,5vw,26px)",fontWeight:800,letterSpacing:"-0.5px",margin:0,minWidth:0,lineHeight:1.2,overflowWrap:"anywhere"}}>{pf.name}</h1>
           </div>
           <div style={{fontSize:"clamp(34px,9vw,42px)",fontWeight:800,fontFamily:"monospace",lineHeight:1,
             color:st.total>=0?"#4ade80":"#f87171"}}>{st.total>=0?"▲":"▼"} {pct(Math.abs(st.total)).replace(/[+-]/,"")}</div>
@@ -1797,10 +1797,7 @@ function DuelMetric({label,a,b,fmt,better}){
   const aw=better==="low"?a<b:a>b, bw=better==="low"?b<a:b>a;
   const cell=(val,win)=>(
     <span style={{display:"inline-block",fontFamily:"monospace",fontWeight:800,fontSize:15,
-      padding:"4px 11px",borderRadius:8,
-      color:win?"#4ade80":"#94a3b8",
-      background:win?"rgba(34,197,94,0.13)":"transparent",
-      border:`1px solid ${win?"rgba(34,197,94,0.25)":"transparent"}`}}>{fmt(val)}</span>
+      color:win?"#4ade80":"#94a3b8"}}>{fmt(val)}</span>
   );
   return(
     <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",gap:14,padding:"9px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
@@ -1832,13 +1829,13 @@ function PickCell({s,kind}){
   const bg=up?"rgba(34,197,94,0.10)":"rgba(239,68,68,0.10)";
   const bd=up?"rgba(34,197,94,0.20)":"rgba(239,68,68,0.20)";
   return(
-    <div style={{display:"flex",alignItems:"center",gap:5,background:bg,border:`1px solid ${bd}`,borderRadius:9,padding:"5px 7px",minWidth:0,overflow:"hidden"}}>
-      <span style={{color:col,fontSize:10,fontWeight:800,width:9,textAlign:"center",flexShrink:0}}>{up?"▲":"▼"}</span>
-      <span style={{flexShrink:0,display:"inline-flex"}}><StockLogo ticker={s.ticker} size={18}/></span>
-      <span style={{fontSize:"clamp(10px,2.5vw,12.5px)",fontWeight:800,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{s.ticker}</span>
+    <div style={{display:"flex",alignItems:"center",gap:5,background:bg,border:`1px solid ${bd}`,borderRadius:9,padding:"5px 8px",minWidth:0,overflow:"hidden"}}>
+      <span style={{color:col,fontSize:9,fontWeight:800,width:9,textAlign:"center",flexShrink:0}}>{up?"▲":"▼"}</span>
+      <span style={{flexShrink:0,display:"inline-flex"}}><StockLogo ticker={s.ticker} size={16}/></span>
+      <span style={{fontSize:"clamp(9.5px,2.4vw,12px)",fontWeight:800,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{s.ticker}</span>
       {s.side==="short"&&<span style={{flexShrink:0}}><SideBadge side="short"/></span>}
       <span style={{flex:1,minWidth:3}}/>
-      <span style={{fontFamily:"monospace",fontWeight:800,fontSize:"clamp(10px,2.5vw,12.5px)",color:col,flexShrink:0,whiteSpace:"nowrap"}}>{pct(s.ret)}</span>
+      <span style={{fontFamily:"monospace",fontWeight:800,fontSize:"clamp(9.5px,2.4vw,12px)",color:col,flexShrink:0,whiteSpace:"nowrap"}}>{pct(s.ret)}</span>
     </div>
   );
 }
@@ -1869,6 +1866,8 @@ function Duel({a,b,livePrices,spy,nav}){
   const common=[...setA].filter(t=>setB.has(t));
   const onlyA=[...setA].filter(t=>!setB.has(t));
   const onlyB=[...setB].filter(t=>!setA.has(t));
+  // Quebra o nome em primeiro nome / apelido (mesmo para nomes curtos).
+  const nameLines=(n)=>{ const p=String(n||"").trim().split(/\s+/); return p.length<2?n:<>{p[0]}<br/>{p.slice(1).join(" ")}</>; };
   return(
     <div style={{maxWidth:980,margin:"0 auto",padding:"40px 20px 80px"}}>
       <button onClick={()=>nav("ranking")}
@@ -1881,7 +1880,7 @@ function Duel({a,b,livePrices,spy,nav}){
         <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"start",gap:16}}>
           <div style={{textAlign:"right",minWidth:0}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8,marginBottom:6}}>
-              <span style={{fontSize:16,fontWeight:800,letterSpacing:"-0.3px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</span>
+              <span style={{fontSize:"clamp(14px,4vw,16px)",fontWeight:800,letterSpacing:"-0.3px",lineHeight:1.2,minWidth:0,overflowWrap:"anywhere"}}>{nameLines(a.name)}</span>
               <span style={{width:9,height:9,borderRadius:"50%",background:DUEL_A,flexShrink:0,boxShadow:`0 0 8px ${DUEL_A}`}}/>
             </div>
             <div style={{fontSize:30,fontWeight:800,fontFamily:"monospace",letterSpacing:"-1px",color:sa.total>=0?"#4ade80":"#f87171"}}>{pct(sa.total)}</div>
@@ -1893,7 +1892,7 @@ function Duel({a,b,livePrices,spy,nav}){
           <div style={{textAlign:"left",minWidth:0}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
               <span style={{width:9,height:9,borderRadius:"50%",background:DUEL_B,flexShrink:0,boxShadow:`0 0 8px ${DUEL_B}`}}/>
-              <span style={{fontSize:16,fontWeight:800,letterSpacing:"-0.3px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{b.name}</span>
+              <span style={{fontSize:"clamp(14px,4vw,16px)",fontWeight:800,letterSpacing:"-0.3px",lineHeight:1.2,minWidth:0,overflowWrap:"anywhere"}}>{nameLines(b.name)}</span>
             </div>
             <div style={{fontSize:30,fontWeight:800,fontFamily:"monospace",letterSpacing:"-1px",color:sb.total>=0?"#4ade80":"#f87171"}}>{pct(sb.total)}</div>
             <DuelPicksSide rows={rb}/>
@@ -1923,7 +1922,7 @@ function Duel({a,b,livePrices,spy,nav}){
 
       {/* Carteiras: comum vs exclusivas */}
       <div style={{...GLASS,borderRadius:16,padding:24,marginBottom:16}}>
-        <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Carteiras</h3>
+        <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af",textAlign:"center"}}>Carteiras</h3>
         <DuelHoldings title="Em comum" tickers={common} color="rgba(255,255,255,0.14)"/>
         <DuelHoldings title={`Só ${a.name}`} tickers={onlyA} color="rgba(59,130,246,0.4)"/>
         <DuelHoldings title={`Só ${b.name}`} tickers={onlyB} color="rgba(245,158,11,0.4)"/>
