@@ -103,6 +103,7 @@ function mapPortfolioFromSupabase(row){
     locked:row.locked,
     initialValue:row.initial_value,
     spyInitialPrice:row.spy_initial_price!=null?Number(row.spy_initial_price):null,
+    official:row.official===true,
     stocks:(row.portfolio_stocks||[]).map(s=>({
       ticker:s.ticker,
       companyName:s.company_name,
@@ -175,12 +176,12 @@ function StockLogo({ticker,size=28}){
 }
 
 /* ---- Shared game settings (Supabase) ------------------------------------- */
-const DEFAULT_SETTINGS={submissionsOpen:true,gameStartDate:"",gameEndDate:""};
+const DEFAULT_SETTINGS={submissionsOpen:true,gameStartDate:"",gameEndDate:"",competitionStarted:false};
 async function loadGameSettings(){
   try{
     const { data, error }=await supabase
       .from("game_settings")
-      .select("submissions_open,game_start_date,game_end_date")
+      .select("submissions_open,game_start_date,game_end_date,competition_started")
       .eq("id",1)
       .maybeSingle();
     if(error||!data) return null;
@@ -188,8 +189,19 @@ async function loadGameSettings(){
       submissionsOpen:data.submissions_open!==false,
       gameStartDate:data.game_start_date||"",
       gameEndDate:data.game_end_date||"",
+      competitionStarted:data.competition_started===true,
     };
   }catch{ return null; }
+}
+// Pré-lançamento (modo demonstração): antes de a competição arrancar.
+function isPreLaunch(s){ return !!s && s.competitionStarted!==true; }
+// Submissões fechadas se desligadas, já arrancou, ou passou o prazo (game_start_date).
+function submissionsClosed(s){
+  if(!s) return false;
+  if(s.competitionStarted) return true;
+  if(!s.submissionsOpen) return true;
+  if(s.gameStartDate){ const d=new Date(s.gameStartDate); if(!isNaN(d)&&Date.now()>=d.getTime()) return true; }
+  return false;
 }
 // Settings are written through the admin API route (service_role key); the
 // browser only reads them via loadGameSettings above.
@@ -248,6 +260,7 @@ export default function App(){
         locked,
         initial_value,
         spy_initial_price,
+        official,
         users (
           telegram_name,
           has_submitted_portfolio
@@ -404,7 +417,7 @@ export default function App(){
   if(page==="home")   return sh(<Home nav={nav} submitted={submitted} count={portfolios.length} settings={settings} ranking={ranking} livePrices={livePrices}/>);
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
-  if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} onSelect={(k)=>{setDetailKey(k);nav("detail");}} onCompare={(a,b)=>{setDuelKeys([a,b]);nav("duel");}}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} preLaunch={isPreLaunch(settings)} onSelect={(k)=>{setDetailKey(k);nav("detail");}} onCompare={(a,b)=>{setDuelKeys([a,b]);nav("duel");}}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="duel")   return sh(submitted?<Duel a={ranking.find(p=>p.key===duelKeys?.[0])} b={ranking.find(p=>p.key===duelKeys?.[1])} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="detail") return sh(submitted?<Detail pf={portfolios.find(p=>p.key===detailKey)||myPf} rank={(()=>{const k=(portfolios.find(p=>p.key===detailKey)||myPf)?.key; const i=ranking.findIndex(r=>r.key===k); return i>=0?i+1:0;})()} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
@@ -654,7 +667,7 @@ function Home({nav,submitted,count,settings,ranking,livePrices}){
           border:"1px solid rgba(34,197,94,0.25)",borderRadius:999,padding:"6px 16px",fontSize:13,
           color:"#4ade80",marginBottom:24}}>
           <span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
-          Jogo ativo — Submissões {settings?.submissionsOpen?"abertas":"fechadas"}
+          {isPreLaunch(settings)?"Submissões abertas até 30 de junho · começa 1 de julho":`Jogo ativo — Submissões ${settings?.submissionsOpen?"abertas":"fechadas"}`}
         </div>
         <p style={{fontSize:18,color:"#6b7280",lineHeight:1.6,maxWidth:560,margin:"0 auto 40px"}}>
           O jogo de portefólios da nossa comunidade. Escolhe as tuas 8 ações,
@@ -831,7 +844,7 @@ function Create({settings,doSubmit,onDone,showToast}){
   };
   const rem=t=>setPicked(p=>p.filter(s=>s.ticker!==t));
   const progress=picked.length/PORTFOLIO_SIZE;
-  const submClosed=settings&&!settings.submissionsOpen;
+  const submClosed=submissionsClosed(settings);
 
   async function submit(){
     if(picked.length!==PORTFOLIO_SIZE||!name.trim()||submitting) return;
@@ -1140,12 +1153,85 @@ function LockedGate({nav,recoverByName,showToast}){
 }
 
 /* ---- Ranking ------------------------------------------------------------- */
-function Ranking({ranking,myNorm,pricesLoading,spy,onSelect,onCompare}){
+function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,onSelect,onCompare}){
   const medals=["🥇","🥈","🥉"];
   const [cmp,setCmp]=useState(false);
   const [sel,setSel]=useState([]);
   const toggleSel=k=>setSel(s=>s.includes(k)?s.filter(x=>x!==k):(s.length>=2?[s[1],k]:[...s,k]));
   const nameByKey=k=>ranking.find(p=>p.key===k)?.name||"";
+  const demos=ranking.filter(p=>!p.official);
+  const officials=ranking.filter(p=>p.official);
+  const tableFor=(list)=>(
+    <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
+      <div style={{display:"grid",gridTemplateColumns:"40px 1fr 100px 100px 64px 64px 110px",
+        padding:"10px 20px",borderBottom:"1px solid #1f2937",
+        fontSize:11,color:"#4b5563",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>
+        <span>#</span><span>Membro</span>
+        <span style={{textAlign:"right"}}>Rentab.</span>
+        <span style={{textAlign:"right"}}>Alpha</span>
+        <span style={{textAlign:"center"}}>Pos.</span>
+        <span style={{textAlign:"center"}}>Neg.</span>
+        <span style={{textAlign:"right"}}>Submissão</span>
+      </div>
+      {list.map((p,i)=>{
+        const me=p.normName===myNorm;
+        const spyRet=spy?spy.returnFor(p):null;
+        const alpha=spyRet==null?null:p.total-spyRet;
+        const picked=cmp&&sel.includes(p.key);
+        const baseBg=picked?"rgba(59,130,246,0.16)":me?"rgba(34,197,94,0.04)":"transparent";
+        return(
+          <div key={p.key} onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
+            style={{display:"grid",gridTemplateColumns:"40px 1fr 100px 100px 64px 64px 110px",
+              padding:"14px 20px",borderBottom:"1px solid #0f172a",cursor:"pointer",
+              background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":"none",transition:"background 0.15s"}}
+            onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)"; }}
+            onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
+            <span style={{fontSize:16}}>{medals[i]||<span style={{fontSize:13,color:"#374151",fontWeight:700}}>{i+1}</span>}</span>
+            <span style={{fontWeight:600,fontSize:15,display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+              <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
+              {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
+            </span>
+            <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}>{pct(p.total)}</span>
+            <span style={{textAlign:"right",alignSelf:"center",fontFamily:"monospace",fontSize:13,fontWeight:600,
+              color:alpha==null?"#4b5563":alpha>=0?"#4ade80":"#f87171"}}>{alpha==null?"—":`${alpha>=0?"+":""}${(alpha*100).toFixed(2)}%`}</span>
+            <span style={{textAlign:"center",alignSelf:"center",color:"#4ade80",fontWeight:600,fontSize:14}}>{p.pos}</span>
+            <span style={{textAlign:"center",alignSelf:"center",color:"#f87171",fontWeight:600,fontSize:14}}>{p.neg}</span>
+            <span style={{textAlign:"right",alignSelf:"center",fontSize:12,color:"#4b5563"}}>{dt(p.submittedAt)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+  // Lista de inscritos (em espera): sem classificação; só o próprio dono vê o seu.
+  const pendingList=(list)=>(
+    <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
+      {list.map(p=>{
+        const me=p.normName===myNorm;
+        return(
+          <div key={p.key} onClick={me?()=>onSelect(p.key):undefined}
+            style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,
+              padding:"14px 20px",borderBottom:"1px solid #0f172a",cursor:me?"pointer":"default",
+              background:me?"rgba(34,197,94,0.04)":"transparent",transition:"background 0.15s"}}
+            onMouseEnter={me?(e=>e.currentTarget.style.background="rgba(34,197,94,0.08)"):undefined}
+            onMouseLeave={me?(e=>e.currentTarget.style.background="rgba(34,197,94,0.04)"):undefined}>
+            <span style={{fontWeight:600,fontSize:15,display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+              <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
+              {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
+            </span>
+            <span style={{fontSize:12,color:me?"#4ade80":"#4b5563",whiteSpace:"nowrap",flexShrink:0}}>
+              {me?"Ver o teu →":"🔒 oculto até 1 jul"}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+  const sectionTitle=(txt,sub,subColor)=>(
+    <div style={{display:"flex",alignItems:"baseline",gap:10,margin:"0 0 12px",flexWrap:"wrap"}}>
+      <h2 style={{fontSize:18,fontWeight:800,letterSpacing:"-0.3px",margin:0}}>{txt}</h2>
+      {sub&&<span style={{fontSize:12,fontWeight:700,color:subColor||"#94a3b8"}}>{sub}</span>}
+    </div>
+  );
   return(
     <div style={{maxWidth:900,margin:"0 auto",padding:"40px 20px 120px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
@@ -1171,53 +1257,29 @@ function Ranking({ranking,myNorm,pricesLoading,spy,onSelect,onCompare}){
           Ainda não há portefólios submetidos.
         </div>
       ):(
-        <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
-          {/* Header */}
-          <div style={{display:"grid",gridTemplateColumns:"40px 1fr 100px 100px 64px 64px 110px",
-            padding:"10px 20px",borderBottom:"1px solid #1f2937",
-            fontSize:11,color:"#4b5563",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>
-            <span>#</span><span>Membro</span>
-            <span style={{textAlign:"right"}}>Rentab.</span>
-            <span style={{textAlign:"right"}}>Alpha</span>
-            <span style={{textAlign:"center"}}>Pos.</span>
-            <span style={{textAlign:"center"}}>Neg.</span>
-            <span style={{textAlign:"right"}}>Submissão</span>
+        <>
+          {demos.length>0&&(
+            <div style={{marginBottom:32}}>
+              {sectionTitle("Demo")}
+              {tableFor(demos)}
+            </div>
+          )}
+          <div>
+            {sectionTitle("Oficial",preLaunch?"em espera · começa 1 de julho":"a decorrer",preLaunch?"#fbbf24":"#4ade80")}
+            {officials.length>0
+              ? (preLaunch?pendingList(officials):tableFor(officials))
+              : <div style={{background:"rgba(255,255,255,0.04)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:16,
+                  padding:40,textAlign:"center",color:"#64748b",fontSize:14}}>
+                  Ainda sem inscrições. Os portefólios submetidos a partir de agora entram aqui — admissão oficial a 1 de julho.
+                </div>}
           </div>
-          {ranking.map((p,i)=>{
-            const me=p.normName===myNorm;
-            const spyRet=spy?spy.returnFor(p):null;
-            const alpha=spyRet==null?null:p.total-spyRet;
-            const picked=cmp&&sel.includes(p.key);
-            const baseBg=picked?"rgba(59,130,246,0.16)":me?"rgba(34,197,94,0.04)":"transparent";
-            return(
-              <div key={p.key} onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
-                style={{display:"grid",gridTemplateColumns:"40px 1fr 100px 100px 64px 64px 110px",
-                  padding:"14px 20px",borderBottom:"1px solid #0f172a",cursor:"pointer",
-                  background:baseBg,
-                  boxShadow:picked?"inset 3px 0 0 #3b82f6":"none",
-                  transition:"background 0.15s"}}
-                onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)"; }}
-                onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
-                <span style={{fontSize:16}}>{medals[i]||<span style={{fontSize:13,color:"#374151",fontWeight:700}}>{i+1}</span>}</span>
-                <span style={{fontWeight:600,fontSize:15,display:"flex",alignItems:"center",gap:8}}>
-                  {p.name}
-                  {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",
-                    borderRadius:999,padding:"2px 8px",fontWeight:700}}>Tu</span>}
-                </span>
-                <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}>{pct(p.total)}</span>
-                <span style={{textAlign:"right",alignSelf:"center",fontFamily:"monospace",fontSize:13,fontWeight:600,
-                  color:alpha==null?"#4b5563":alpha>=0?"#4ade80":"#f87171"}}>{alpha==null?"—":`${alpha>=0?"+":""}${(alpha*100).toFixed(2)}%`}</span>
-                <span style={{textAlign:"center",alignSelf:"center",color:"#4ade80",fontWeight:600,fontSize:14}}>{p.pos}</span>
-                <span style={{textAlign:"center",alignSelf:"center",color:"#f87171",fontWeight:600,fontSize:14}}>{p.neg}</span>
-                <span style={{textAlign:"right",alignSelf:"center",fontSize:12,color:"#4b5563"}}>{dt(p.submittedAt)}</span>
-              </div>
-            );
-          })}
-        </div>
+        </>
       )}
-      <p style={{marginTop:12,fontSize:12,color:"#1f2937",textAlign:"right"}}>
-        {cmp?"Seleciona 2 membros para comparar.":"Clica numa linha para ver as 8 ações."}
-      </p>
+      {cmp&&(
+        <p style={{marginTop:12,fontSize:12,color:"#1f2937",textAlign:"right"}}>
+          Seleciona 2 membros para comparar.
+        </p>
+      )}
       {cmp&&(
         <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:70,
           display:"flex",alignItems:"center",gap:14,padding:"12px 16px",borderRadius:14,maxWidth:"92vw",
@@ -1795,6 +1857,17 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
   const [editKey,setEditKey]=useState(null);
   const [editName,setEditName]=useState("");
 
+  async function startCompetition(){
+    if(!confirm("Iniciar a competição AGORA?\n\nVai fixar o preço de partida de TODOS os portefólios com a cotação ao vivo deste momento (todos começam iguais). Faz isto no dia 1 à abertura do mercado.")) return;
+    try{
+      const res=await fetch("/api/admin/start-competition",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
+      const data=await res.json();
+      if(!res.ok||!data?.ok){ showToast(data?.error||"Não foi possível iniciar a competição.","error"); return; }
+      setSettings(s=>({...(s||{}),competitionStarted:true}));
+      await reload();
+      showToast(`Competição iniciada — ${data.stocksUpdated} ações fixadas.`);
+    }catch{ showToast("Falha de ligação.","error"); }
+  }
   async function saveName(p){
     const name=editName.trim();
     if(name.length<2){ showToast("Nome demasiado curto.","error"); return; }
@@ -1887,6 +1960,8 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
                   ):(
                     <span style={{fontWeight:600,fontSize:14,display:"flex",alignItems:"center",gap:8,minWidth:0}}>
                       <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
+                      {p.official&&isPreLaunch(settings)&&<span style={{fontSize:9,background:"rgba(251,191,36,0.15)",color:"#fbbf24",
+                        border:"1px solid rgba(251,191,36,0.3)",borderRadius:999,padding:"2px 6px",fontWeight:700,flexShrink:0,whiteSpace:"nowrap"}}>EM ESPERA</span>}
                       <button onClick={()=>{ setEditKey(p.key); setEditName(p.name); }} title="Editar nome"
                         style={{background:"none",border:"none",cursor:"pointer",color:"#4b5563",fontSize:12,padding:0,flexShrink:0}}
                         onMouseEnter={e=>e.currentTarget.style.color="#cbd5e1"}
@@ -1946,6 +2021,19 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
               onBlur={e=>saveSt({...settings,gameEndDate:e.target.value})}
               style={{width:"100%",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,
                 padding:"8px 12px",fontSize:13,color:"#e2e8f0",outline:"none",boxSizing:"border-box"}}/>
+          </div>
+          <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,gridColumn:"1/-1"}}>
+            <h3 style={{fontWeight:700,marginBottom:8}}>Competição</h3>
+            <p style={{fontSize:13,color:"#6b7280",margin:"0 0 14px",lineHeight:1.5}}>
+              Estado: <strong style={{color:settings.competitionStarted?"#4ade80":"#fbbf24"}}>{settings.competitionStarted?"A decorrer":"Por iniciar (modo demonstração)"}</strong>.
+              {!settings.competitionStarted&&" Clica no dia 1 à abertura — fixa o preço de partida de todos os portefólios ao vivo."}
+            </p>
+            <button onClick={startCompetition} disabled={settings.competitionStarted}
+              style={{background:settings.competitionStarted?"rgba(255,255,255,0.06)":"linear-gradient(180deg,#34d36a,#22c55e)",
+                color:settings.competitionStarted?"#64748b":"#062b14",border:"1px solid rgba(255,255,255,0.2)",borderRadius:10,
+                padding:"11px 20px",fontSize:14,fontWeight:700,cursor:settings.competitionStarted?"not-allowed":"pointer"}}>
+              🚀 Iniciar competição
+            </button>
           </div>
           <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,gridColumn:"1/-1"}}>
             <button onClick={reload}

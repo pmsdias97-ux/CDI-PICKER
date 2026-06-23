@@ -51,11 +51,15 @@ export async function POST(request) {
   try { supabase = getSupabaseAdmin(); }
   catch (e) { return Response.json({ error: e.message }, { status: 500 }); }
 
-  // Submissions must be open (authoritative server-side check).
+  // Submissions must be open (authoritative server-side check): desligadas,
+  // competição já a decorrer, ou passado o prazo (game_start_date) => fechadas.
   const { data: gs } = await supabase
-    .from("game_settings").select("submissions_open").eq("id", 1).maybeSingle();
-  if (gs && gs.submissions_open === false) {
-    return Response.json({ error: "As submissões estão fechadas de momento." }, { status: 403 });
+    .from("game_settings").select("submissions_open,game_start_date,competition_started").eq("id", 1).maybeSingle();
+  if (gs) {
+    const past = gs.game_start_date && !isNaN(new Date(gs.game_start_date)) && Date.now() >= new Date(gs.game_start_date).getTime();
+    if (gs.submissions_open === false || gs.competition_started === true || past) {
+      return Response.json({ error: "As submissões estão fechadas de momento." }, { status: 403 });
+    }
   }
 
   // One portfolio per name.
@@ -91,7 +95,7 @@ export async function POST(request) {
 
   const { data: pfRow, error: pfErr } = await supabase
     .from("portfolios")
-    .insert({ user_id: userId, locked: true, initial_value: STARTING_VALUE, spy_initial_price: typeof spyAtSubmission === "number" ? spyAtSubmission : null })
+    .insert({ user_id: userId, locked: true, initial_value: STARTING_VALUE, spy_initial_price: typeof spyAtSubmission === "number" ? spyAtSubmission : null, official: true })
     .select("id").single();
   if (pfErr || !pfRow) return Response.json({ error: "Não foi possível criar o portefólio." }, { status: 500 });
 
