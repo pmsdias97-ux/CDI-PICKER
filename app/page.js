@@ -487,17 +487,17 @@ function Shell({children,page,nav,submitted,toast}){
       backgroundAttachment:"fixed",
       color:"#e2e8f0",fontFamily:"system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",overflowX:"hidden"}}>
       <style>{`@media(max-width:640px){.navWide{display:none}}`}</style>
-      <header style={{position:"sticky",top:0,zIndex:50,display:"flex",alignItems:"center",justifyContent:"space-between",
-        gap:8,padding:"12px 14px",flexWrap:"wrap"}}>
+      <header style={{position:"sticky",top:0,zIndex:50,padding:"12px 14px"}}>
         <Nav page={page} nav={nav} submitted={submitted} />
-        <MarketStatus/>
+        <div style={{position:"absolute",top:12,right:14}}><MarketStatus/></div>
       </header>
       <main>{children}</main>
       {toast&&(
         <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:9999,
+          width:"max-content",maxWidth:"min(92vw,440px)",
           background:toast.kind==="error"?"#1a0a0a":"#0a1a0f",border:`1px solid ${toast.kind==="error"?"#ef4444":"#22c55e"}`,
-          borderRadius:12,padding:"12px 20px",fontSize:14,color:toast.kind==="error"?"#fca5a5":"#86efac",
-          whiteSpace:"nowrap",boxShadow:"0 8px 32px rgba(0,0,0,0.6)"}}>
+          borderRadius:12,padding:"12px 18px",fontSize:14,lineHeight:1.45,color:toast.kind==="error"?"#fca5a5":"#86efac",
+          textAlign:"center",boxShadow:"0 8px 32px rgba(0,0,0,0.6)"}}>
           {toast.kind==="error"?"⚠ ":""}{toast.msg}
         </div>
       )}
@@ -1252,11 +1252,12 @@ function LockedGate({nav,recoverByName,showToast}){
               placeholder="O teu nome no Telegram"
               style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
                 padding:"11px 14px",fontSize:14,color:"#e2e8f0",outline:"none",boxSizing:"border-box"}}/>
-            <div style={{display:"flex",gap:8}}>
+            <style>{`@media(max-width:520px){.recRow{flex-direction:column;align-items:flex-start}}`}</style>
+            <div className="recRow" style={{display:"flex",gap:8,alignItems:"center"}}>
               <input value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,3))}
                 onKeyDown={e=>{ if(e.key==="Enter") recover(); }}
                 type="password" inputMode="numeric" autoComplete="off" maxLength={3} placeholder="Código"
-                style={{flex:1,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
+                style={{width:120,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
                   padding:"11px 14px",fontSize:16,letterSpacing:"4px",fontFamily:"monospace",color:"#e2e8f0",outline:"none",boxSizing:"border-box"}}/>
               <button onClick={recover} disabled={busy||!canRecover}
                 style={{background:"#1a2a1a",border:"1px solid rgba(34,197,94,0.3)",borderRadius:10,
@@ -1390,12 +1391,12 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
             </div>
           )}
           <div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",margin:"0 0 12px"}}>
-              <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-                <h2 style={{fontSize:18,fontWeight:800,letterSpacing:"-0.3px",margin:0}}>Oficial</h2>
-                <span style={{fontSize:12,fontWeight:700,color:preLaunch?"#fbbf24":"#4ade80"}}>{preLaunch?"em espera · começa 1 de julho":"a decorrer"}</span>
+            <div style={{margin:"0 0 12px"}}>
+              <h2 style={{fontSize:18,fontWeight:800,letterSpacing:"-0.3px",margin:"0 0 8px",textAlign:"center"}}>Oficial</h2>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,lineHeight:1.4,color:preLaunch?"#fbbf24":"#4ade80"}}>{preLaunch?"em espera · começa 1 de julho":"a decorrer"}</span>
+                <div style={{flexShrink:0}}><CompetitionTimer settings={settings}/></div>
               </div>
-              <CompetitionTimer settings={settings}/>
             </div>
             {officials.length>0
               ? (preLaunch?pendingList([...officials].sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||"")))):tableFor(officials))
@@ -1832,13 +1833,13 @@ function PickCell({s,kind}){
   const bg=up?"rgba(34,197,94,0.10)":"rgba(239,68,68,0.10)";
   const bd=up?"rgba(34,197,94,0.20)":"rgba(239,68,68,0.20)";
   return(
-    <div style={{display:"flex",alignItems:"center",gap:8,background:bg,border:`1px solid ${bd}`,borderRadius:9,padding:"6px 10px"}}>
-      <span style={{color:col,fontSize:11,fontWeight:800,width:12,textAlign:"center"}}>{up?"▲":"▼"}</span>
-      <StockLogo ticker={s.ticker} size={20}/>
-      <span style={{fontSize:12.5,fontWeight:800,color:"#e2e8f0"}}>{s.ticker}</span>
-      {s.side==="short"&&<SideBadge side="short"/>}
-      <span style={{flex:1}}/>
-      <span style={{fontFamily:"monospace",fontWeight:800,fontSize:13,color:col}}>{pct(s.ret)}</span>
+    <div style={{display:"flex",alignItems:"center",gap:6,background:bg,border:`1px solid ${bd}`,borderRadius:9,padding:"6px 8px",minWidth:0,overflow:"hidden"}}>
+      <span style={{color:col,fontSize:11,fontWeight:800,width:11,textAlign:"center",flexShrink:0}}>{up?"▲":"▼"}</span>
+      <span style={{flexShrink:0,display:"inline-flex"}}><StockLogo ticker={s.ticker} size={20}/></span>
+      <span style={{fontSize:12.5,fontWeight:800,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{s.ticker}</span>
+      {s.side==="short"&&<span style={{flexShrink:0}}><SideBadge side="short"/></span>}
+      <span style={{flex:1,minWidth:4}}/>
+      <span style={{fontFamily:"monospace",fontWeight:800,fontSize:12.5,color:col,flexShrink:0,whiteSpace:"nowrap"}}>{pct(s.ret)}</span>
     </div>
   );
 }
