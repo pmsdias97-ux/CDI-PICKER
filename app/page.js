@@ -486,8 +486,12 @@ function Shell({children,page,nav,submitted,toast}){
       background:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",
       backgroundAttachment:"fixed",
       color:"#e2e8f0",fontFamily:"system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",overflowX:"hidden"}}>
-      <MarketStatus/>
-      <Nav page={page} nav={nav} submitted={submitted} />
+      <style>{`@media(max-width:640px){.navWide{display:none}}`}</style>
+      <header style={{position:"sticky",top:0,zIndex:50,display:"flex",alignItems:"center",justifyContent:"space-between",
+        gap:8,padding:"12px 14px",flexWrap:"wrap"}}>
+        <Nav page={page} nav={nav} submitted={submitted} />
+        <MarketStatus/>
+      </header>
       <main>{children}</main>
       {toast&&(
         <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:9999,
@@ -512,12 +516,12 @@ function MarketStatus(){
   if(!st) return null;
   const c=st.open?"#34d399":"#f87171";
   return(
-    <div style={{position:"absolute",top:12,right:14,zIndex:60}}>
+    <>
       <style>{`
         @keyframes mktPulse{0%{box-shadow:0 0 8px var(--mk),0 0 0 0 var(--mk)}70%{box-shadow:0 0 8px var(--mk),0 0 0 6px transparent}100%{box-shadow:0 0 8px var(--mk),0 0 0 0 transparent}}
         @media(max-width:480px){.mktLabel{display:none}}
       `}</style>
-      <div title={st.label} style={{display:"inline-flex",alignItems:"center",gap:9,
+      <div title={st.label} style={{display:"inline-flex",alignItems:"center",gap:9,flexShrink:0,
         padding:"6px 13px 6px 11px",borderRadius:999,
         background:"rgba(255,255,255,0.05)",backdropFilter:"blur(18px) saturate(170%)",WebkitBackdropFilter:"blur(18px) saturate(170%)",
         border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 6px 22px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.10)"}}>
@@ -528,17 +532,17 @@ function MarketStatus(){
           {st.et} ET
         </span>
       </div>
-    </div>
+    </>
   );
 }
 
 /* ---- Nav ----------------------------------------------------------------- */
 function Nav({page,nav,submitted}){
   return(
-    <div style={{position:"sticky",top:0,zIndex:50,padding:"14px 12px 0",display:"flex",justifyContent:"center",gap:6}}>
+    <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
       <NavLink label="Início" active={page==="home"} onClick={()=>nav("home")}/>
       <NavLink label="Ranking" active={page==="ranking"} onClick={()=>nav("ranking")} locked={!submitted}/>
-      <NavLink label="Criar Portefólio" active={page==="create"} onClick={()=>nav("create")}/>
+      <NavLink label={<>Criar<span className="navWide"> Portefólio</span></>} active={page==="create"} onClick={()=>nav("create")}/>
     </div>
   );
 }
@@ -720,11 +724,13 @@ function Home({nav,submitted,count,settings,ranking,livePrices}){
           Conversas de{" "}
           <span style={{color:"#22c55e"}}>Investidores</span>
         </h1>
-        <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(34,197,94,0.1)",
-          border:"1px solid rgba(34,197,94,0.25)",borderRadius:999,padding:"6px 16px",fontSize:13,
-          color:"#4ade80",marginBottom:24}}>
-          <span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
-          {isPreLaunch(settings)?"Submissões abertas até 30 de junho · começa 1 de julho":`Jogo ativo — Submissões ${settings?.submissionsOpen?"abertas":"fechadas"}`}
+        <div style={{display:"inline-flex",alignItems:"center",gap:10,maxWidth:"min(92vw,460px)",
+          background:"rgba(34,197,94,0.10)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:16,
+          padding:"11px 18px",marginBottom:24,boxShadow:"0 4px 18px rgba(0,0,0,0.18)"}}>
+          <span style={{width:8,height:8,borderRadius:"50%",background:"#4ade80",flexShrink:0,boxShadow:"0 0 8px #4ade80"}}/>
+          <span style={{fontSize:"clamp(12px,3.4vw,14px)",lineHeight:1.45,color:"#4ade80",fontWeight:600,textAlign:"left"}}>
+            {isPreLaunch(settings)?"Submissões abertas até 30 de junho · começa 1 de julho":`Jogo ativo — Submissões ${settings?.submissionsOpen?"abertas":"fechadas"}`}
+          </span>
         </div>
         <div style={{marginBottom:28}}><CompetitionTimer settings={settings}/></div>
         <p style={{fontSize:18,color:"#6b7280",lineHeight:1.6,maxWidth:560,margin:"0 auto 40px"}}>
@@ -2034,7 +2040,7 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
   const TABS=[["portfolios","👥 Portefólios"],["game","⚙️ Jogo"],["export","⬇️ Exportar"]];
 
   return(
-    <div style={{maxWidth:960,margin:"0 auto",padding:"40px 20px 80px"}}>
+    <div style={{maxWidth:1200,margin:"0 auto",padding:"40px 20px 80px"}}>
       <h1 style={{fontSize:26,fontWeight:800,marginBottom:24,letterSpacing:"-0.5px"}}>🛡 Administração</h1>
 
       {/* Tabs */}
@@ -2056,14 +2062,14 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
             <p style={{padding:40,textAlign:"center",color:"#4b5563"}}>Sem portefólios ainda.</p>
           ):(
             <>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 2fr 100px 120px 44px",
+              <div style={{display:"grid",gridTemplateColumns:"1.4fr 1.6fr 100px 130px 44px",
                 padding:"10px 20px",borderBottom:"1px solid #1f2937",
                 fontSize:11,color:"#4b5563",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>
                 <span>Membro</span><span>Ações</span><span style={{textAlign:"right"}}>Rentab.</span>
                 <span style={{textAlign:"right"}}>Data</span><span/>
               </div>
-              {ranking.map(p=>(
-                <div key={p.key} style={{display:"grid",gridTemplateColumns:"1fr 2fr 100px 120px 44px",
+              {[...ranking].sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||""))).map(p=>(
+                <div key={p.key} style={{display:"grid",gridTemplateColumns:"1.4fr 1.6fr 100px 130px 44px",
                   padding:"12px 20px",borderBottom:"1px solid #0f172a",alignItems:"center"}}>
                   {editKey===p.key?(
                     <span style={{display:"flex",alignItems:"center",gap:6}}>
@@ -2076,12 +2082,12 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
                       <button onClick={()=>setEditKey(null)} title="Cancelar" style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:15,padding:2}}>✕</button>
                     </span>
                   ):(
-                    <span style={{fontWeight:600,fontSize:14,display:"flex",alignItems:"center",gap:8,minWidth:0}}>
-                      <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
-                      {pins[p.userId]&&<span title="Código do membro" style={{fontSize:11,fontFamily:"monospace",fontWeight:700,color:"#cbd5e1",
-                        background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,padding:"2px 7px",flexShrink:0}}>🔑 {pins[p.userId]}</span>}
+                    <span style={{fontWeight:600,fontSize:14,display:"flex",alignItems:"center",gap:8}}>
                       {p.official&&isPreLaunch(settings)&&<span style={{fontSize:9,background:"rgba(251,191,36,0.15)",color:"#fbbf24",
                         border:"1px solid rgba(251,191,36,0.3)",borderRadius:999,padding:"2px 6px",fontWeight:700,flexShrink:0,whiteSpace:"nowrap"}}>EM ESPERA</span>}
+                      {pins[p.userId]&&<span title="Código do membro" style={{fontSize:11,fontFamily:"monospace",fontWeight:700,color:"#cbd5e1",
+                        background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,padding:"2px 7px",flexShrink:0}}>🔑 {pins[p.userId]}</span>}
+                      <span style={{whiteSpace:"nowrap"}}>{p.name}</span>
                       <button onClick={()=>{ setEditKey(p.key); setEditName(p.name); }} title="Editar nome"
                         style={{background:"none",border:"none",cursor:"pointer",color:"#4b5563",fontSize:12,padding:0,flexShrink:0}}
                         onMouseEnter={e=>e.currentTarget.style.color="#cbd5e1"}
@@ -2096,12 +2102,12 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
                   </span>
                   <span style={{textAlign:"right",fontSize:11,color:"#cbd5e1"}}>{dt(p.submittedAt)}</span>
                   <button onClick={()=>delPf(p)}
-                    style={{background:"none",border:"none",cursor:"pointer",color:"#374151",padding:8,
-                      borderRadius:6,fontSize:16}}
+                    style={{background:"none",border:"none",cursor:"pointer",color:"#4b5563",padding:8,
+                      borderRadius:6,fontSize:20,lineHeight:1}}
                     title="Eliminar"
                     onMouseEnter={e=>e.currentTarget.style.color="#ef4444"}
-                    onMouseLeave={e=>e.currentTarget.style.color="#374151"}>
-                    🗑
+                    onMouseLeave={e=>e.currentTarget.style.color="#4b5563"}>
+                    ⓧ
                   </button>
                 </div>
               ))}
