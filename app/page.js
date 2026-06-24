@@ -2088,6 +2088,7 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
   const [editKey,setEditKey]=useState(null);
   const [editName,setEditName]=useState("");
   const [pins,setPins]=useState({}); // { user_id: pin } — códigos dos membros
+  const [fullPfs,setFullPfs]=useState(null); // portefólios completos (com ações dos oficiais) via service_role
   useEffect(()=>{
     let cancel=false;
     (async()=>{
@@ -2096,9 +2097,20 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
         const data=await res.json();
         if(!cancel&&res.ok&&data?.pins) setPins(data.pins);
       }catch{}
+      try{
+        const res=await fetch("/api/admin/portfolios",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
+        const data=await res.json();
+        if(!cancel&&res.ok&&Array.isArray(data?.portfolios)){
+          setFullPfs(data.portfolios.filter(r=>r.users?.has_submitted_portfolio).map(mapPortfolioFromSupabase));
+        }
+      }catch{}
     })();
     return()=>{ cancel=true; };
   },[pw,portfolios]);
+  // Usa os portefólios completos (admin) se disponíveis; senão, os públicos (prop).
+  const apfs = fullPfs||portfolios;
+  const aranking = apfs.map(p=>({...p,...pfStats(p,livePrices)}))
+    .sort((a,b)=>(Number.isFinite(b.total)?b.total:-Infinity)-(Number.isFinite(a.total)?a.total:-Infinity));
 
   async function startCompetition(){
     if(!confirm("Iniciar a competição AGORA?\n\nVai fixar o preço de partida de TODOS os portefólios no PREÇO DE ABERTURA do mercado (todos começam iguais). Faz isto a 1 de julho, depois da abertura.")) return;
@@ -2144,12 +2156,12 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
 
   function expSummary(){
     const rows=[["Posição","Nome","Rentabilidade %","Positivas","Negativas","Data submissão"]];
-    ranking.forEach((p,i)=>rows.push([i+1,p.name,(p.total*100).toFixed(2),p.pos,p.neg,dt(p.submittedAt)]));
+    aranking.forEach((p,i)=>rows.push([i+1,p.name,(p.total*100).toFixed(2),p.pos,p.neg,dt(p.submittedAt)]));
     dlCSV("ranking.csv",rows);
   }
   function expDetail(){
     const rows=[["Membro","Data","Ticker","Empresa","Preço inicial","Preço atual","Rentab. %"]];
-    portfolios.forEach(p=>p.stocks.forEach(s=>{
+    apfs.forEach(p=>p.stocks.forEach(s=>{
       const cur=curPrice(s.ticker,s.initialPrice,livePrices);
       rows.push([p.name,dt(p.submittedAt),s.ticker,s.companyName,s.initialPrice,cur,((cur/s.initialPrice-1)*100).toFixed(2)]);
     }));
@@ -2177,7 +2189,7 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
       {/* Portefólios */}
       {tab==="portfolios"&&(
         <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
-          {portfolios.length===0?(
+          {apfs.length===0?(
             <p style={{padding:40,textAlign:"center",color:"#4b5563"}}>Sem portefólios ainda.</p>
           ):(
             <>
@@ -2187,7 +2199,7 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
                 <span>Membro</span><span>Ações</span><span style={{textAlign:"right"}}>Rentab.</span>
                 <span style={{textAlign:"right"}}>Data</span><span/>
               </div>
-              {[...ranking].sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||""))).map(p=>(
+              {[...aranking].sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||""))).map(p=>(
                 <div key={p.key} style={{display:"grid",gridTemplateColumns:"1.4fr 1.6fr 100px 130px 44px",
                   padding:"12px 20px",borderBottom:"1px solid #0f172a",alignItems:"center"}}>
                   {editKey===p.key?(
