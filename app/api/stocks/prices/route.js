@@ -2,6 +2,8 @@ import { after } from "next/server";
 import { fetchQuoteFull, flushQuoteRevalidations } from "../../../lib/marketData";
 import { isValidTicker, rateLimited } from "../../../lib/apiGuards";
 
+export const maxDuration = 30; // corta de forma limpa se algo demorar
+
 export async function GET(request) {
   // Let any stale-while-revalidate background refreshes finish after the response.
   after(() => flushQuoteRevalidations());
@@ -12,7 +14,9 @@ export async function GET(request) {
   const raw = new URL(request.url).searchParams.get("tickers") || "";
   const tickers = [...new Set(
     raw.split(",").map((t) => t.trim().toUpperCase()).filter(Boolean)
-  )].filter(isValidTicker).slice(0, 300);
+  )].filter(isValidTicker).slice(0, 150);
+  // SPY (benchmark) primeiro — assim nunca é descartado se o pedido for cortado.
+  tickers.sort((a, b) => (a === "SPY" ? -1 : b === "SPY" ? 1 : 0));
 
   if (!tickers.length) {
     return Response.json({ prices: {}, changes: {}, errors: {} });

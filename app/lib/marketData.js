@@ -10,6 +10,7 @@ import { searchTickerList } from "./tickerList";
 const CACHE = new Map();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const MIN_FETCH_GAP_MS = 400;
+const FETCH_TIMEOUT_MS = 4000; // todo o fetch externo desiste ao fim de 4s (não pendura)
 let lastFetchAt = 0;
 
 const YAHOO_COOLDOWN_MS = 5 * 60 * 1000;
@@ -49,6 +50,7 @@ async function yahooJson(url, revalidate) {
   const res = await fetch(url, {
     headers: { "User-Agent": UA, Accept: "application/json,text/plain,*/*" },
     next: revalidate ? { revalidate } : undefined,
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (res.status === 429 || res.status >= 500) {
     tripYahooBreaker();
@@ -114,6 +116,7 @@ async function cnbcFetchQuote(sym) {
   const res = await fetch(url.toString(), {
     headers: { "User-Agent": UA, Accept: "application/json" },
     next: { revalidate: 300 },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`CNBC HTTP ${res.status}`);
   const data = await res.json();
@@ -247,7 +250,7 @@ async function alphaVantageHistory(symbol) {
   if (!key) return null;
   try {
     const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(symbol)}&outputsize=compact&apikey=${key}`;
-    const res = await fetch(url, { next: { revalidate: 21600 } });
+    const res = await fetch(url, { next: { revalidate: 21600 }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!res.ok) return null;
     const data = await res.json();
     const ts = data["Time Series (Daily)"];
@@ -287,18 +290,21 @@ export async function fetchSector(ticker) {
   if (!symbol) return null;
   const cacheKey = `sector:${symbol}`;
   const cached = getCached(cacheKey);
-  if (cached != null) return cached;
+  if (cached != null) return cached === "__NONE__" ? null : cached; // cache negativa
   const key = process.env.ALPHA_VANTAGE_API_KEY;
   if (!key) return null;
   try {
     const url = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${encodeURIComponent(symbol)}&apikey=${key}`;
-    const res = await fetch(url, { next: { revalidate: 86400 } });
-    if (!res.ok) return null;
+    const res = await fetch(url, { next: { revalidate: 86400 }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!res.ok) { setCached(cacheKey, "__NONE__", 30 * 60 * 1000); return null; }
     const data = await res.json();
     const sector = mapAvSector(data?.Sector);
-    if (sector) setCached(cacheKey, sector, 24 * 60 * 60 * 1000);
+    // Positivo: cache 24h. Sem setor (lixo/desconhecido/limite): cache negativa 30min
+    // para não voltar a gastar quota do Alpha Vantage com o mesmo ticker.
+    setCached(cacheKey, sector || "__NONE__", sector ? 24 * 60 * 60 * 1000 : 30 * 60 * 1000);
     return sector;
   } catch {
+    setCached(cacheKey, "__NONE__", 30 * 60 * 1000);
     return null;
   }
 }

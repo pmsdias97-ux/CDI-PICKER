@@ -36,8 +36,10 @@ export async function verifyMemberPin(supabase, userId, pin) {
     await supabase.from("member_pins")
       .update({ failed_attempts: 0, locked_until: new Date(Date.now() + LOCK_MS).toISOString() })
       .eq("user_id", userId);
+    console.warn(`[pin] conta bloqueada por ${MAX_FAILS} falhas user=${userId}`);
     return "locked";
   }
   await supabase.from("member_pins").update({ failed_attempts: next }).eq("user_id", userId);
+  console.warn(`[pin] tentativa falhada (${next}/${MAX_FAILS}) user=${userId}`);
   return "bad";
 }

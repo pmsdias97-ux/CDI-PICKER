@@ -1,4 +1,4 @@
-import { checkAdminPassword, rateLimited } from "../../../lib/apiGuards";
+import { checkAdminPassword, rateLimited, clientIp } from "../../../lib/apiGuards";
 
 // Gates the admin UI. The real protection is each admin action re-checking the
 // password server-side — this just avoids showing the panel to everyone.
@@ -9,6 +9,7 @@ export async function POST(request) {
   let body;
   try { body = await request.json(); } catch { body = null; }
   if (!checkAdminPassword(body?.password)) {
+    console.warn(`[admin] password incorreta ip=${clientIp(request)}`);
     return Response.json({ error: "Palavra-passe incorreta." }, { status: 401 });
   }
   return Response.json({ ok: true });

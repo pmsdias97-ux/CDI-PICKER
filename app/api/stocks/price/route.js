@@ -2,6 +2,8 @@ import { after } from "next/server";
 import { fetchQuoteFull, flushQuoteRevalidations } from "../../../lib/marketData";
 import { isValidTicker, rateLimited } from "../../../lib/apiGuards";
 
+export const maxDuration = 20;
+
 export async function GET(request) {
   after(() => flushQuoteRevalidations());
 

@@ -2,6 +2,8 @@ import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
 import { fetchSector } from "../../../lib/marketData";
 import { isValidTicker, rateLimited } from "../../../lib/apiGuards";
 
+export const maxDuration = 30;
+
 // Resolves a ticker's sector with persistent learning: DB cache first, then
 // Alpha Vantage, saving the result so it's never fetched twice.
 export async function GET(request) {
