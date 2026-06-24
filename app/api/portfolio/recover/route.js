@@ -27,8 +27,8 @@ export async function POST(request) {
 
   const { data: row } = await supabase
     .from("member_pins").select("pin").eq("user_id", user.id).maybeSingle();
-  // Se houver PIN definido, tem de coincidir. (Portefólios antigos sem PIN: aceita só o nome.)
-  if (row?.pin && !safeEqual(row.pin, pin)) {
+  // Fail-closed: sem código definido, NÃO há acesso (o admin define o código).
+  if (!row?.pin || !safeEqual(row.pin, pin)) {
     return Response.json({ error: "Código incorreto." }, { status: 401 });
   }
 

@@ -97,7 +97,11 @@ export async function POST(request) {
   }
 
   // Código de 3 dígitos do membro (anti-impersonação) — só no servidor.
-  await supabase.from("member_pins").upsert({ user_id: userId, pin });
+  // Tem de gravar com sucesso, senão abortamos: NUNCA deixar um portefólio sem código.
+  const { error: pinErr } = await supabase.from("member_pins").upsert({ user_id: userId, pin });
+  if (pinErr) {
+    return Response.json({ error: "Não foi possível guardar o código. Tenta novamente." }, { status: 500 });
+  }
 
   // S&P 500 price at submission, to benchmark "what if you'd bought SPY instead"
   // over the exact same period. Best-effort: null if unavailable.

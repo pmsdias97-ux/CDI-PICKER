@@ -26,10 +26,11 @@ export async function POST(request) {
     return Response.json({ error: "Não encontrámos um portefólio com esse nome." }, { status: 404 });
   }
 
-  // Verifica o código (se existir). Portefólios antigos sem PIN: aceita só o nome.
+  // Verifica o código — fail-closed: sem código definido, NÃO há acesso (o admin
+  // tem de definir um código para essa conta). Evita acesso só com o nome.
   const { data: pinRow } = await supabase
     .from("member_pins").select("pin").eq("user_id", user.id).maybeSingle();
-  if (pinRow?.pin && !safeEqual(pinRow.pin, pin)) {
+  if (!pinRow?.pin || !safeEqual(pinRow.pin, pin)) {
     return Response.json({ error: "Código incorreto." }, { status: 401 });
   }
 

@@ -2162,6 +2162,8 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
   const [tab,setTab]=useState("portfolios");
   const [editKey,setEditKey]=useState(null);
   const [editName,setEditName]=useState("");
+  const [editPinKey,setEditPinKey]=useState(null);
+  const [editPin,setEditPin]=useState("");
   const [pins,setPins]=useState({}); // { user_id: pin } — códigos dos membros
   const [fullPfs,setFullPfs]=useState(null); // portefólios completos (com ações dos oficiais) via service_role
   useEffect(()=>{
@@ -2196,6 +2198,18 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
       setSettings(s=>({...(s||{}),competitionStarted:true}));
       await reload();
       showToast(`Competição iniciada — ${data.stocksUpdated} ações fixadas.`);
+    }catch{ showToast("Falha de ligação.","error"); }
+  }
+  async function savePin(p){
+    const code=editPin.trim();
+    if(!/^\d{3}$/.test(code)){ showToast("O código tem de ter 3 dígitos.","error"); return; }
+    try{
+      const res=await fetch("/api/admin/set-pin",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,userId:p.userId,pin:code})});
+      const data=await res.json();
+      if(!res.ok||!data?.ok){ showToast(data?.error||"Não foi possível guardar o código.","error"); return; }
+      setPins(prev=>({...prev,[p.userId]:code}));
+      setEditPinKey(null);
+      showToast("Código guardado.");
     }catch{ showToast("Falha de ligação.","error"); }
   }
   async function saveName(p){
@@ -2291,8 +2305,25 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
                     <span style={{fontWeight:600,fontSize:14,display:"flex",alignItems:"center",gap:8}}>
                       {p.official&&isPreLaunch(settings)&&<span style={{fontSize:9,background:"rgba(251,191,36,0.15)",color:"#fbbf24",
                         border:"1px solid rgba(251,191,36,0.3)",borderRadius:999,padding:"2px 6px",fontWeight:700,flexShrink:0,whiteSpace:"nowrap"}}>EM ESPERA</span>}
-                      {pins[p.userId]&&<span title="Código do membro" style={{fontSize:11,fontFamily:"monospace",fontWeight:700,color:"#cbd5e1",
-                        background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,padding:"2px 7px",flexShrink:0}}>🔑 {pins[p.userId]}</span>}
+                      {editPinKey===p.key?(
+                        <span style={{display:"inline-flex",alignItems:"center",gap:4,flexShrink:0}}>
+                          <input value={editPin} onChange={e=>setEditPin(e.target.value.replace(/\D/g,"").slice(0,3))}
+                            onKeyDown={e=>{ if(e.key==="Enter") savePin(p); if(e.key==="Escape") setEditPinKey(null); }} autoFocus
+                            type="text" inputMode="numeric" maxLength={3} placeholder="000"
+                            style={{width:46,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:6,
+                              padding:"3px 6px",fontSize:12,fontFamily:"monospace",letterSpacing:"2px",color:"#e2e8f0",outline:"none",textAlign:"center"}}/>
+                          <button onClick={()=>savePin(p)} title="Guardar" style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:14,padding:2}}>✓</button>
+                          <button onClick={()=>setEditPinKey(null)} title="Cancelar" style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:14,padding:2}}>✕</button>
+                        </span>
+                      ):(
+                        <button onClick={()=>{ setEditPinKey(p.key); setEditPin(pins[p.userId]||""); }} title="Definir/editar código"
+                          style={{fontSize:11,fontFamily:"monospace",fontWeight:700,flexShrink:0,cursor:"pointer",borderRadius:6,padding:"2px 7px",
+                            color:pins[p.userId]?"#cbd5e1":"#fbbf24",
+                            background:pins[p.userId]?"rgba(255,255,255,0.06)":"rgba(251,191,36,0.12)",
+                            border:`1px solid ${pins[p.userId]?"rgba(255,255,255,0.12)":"rgba(251,191,36,0.35)"}`}}>
+                          🔑 {pins[p.userId]||"definir"}
+                        </button>
+                      )}
                       <span style={{whiteSpace:"nowrap"}}>{p.name}</span>
                       <button onClick={()=>{ setEditKey(p.key); setEditName(p.name); }} title="Editar nome"
                         style={{background:"none",border:"none",cursor:"pointer",color:"#4b5563",fontSize:12,padding:0,flexShrink:0}}
