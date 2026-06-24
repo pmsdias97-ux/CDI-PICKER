@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
-import { rateLimited, safeEqual } from "../../../lib/apiGuards";
+import { rateLimited } from "../../../lib/apiGuards";
+import { verifyMemberPin } from "../../../lib/pinAuth";
 
 // Recuperação de identidade por nome + código de 3 dígitos (anti-impersonação).
 // Verificação no servidor (service_role); o PIN nunca chega ao browser.
@@ -25,12 +26,10 @@ export async function POST(request) {
     return Response.json({ error: "Não encontrámos um portefólio submetido com esse nome." }, { status: 404 });
   }
 
-  const { data: row } = await supabase
-    .from("member_pins").select("pin").eq("user_id", user.id).maybeSingle();
-  // Fail-closed: sem código definido, NÃO há acesso (o admin define o código).
-  if (!row?.pin || !safeEqual(row.pin, pin)) {
-    return Response.json({ error: "Código incorreto." }, { status: 401 });
-  }
+  // Verificação do código com bloqueio por conta (fail-closed).
+  const r = await verifyMemberPin(supabase, user.id, pin);
+  if (r === "locked") return Response.json({ error: "Demasiadas tentativas. Tenta daqui a 15 minutos." }, { status: 429 });
+  if (r !== "ok") return Response.json({ error: "Código incorreto." }, { status: 401 });
 
   return Response.json({ ok: true, name: user.telegram_name });
 }

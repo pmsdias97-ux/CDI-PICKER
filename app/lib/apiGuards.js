@@ -10,9 +10,16 @@ export function isValidTicker(t) {
 }
 
 export function clientIp(request) {
+  // Preferir o IP fidedigno definido pela plataforma (Vercel) — o primeiro valor
+  // do x-forwarded-for é controlável pelo cliente (spoofável), por isso não confiar nele.
+  const real = request.headers.get("x-real-ip");
+  if (real) return real.trim();
   const xff = request.headers.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0].trim();
-  return request.headers.get("x-real-ip") || "unknown";
+  if (xff) {
+    const parts = xff.split(",").map((s) => s.trim()).filter(Boolean);
+    return parts[parts.length - 1] || "unknown"; // último hop (acrescentado pelo proxy)
+  }
+  return "unknown";
 }
 
 const buckets = new Map();
