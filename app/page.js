@@ -121,6 +121,28 @@ function pfStats(p,livePrices){
   return{ total:rets.reduce((a,b)=>a+b,0)/rets.length, pos:rets.filter(r=>r>0).length, neg:rets.filter(r=>r<0).length };
 }
 function pct(x,dp=2){ const v=(x*100).toFixed(dp); return `${x>=0?"+":""}${v}%`; }
+// Odómetro estilo Robinhood: cada dígito rola na vertical até ao valor (na entrada
+// e quando o valor muda). Carateres não-dígitos (sinais, ".", "%") ficam estáticos.
+function RollDigit({d,dur}){
+  const [n,setN]=useState(0);
+  useEffect(()=>{ const t=setTimeout(()=>setN(d),20); return()=>clearTimeout(t); },[d]);
+  return(
+    <span style={{display:"inline-block",height:"1em",lineHeight:1,overflow:"hidden",verticalAlign:"bottom"}}>
+      <span style={{display:"block",transform:`translateY(${-n*10}%)`,transition:`transform ${dur}ms cubic-bezier(.2,.85,.25,1)`}}>
+        {Array.from({length:10},(_,k)=><span key={k} style={{display:"block",height:"1em",lineHeight:1}}>{k}</span>)}
+      </span>
+    </span>
+  );
+}
+function Rolling({text,dur=700,style}){
+  return(
+    <span style={{display:"inline-block",whiteSpace:"pre",lineHeight:1,...style}}>
+      {[...String(text)].map((ch,i)=> /[0-9]/.test(ch)
+        ? <RollDigit key={i} d={+ch} dur={dur}/>
+        : <span key={i}>{ch}</span>)}
+    </span>
+  );
+}
 function money(x,cur){
   try{ return new Intl.NumberFormat("en-US",{style:"currency",currency:cur||"USD",minimumFractionDigits:2}).format(x); }
   catch{ return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2}).format(x); }
@@ -494,6 +516,7 @@ export default function App(){
     sset(K.MYNAME, data.name||name);
     sset(K.MYPIN, String(pin));
     setMyName(data.name||name);
+    await load(); // recarrega já com o código guardado → junta as tuas ações (sem 2º pedido)
     setHasSubmitted(true);
     setPage("ranking");
     return{ok:true};
@@ -530,7 +553,7 @@ export default function App(){
     const group=ranking.filter(r=>r.official===pf.official);
     const i=group.findIndex(r=>r.key===pf.key);
     return i>=0?i+1:0;
-  })()} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  })()} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} myNorm={norm(myName)} preLaunch={isPreLaunch(settings)} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
   return null;
 }
@@ -709,7 +732,7 @@ function WinnerCard({p,rank,livePrices,series,onClick}){
         <div style={{display:"flex",alignItems:"baseline",gap:8}}>
           <span style={{fontSize:13,color:col}}>{up?"▲":"▼"}</span>
           <span style={{fontFamily:"'SF Mono',ui-monospace,monospace",fontWeight:800,fontSize:30,letterSpacing:"-1.5px",color:col}}>
-            {pct(Math.abs(p.total)).replace(/[+-]/,"")}
+            <Rolling text={pct(Math.abs(p.total)).replace(/[+-]/,"")}/>
           </span>
         </div>
         <span style={{display:"block",fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.5px",marginTop:2}}>rentab. média</span>
@@ -1385,7 +1408,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
               <span style={{overflowWrap:"anywhere",lineHeight:1.2}}>{p.name}</span>
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
             </span>
-            <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}>{pct(p.total)}</span>
+            <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}><Rolling text={pct(p.total)}/></span>
             <span style={{textAlign:"right",alignSelf:"center",fontFamily:"monospace",fontSize:13,fontWeight:600,
               color:alpha==null?"#4b5563":alpha>=0?"#4ade80":"#f87171"}}>{alpha==null?"—":`${alpha>=0?"+":""}${(alpha*100).toFixed(2)}%`}</span>
             <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:14,fontWeight:700}}>
@@ -1667,12 +1690,62 @@ function SectorDonut({stocks}){
 }
 
 /* ---- Detail -------------------------------------------------------------- */
-function Detail({pf,rank,livePrices,dayChange,spy,nav}){
+// Pré-1jul: o próprio desbloqueia o seu portefólio com o código de 3 dígitos.
+function OwnLockedGate({pf,nav,reload,showToast}){
+  const [pin,setPin]=useState("");
+  const [busy,setBusy]=useState(false);
+  const ok=/^\d{3}$/.test(pin);
+  async function unlock(){
+    if(busy||!ok) return;
+    setBusy(true);
+    try{
+      const r=await fetch("/api/portfolio/mine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:pf.name,pin})});
+      const d=await r.json();
+      if(!r.ok||!d?.ok){ showToast&&showToast(d?.error||"Código incorreto.","error"); setBusy(false); return; }
+      sset(K.MYPIN,pin);
+      await reload(); // recarrega → o load() junta as tuas ações e este ecrã desaparece
+    }catch{ showToast&&showToast("Falha de ligação.","error"); setBusy(false); }
+  }
+  return(
+    <div style={{maxWidth:460,margin:"40px auto 80px",padding:"0 20px"}}>
+      <button onClick={()=>nav("ranking")} className="backLink"
+        style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:14,marginBottom:20,display:"flex",alignItems:"center",gap:6,padding:0}}>
+        <span className="backArrow">←</span> Voltar ao ranking
+      </button>
+      <div style={{textAlign:"center",background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:20,padding:40}}>
+        <div style={{fontSize:40,marginBottom:16}}>🔒</div>
+        <h1 style={{fontSize:22,fontWeight:700,marginBottom:8}}>{pf.name}</h1>
+        <p style={{fontSize:14,color:"#6b7280",marginBottom:20,lineHeight:1.6}}>
+          Introduz o teu código de 3 dígitos para veres o teu portefólio.<br/>
+          As ações só ficam visíveis a todos a 1 de julho.
+        </p>
+        <input value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,3))}
+          onKeyDown={e=>{ if(e.key==="Enter") unlock(); }}
+          type="text" inputMode="numeric" autoComplete="off" maxLength={3} placeholder="• • •"
+          style={{width:120,margin:"0 auto 14px",display:"block",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,
+            padding:"12px 14px",fontSize:18,letterSpacing:"6px",fontFamily:"monospace",color:"#e2e8f0",outline:"none",boxSizing:"border-box",
+            textAlign:"center",WebkitTextSecurity:"disc",textSecurity:"disc"}}/>
+        <button onClick={unlock} disabled={busy||!ok}
+          style={{background:"#22c55e",color:"#000",border:"none",borderRadius:10,padding:"12px 24px",fontSize:15,fontWeight:700,
+            cursor:busy||!ok?"not-allowed":"pointer",opacity:busy||!ok?0.6:1}}>
+          {busy?"A verificar…":"Mostrar"}
+        </button>
+      </div>
+    </div>
+  );
+}
+function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,reload,showToast}){
   if(!pf) return(
     <div style={{textAlign:"center",padding:80,color:"#4b5563"}}>
       Portefólio não encontrado. <button onClick={()=>nav("ranking")} style={{color:"#22c55e",background:"none",border:"none",cursor:"pointer"}}>Voltar</button>
     </div>
   );
+  // Pré-1jul as ações dos oficiais estão escondidas. O próprio desbloqueia o seu
+  // com o código de 3 dígitos (guardado para não voltar a pedir).
+  const isOwn=myNorm&&pf.normName===myNorm;
+  if(isOwn&&preLaunch&&(pf.stocks||[]).length===0){
+    return <OwnLockedGate pf={pf} nav={nav} reload={reload} showToast={showToast}/>;
+  }
   const st=pfStats(pf,livePrices);
   const rows=pf.stocks.map(s=>{
     const cur=curPrice(s.ticker,s.initialPrice,livePrices);
@@ -1717,7 +1790,7 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav}){
             <h1 style={{fontSize:"clamp(22px,5vw,26px)",fontWeight:800,letterSpacing:"-0.5px",margin:0,minWidth:0,lineHeight:1.2,overflowWrap:"anywhere"}}>{pf.name}</h1>
           </div>
           <div style={{fontSize:"clamp(34px,9vw,42px)",fontWeight:800,fontFamily:"monospace",lineHeight:1,
-            color:st.total>=0?"#4ade80":"#f87171"}}>{st.total>=0?"▲":"▼"} {pct(Math.abs(st.total)).replace(/[+-]/,"")}</div>
+            color:st.total>=0?"#4ade80":"#f87171"}}>{st.total>=0?"▲":"▼"} <Rolling text={pct(Math.abs(st.total)).replace(/[+-]/,"")}/></div>
           <div style={{fontSize:11,color:"#4b5563",marginTop:6,textTransform:"uppercase",letterSpacing:"0.5px"}}>Rentabilidade média</div>
           <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"10px 24px",marginTop:18,fontSize:13,color:"#6b7280"}}>
             <span style={{color:"#4ade80"}}>▲ {st.pos} positivas</span>
@@ -1984,7 +2057,7 @@ function Duel({a,b,livePrices,spy,nav}){
               <span style={{fontSize:"clamp(14px,4vw,16px)",fontWeight:800,letterSpacing:"-0.3px",lineHeight:1.2,minWidth:0,overflowWrap:"anywhere"}}>{nameLines(a.name)}</span>
               <span style={{width:9,height:9,borderRadius:"50%",background:DUEL_A,flexShrink:0,boxShadow:`0 0 8px ${DUEL_A}`}}/>
             </div>
-            <div style={{fontSize:30,fontWeight:800,fontFamily:"monospace",letterSpacing:"-1px",color:sa.total>=0?"#4ade80":"#f87171"}}>{pct(sa.total)}</div>
+            <div style={{fontSize:30,fontWeight:800,fontFamily:"monospace",letterSpacing:"-1px",color:sa.total>=0?"#4ade80":"#f87171"}}><Rolling text={pct(sa.total)}/></div>
             <DuelPicksSide rows={ra}/>
           </div>
           <div style={{width:44,height:44,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:30,
@@ -1995,7 +2068,7 @@ function Duel({a,b,livePrices,spy,nav}){
               <span style={{width:9,height:9,borderRadius:"50%",background:DUEL_B,flexShrink:0,boxShadow:`0 0 8px ${DUEL_B}`}}/>
               <span style={{fontSize:"clamp(14px,4vw,16px)",fontWeight:800,letterSpacing:"-0.3px",lineHeight:1.2,minWidth:0,overflowWrap:"anywhere"}}>{nameLines(b.name)}</span>
             </div>
-            <div style={{fontSize:30,fontWeight:800,fontFamily:"monospace",letterSpacing:"-1px",color:sb.total>=0?"#4ade80":"#f87171"}}>{pct(sb.total)}</div>
+            <div style={{fontSize:30,fontWeight:800,fontFamily:"monospace",letterSpacing:"-1px",color:sb.total>=0?"#4ade80":"#f87171"}}><Rolling text={pct(sb.total)}/></div>
             <DuelPicksSide rows={rb}/>
           </div>
         </div>
