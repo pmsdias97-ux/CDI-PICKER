@@ -422,6 +422,8 @@ export default function App(){
   },[refreshLivePrices]);
 
   useEffect(()=>{ load(); },[load]);
+  // Ao mudar de ecrã (ou de portefólio aberto), começa no topo do scroll.
+  useEffect(()=>{ if(typeof window!=="undefined") window.scrollTo(0,0); },[page,detailKey,duelKeys]);
 
   // Entrada discreta para a área de admin: abrir a app com #admin no URL
   // (ex.: localhost:3000/#admin). Continua protegida pela palavra-passe.
@@ -539,7 +541,7 @@ export default function App(){
     onMyPortfolio={()=>{ setDetailKey(myPf?.key||null); nav("detail"); }}
     myPortfolioActive={page==="detail" && (!detailKey || detailKey===myPf?.key)}>{children}</Shell>;
 
-  if(page==="home")   return sh(<Home nav={nav} submitted={submitted} count={portfolios.length} settings={settings} ranking={ranking} livePrices={livePrices}/>);
+  if(page==="home")   return sh(<Home nav={nav} submitted={submitted} count={portfolios.length} settings={settings} ranking={ranking} livePrices={livePrices} onMyPortfolio={()=>{ setDetailKey(myPf?.key||null); nav("detail"); }}/>);
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} preLaunch={isPreLaunch(settings)} settings={settings} onSelect={(k)=>{setDetailKey(k);nav("detail");}} onCompare={(a,b)=>{setDuelKeys([a,b]);nav("duel");}}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
@@ -794,7 +796,7 @@ function MiniSparkline({series,current}){
   );
 }
 
-function Home({nav,submitted,count,settings,ranking,livePrices}){
+function Home({nav,submitted,count,settings,ranking,livePrices,onMyPortfolio}){
   return(
     <div>
       {/* Hero */}
@@ -822,7 +824,7 @@ function Home({nav,submitted,count,settings,ranking,livePrices}){
           {submitted?(
             <>
               <Btn onClick={()=>nav("ranking")} primary>Ver Ranking</Btn>
-              <Btn onClick={()=>nav("create")}>O meu portefólio</Btn>
+              <Btn onClick={onMyPortfolio}>O meu portefólio</Btn>
             </>
           ):(
             <>
