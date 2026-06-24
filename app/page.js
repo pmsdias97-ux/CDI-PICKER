@@ -156,6 +156,36 @@ function Monogram({ticker,size}){
     </div>
   );
 }
+// Cartão com efeito "carta": inclinação 3D + spotlight a seguir o rato (só desktop).
+function TiltCard({children,style}){
+  const [enabled,setEnabled]=useState(false);
+  const [t,setT]=useState("");
+  const [pos,setPos]=useState({x:50,y:50});
+  const [hovering,setHovering]=useState(false);
+  useEffect(()=>{
+    try{ setEnabled(window.matchMedia("(hover:hover) and (pointer:fine)").matches); }catch{ setEnabled(false); }
+  },[]);
+  const handlers=enabled?{
+    onMouseMove:(e)=>{
+      const r=e.currentTarget.getBoundingClientRect();
+      const fx=(e.clientX-r.left)/r.width, fy=(e.clientY-r.top)/r.height;
+      setT(`perspective(900px) rotateY(${((fx-0.5)*12).toFixed(2)}deg) rotateX(${((0.5-fy)*12).toFixed(2)}deg) scale(1.02)`);
+      setPos({x:+(fx*100).toFixed(1),y:+(fy*100).toFixed(1)});
+      setHovering(true);
+    },
+    onMouseLeave:()=>{ setT(""); setHovering(false); },
+  }:{};
+  return(
+    <div {...handlers} style={{...style,position:"relative",overflow:"hidden",transform:t||"none",transition:"transform .18s ease",willChange:"transform"}}>
+      {enabled&&(
+        <div style={{position:"absolute",inset:0,borderRadius:"inherit",pointerEvents:"none",
+          background:`radial-gradient(240px circle at ${pos.x}% ${pos.y}%, rgba(255,255,255,0.10), transparent 60%)`,
+          opacity:hovering?1:0,transition:"opacity .2s ease"}}/>
+      )}
+      {children}
+    </div>
+  );
+}
 // Só marca as posições SHORT — long é o normal, não precisa de badge.
 function SideBadge({side}){
   if(side!=="short") return null;
@@ -169,13 +199,15 @@ function SideBadge({side}){
 function StockLogo({ticker,size=28}){
   const [err,setErr]=useState(false);
   if(!ticker) return null;
-  if(err||!LOGODEV_TOKEN) return <Monogram ticker={ticker} size={size}/>;
+  if(err||!LOGODEV_TOKEN) return <span className="stkLogo"><Monogram ticker={ticker} size={size}/></span>;
   return(
-    <img
-      src={`https://img.logo.dev/ticker/${encodeURIComponent(ticker)}?token=${LOGODEV_TOKEN}&size=${size*3}&format=png&retina=true&fallback=404`}
-      alt="" width={size} height={size} loading="lazy" onError={()=>setErr(true)}
-      style={{width:size,height:size,borderRadius:6,objectFit:"cover",
-        background:"#fff",display:"block",flexShrink:0}}/>
+    <span className="stkLogo">
+      <img
+        src={`https://img.logo.dev/ticker/${encodeURIComponent(ticker)}?token=${LOGODEV_TOKEN}&size=${size*3}&format=png&retina=true&fallback=404`}
+        alt="" width={size} height={size} loading="lazy" onError={()=>setErr(true)}
+        style={{width:size,height:size,borderRadius:6,objectFit:"cover",
+          background:"#fff",display:"block",flexShrink:0}}/>
+    </span>
   );
 }
 
@@ -636,7 +668,7 @@ function WinnerCard({p,rank,livePrices,series,onClick}){
     : "0 10px 36px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.10)";
   const badge=RANK_BADGE[rank]||{background:"rgba(255,255,255,0.06)",color:"#94a3b8",border:"1px solid rgba(255,255,255,0.14)"};
   return(
-    <div onClick={onClick}
+    <div onClick={onClick} className="winCard"
       onMouseEnter={e=>{ e.currentTarget.style.transform="translateY(-3px)"; e.currentTarget.style.boxShadow=isTop?"0 18px 46px rgba(251,191,36,0.16), 0 0 0 1px rgba(251,191,36,0.32), inset 0 1px 0 rgba(255,255,255,0.16)":"0 18px 46px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.14)"; }}
       onMouseLeave={e=>{ e.currentTarget.style.transform="none"; e.currentTarget.style.boxShadow=baseShadow; }}
       style={{cursor:"pointer",borderRadius:22,padding:22,
@@ -662,7 +694,7 @@ function WinnerCard({p,rank,livePrices,series,onClick}){
       </div>
       <div style={{display:"flex",gap:4,marginBottom:14}}>
         {p.stocks.map(s=>{ const g=stockRet(s,livePrices)>=0; return(
-          <span key={s.ticker} title={s.ticker} style={{flex:1,height:6,borderRadius:999,
+          <span key={s.ticker} title={s.companyName||s.ticker} style={{flex:1,height:6,borderRadius:999,
             background:g?"linear-gradient(180deg,#34d399,#10b981)":"linear-gradient(180deg,#fb7185,#ef4444)",
             boxShadow:"inset 0 1px 0 rgba(255,255,255,0.25)"}}/>
         ); })}
@@ -703,7 +735,7 @@ function MiniSparkline({series,current}){
   const col=isEx?"#64748b":(last>=0?"#34d399":"#fb7185");
   const gid=`spk-${uid}`;
   return(
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{width:"100%",height:48,display:"block",opacity:isEx?0.55:1}}>
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className={isEx?undefined:"winSpark"} style={{width:"100%",height:48,display:"block",opacity:isEx?0.55:undefined}}>
       <defs>
         <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={col} stopOpacity={isEx?0.16:0.32}/>
@@ -1190,10 +1222,10 @@ function StepDot({n,active,done,label}){
 function AlreadySubmitted({nav,name}){
   return(
     <div style={{maxWidth:500,margin:"40px auto 80px",padding:"0 20px"}}>
-      <button onClick={()=>nav("home")}
+      <button onClick={()=>nav("home")} className="backLink"
         style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:14,marginBottom:20,
           display:"flex",alignItems:"center",gap:6,padding:0}}>
-        ← Voltar ao início
+        <span className="backArrow">←</span> Voltar ao início
       </button>
       <div style={{textAlign:"center",background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:20,padding:48}}>
         <div style={{fontSize:40,marginBottom:16}}>🔒</div>
@@ -1245,10 +1277,10 @@ function LockedGate({nav,recoverByName,showToast}){
   }
   return(
     <div style={{maxWidth:480,margin:"40px auto 80px",padding:"0 20px"}}>
-      <button onClick={()=>nav("home")}
+      <button onClick={()=>nav("home")} className="backLink"
         style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:14,marginBottom:20,
           display:"flex",alignItems:"center",gap:6,padding:0}}>
-        ← Voltar ao início
+        <span className="backArrow">←</span> Voltar ao início
       </button>
       <div style={{textAlign:"center",background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:20,padding:48}}>
         <div style={{fontSize:40,marginBottom:16}}>🔒</div>
@@ -1462,6 +1494,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
 --------------------------------------------------------------------------- */
 function EvolutionChart({portfolioId,currentReturn}){
   const [snaps,setSnaps]=useState(null);
+  const [hi,setHi]=useState(null); // ponto sob o rato (tooltip)
   useEffect(()=>{
     let cancel=false;
     (async()=>{
@@ -1502,9 +1535,17 @@ function EvolutionChart({portfolioId,currentReturn}){
   const last=drawn[drawn.length-1].r;
   const col=isExample?"#64748b":(last>=0?"#22c55e":"#f87171");
   const zeroY=y(0);
+  const onMove=(e)=>{
+    if(isExample||drawn.length<2) return;
+    const r=e.currentTarget.getBoundingClientRect();
+    const frac=(e.clientX-r.left)/r.width;
+    const i=Math.max(0,Math.min(drawn.length-1,Math.round(frac*(drawn.length-1))));
+    setHi(i);
+  };
 
   return(
-    <div style={{width:"100%",position:"relative",opacity:isExample?0.55:1}}>
+    <div style={{width:"100%",position:"relative",opacity:isExample?0.55:1}}
+      onMouseMove={onMove} onMouseLeave={()=>setHi(null)}>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{width:"100%",height:160,display:"block"}}>
         <defs>
           <linearGradient id="evoFill" x1="0" y1="0" x2="0" y2="1">
@@ -1519,6 +1560,19 @@ function EvolutionChart({portfolioId,currentReturn}){
         <path d={line} fill="none" stroke={col} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"
           strokeDasharray={isExample?"6 5":undefined} vectorEffect="non-scaling-stroke"/>
       </svg>
+      {hi!=null&&!isExample&&(()=>{
+        const leftPct=x(hi)/W*100, topPx=y(drawn[hi].r), clamped=Math.max(12,Math.min(88,leftPct));
+        return(
+          <>
+            <div style={{position:"absolute",left:`${leftPct}%`,top:0,height:160,width:1,background:"rgba(255,255,255,0.22)",transform:"translateX(-0.5px)",pointerEvents:"none"}}/>
+            <div style={{position:"absolute",left:`${leftPct}%`,top:topPx,transform:"translate(-50%,-50%)",width:9,height:9,borderRadius:"50%",background:col,boxShadow:`0 0 8px ${col}`,pointerEvents:"none"}}/>
+            <div style={{position:"absolute",left:`${clamped}%`,top:topPx-12,transform:"translate(-50%,-100%)",pointerEvents:"none",whiteSpace:"nowrap",
+              background:"rgba(8,15,32,0.92)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:8,padding:"5px 9px",fontSize:12,color:"#e2e8f0",boxShadow:"0 6px 20px rgba(0,0,0,0.4)"}}>
+              <span style={{color:"#94a3b8"}}>{series[hi]?.date}</span> · <span style={{fontFamily:"monospace",fontWeight:700,color:col}}>{pct(drawn[hi].r)}</span>
+            </div>
+          </>
+        );
+      })()}
       {isExample
         ? <div style={{textAlign:"center",fontSize:12,color:"#6b7280",marginTop:6}}>
             Exemplo — o teu gráfico começa a preencher a partir de amanhã (um ponto por dia).
@@ -1537,6 +1591,7 @@ function SectorDonut({stocks}){
   // Tickers fora do mapa curado são resolvidos via /api/stocks/sector (que
   // aprende e guarda na BD). Até resolverem, ficam em "A identificar…".
   const [learned,setLearned]=useState({});
+  const [hi,setHi]=useState(null); // setor em destaque (hover)
   useEffect(()=>{
     const unknown=[...new Set(stocks.map(s=>s.ticker).filter(t=>!SECTORS[String(t).toUpperCase()]))];
     if(!unknown.length) return;
@@ -1566,13 +1621,18 @@ function SectorDonut({stocks}){
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:16,flexWrap:"wrap"}}>
       <svg viewBox="0 0 100 100" style={{width:"clamp(96px,26vw,120px)",height:"auto",flexShrink:0,transform:"rotate(-90deg)"}}>
         {segs.map((s,i)=>{ const len=s.pct*C; const el=(
-          <circle key={i} cx="50" cy="50" r={R} fill="none" stroke={s.color} strokeWidth={SW}
+          <circle key={i} cx="50" cy="50" r={R} fill="none" stroke={s.color}
+            strokeWidth={hi===i?SW+3:SW} opacity={hi==null||hi===i?1:0.25}
+            style={{transition:"opacity .15s, stroke-width .15s",cursor:"pointer"}}
+            onMouseEnter={()=>setHi(i)} onMouseLeave={()=>setHi(null)}
             strokeDasharray={`${len.toFixed(2)} ${(C-len).toFixed(2)}`} strokeDashoffset={(-off).toFixed(2)}/>
         ); off+=len; return el; })}
       </svg>
-      <div style={{flex:1,minWidth:120,display:"flex",flexDirection:"column",gap:8}}>
+      <div style={{flex:1,minWidth:120,display:"flex",flexDirection:"column",gap:6}}>
         {segs.map((s,i)=>(
-          <div key={i} style={{display:"flex",alignItems:"center",gap:10,fontSize:13}}>
+          <div key={i} onMouseEnter={()=>setHi(i)} onMouseLeave={()=>setHi(null)}
+            style={{display:"flex",alignItems:"center",gap:10,fontSize:13,padding:"2px 6px",borderRadius:7,cursor:"pointer",
+              opacity:hi==null||hi===i?1:0.4,background:hi===i?"rgba(255,255,255,0.05)":"transparent",transition:"opacity .15s, background .15s"}}>
             <span style={{width:10,height:10,borderRadius:3,background:s.color,flexShrink:0}}/>
             <span style={{flex:1,color:"#cbd5e1",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</span>
             <span style={{color:"#e2e8f0",fontWeight:700,fontFamily:"monospace"}}>{s.n}</span>
@@ -1612,15 +1672,15 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav}){
   return(
     <div style={{maxWidth:1320,margin:"0 auto",padding:"40px 20px 80px"}}>
       <style>{`.cdiDetail{display:grid;gap:16px;grid-template-columns:1fr}@media(min-width:1000px){.cdiDetail{grid-template-columns:minmax(0,1fr) minmax(0,1.12fr);align-items:start}}`}</style>
-      <button onClick={()=>nav("ranking")}
+      <button onClick={()=>nav("ranking")} className="backLink"
         style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:14,marginBottom:24,
           display:"flex",alignItems:"center",gap:6,padding:0}}>
-        ← Voltar ao ranking
+        <span className="backArrow">←</span> Voltar ao ranking
       </button>
 
       <div className="cdiDetail">
       <div>{/* coluna esquerda: portefólio */}
-      <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,marginBottom:16}}>
+      <TiltCard style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,marginBottom:16}}>
         <div style={{textAlign:"center"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14,marginBottom:16,minWidth:0}}>
             {rank>0&&(
@@ -1648,7 +1708,7 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav}){
           </div>
           <p style={{fontSize:13,color:"#4b5563",margin:"16px 0 0"}}>Submetido a {dt(pf.submittedAt)}</p>
         </div>
-      </div>
+      </TiltCard>
 
       <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
         <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",
@@ -1660,21 +1720,21 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav}){
           <span style={{textAlign:"right"}}>Rentab.</span>
         </div>
         {bySorted.map(s=>(
-          <div key={s.ticker} style={{padding:"14px 20px",borderBottom:"1px solid #0f172a"}}>
-            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",alignItems:"center",gap:4}}>
+          <div key={s.ticker} className="stockRow" style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",alignItems:"center",gap:4,padding:"14px 20px",borderBottom:"1px solid #0f172a"}}>
+            <div style={{minWidth:0}}>
               <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
                 <StockLogo ticker={s.ticker} size={32}/>
                 <span style={{fontWeight:800,fontSize:14,color:"#e2e8f0"}}>{s.ticker}</span>
                 <SideBadge side={s.side}/>
               </div>
-              <span style={{textAlign:"right",fontFamily:"monospace",fontSize:"clamp(10.5px,2.7vw,13px)",color:"#6b7280",whiteSpace:"nowrap"}}>{money(s.initialPrice,s.currency)}</span>
-              <span style={{textAlign:"right",fontFamily:"monospace",fontSize:"clamp(10.5px,2.7vw,13px)",color:"#e2e8f0",whiteSpace:"nowrap"}}>{money(s.cur,s.currency)}</span>
-              <span style={{textAlign:"right",fontFamily:"monospace",fontSize:"clamp(11px,2.9vw,15px)",fontWeight:700,whiteSpace:"nowrap",
-                color:s.ret>=0?"#4ade80":"#f87171"}}>
-                {s.ret>=0?"▲":"▼"} {pct(Math.abs(s.ret)).replace(/[+-]/,"")}
-              </span>
+              <div style={{fontSize:13,color:"#6b7280",marginTop:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.companyName}</div>
             </div>
-            <div style={{fontSize:13,color:"#6b7280",marginTop:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.companyName}</div>
+            <span style={{textAlign:"right",fontFamily:"monospace",fontSize:"clamp(10.5px,2.7vw,13px)",color:"#6b7280",whiteSpace:"nowrap"}}>{money(s.initialPrice,s.currency)}</span>
+            <span style={{textAlign:"right",fontFamily:"monospace",fontSize:"clamp(10.5px,2.7vw,13px)",color:"#e2e8f0",whiteSpace:"nowrap"}}>{money(s.cur,s.currency)}</span>
+            <span style={{textAlign:"right",fontFamily:"monospace",fontSize:"clamp(11px,2.9vw,15px)",fontWeight:700,whiteSpace:"nowrap",
+              color:s.ret>=0?"#4ade80":"#f87171"}}>
+              {s.ret>=0?"▲":"▼"} {pct(Math.abs(s.ret)).replace(/[+-]/,"")}
+            </span>
           </div>
         ))}
       </div>
@@ -1816,21 +1876,23 @@ function DuelMetric({label,a,b,fmt,better}){
       color:win?"#4ade80":"#94a3b8"}}>{fmt(val)}</span>
   );
   return(
-    <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",gap:14,padding:"9px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",gap:14,padding:"9px 10px",margin:"0 -10px",borderRadius:8,borderBottom:"1px solid rgba(255,255,255,0.06)",transition:"background .15s"}}
+      onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.05)"}
+      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
       <div style={{textAlign:"right"}}>{cell(a,aw)}</div>
       <span style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.6px",whiteSpace:"nowrap"}}>{label}</span>
       <div style={{textAlign:"left"}}>{cell(b,bw)}</div>
     </div>
   );
 }
-function DuelHoldings({title,tickers,color}){
+function DuelHoldings({title,tickers,color,names}){
   if(!tickers.length) return null;
   return(
     <div style={{marginBottom:14,textAlign:"center"}}>
       <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>{title}</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center"}}>
         {tickers.map(t=>(
-          <span key={t} style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(0,0,0,0.18)",
+          <span key={t} title={names?.[t]||t} style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(0,0,0,0.18)",
             border:`1px solid ${color||"rgba(255,255,255,0.08)"}`,borderRadius:999,padding:"5px 10px 5px 6px",fontSize:12,fontWeight:700,color:"#e2e8f0"}}>
             <StockLogo ticker={t} size={18}/>{t}
           </span>
@@ -1845,7 +1907,7 @@ function PickCell({s,kind}){
   const bg=up?"rgba(34,197,94,0.10)":"rgba(239,68,68,0.10)";
   const bd=up?"rgba(34,197,94,0.20)":"rgba(239,68,68,0.20)";
   return(
-    <div style={{display:"flex",alignItems:"center",gap:5,background:bg,border:`1px solid ${bd}`,borderRadius:9,padding:"5px 8px",minWidth:0,overflow:"hidden"}}>
+    <div title={s.companyName||s.ticker} style={{display:"flex",alignItems:"center",gap:5,background:bg,border:`1px solid ${bd}`,borderRadius:9,padding:"5px 8px",minWidth:0,overflow:"hidden"}}>
       <span style={{color:col,fontSize:9,fontWeight:800,width:9,textAlign:"center",flexShrink:0}}>{up?"▲":"▼"}</span>
       <span style={{flexShrink:0,display:"inline-flex"}}><StockLogo ticker={s.ticker} size={16}/></span>
       <span style={{flex:1,minWidth:0,fontSize:"clamp(9.5px,2.4vw,12px)",fontWeight:800,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.ticker}</span>
@@ -1883,11 +1945,13 @@ function Duel({a,b,livePrices,spy,nav}){
   const onlyB=[...setB].filter(t=>!setA.has(t));
   // Quebra o nome em primeiro nome / apelido (mesmo para nomes curtos).
   const nameLines=(n)=>{ const p=String(n||"").trim().split(/\s+/); return p.length<2?n:<>{p[0]}<br/>{p.slice(1).join(" ")}</>; };
+  // ticker → nome da empresa (para tooltip nos chips das carteiras).
+  const nameByTicker={}; [...a.stocks,...b.stocks].forEach(s=>{ nameByTicker[s.ticker]=s.companyName; });
   return(
     <div style={{maxWidth:980,margin:"0 auto",padding:"40px 20px 80px"}}>
-      <button onClick={()=>nav("ranking")}
+      <button onClick={()=>nav("ranking")} className="backLink"
         style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:14,marginBottom:24,display:"flex",alignItems:"center",gap:6,padding:0}}>
-        ← Voltar ao ranking
+        <span className="backArrow">←</span> Voltar ao ranking
       </button>
 
       {/* Cabeçalho do duelo */}
@@ -1938,9 +2002,9 @@ function Duel({a,b,livePrices,spy,nav}){
       {/* Carteiras: comum vs exclusivas */}
       <div style={{...GLASS,borderRadius:16,padding:24,marginBottom:16}}>
         <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af",textAlign:"center"}}>Carteiras</h3>
-        <DuelHoldings title="Em comum" tickers={common} color="rgba(255,255,255,0.14)"/>
-        <DuelHoldings title={`Só ${a.name}`} tickers={onlyA} color="rgba(59,130,246,0.4)"/>
-        <DuelHoldings title={`Só ${b.name}`} tickers={onlyB} color="rgba(245,158,11,0.4)"/>
+        <DuelHoldings title="Em comum" tickers={common} color="rgba(255,255,255,0.14)" names={nameByTicker}/>
+        <DuelHoldings title={`Só ${a.name}`} tickers={onlyA} color="rgba(59,130,246,0.4)" names={nameByTicker}/>
+        <DuelHoldings title={`Só ${b.name}`} tickers={onlyB} color="rgba(245,158,11,0.4)" names={nameByTicker}/>
       </div>
 
       {/* Exposição por setor lado a lado */}
@@ -2234,9 +2298,11 @@ function Btn({children,onClick,primary,large}){
       style={{background:primary?"#22c55e":"transparent",color:primary?"#000":"#e2e8f0",
         border:primary?"none":"1px solid #374151",borderRadius:10,
         padding:large?"15px 36px":"10px 22px",fontSize:large?16:14,fontWeight:700,cursor:"pointer",
-        transition:"all 0.15s"}}
-      onMouseEnter={e=>{ if(primary) e.currentTarget.style.background="#16a34a"; else e.currentTarget.style.borderColor="#6b7280"; }}
-      onMouseLeave={e=>{ if(primary) e.currentTarget.style.background="#22c55e"; else e.currentTarget.style.borderColor="#374151"; }}>
+        transition:"background .15s, border-color .15s, transform .12s"}}
+      onMouseEnter={e=>{ if(primary) e.currentTarget.style.background="#16a34a"; else e.currentTarget.style.borderColor="#6b7280"; e.currentTarget.style.transform="translateY(-1px)"; }}
+      onMouseLeave={e=>{ if(primary) e.currentTarget.style.background="#22c55e"; else e.currentTarget.style.borderColor="#374151"; e.currentTarget.style.transform="none"; }}
+      onMouseDown={e=>{ e.currentTarget.style.transform="scale(0.97)"; }}
+      onMouseUp={e=>{ e.currentTarget.style.transform="translateY(-1px)"; }}>
       {children}
     </button>
   );

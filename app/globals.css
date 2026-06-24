@@ -23,6 +23,19 @@ html, body {
   background: #070d1c;
   min-height: 100%;
 }
+
+/* Hover (desktop) — micro-interações reutilizáveis */
+.stkLogo { display: inline-flex; flex-shrink: 0; transition: transform .15s ease; }
+.backArrow { display: inline-block; transition: transform .15s ease; }
+.winSpark { opacity: .82; transition: opacity .25s ease, transform .25s ease; transform-origin: bottom; }
+.stockRow { transition: transform .15s ease, background .15s ease; }
+@media (hover: hover) {
+  .stkLogo:hover { transform: scale(1.12); }
+  .backLink:hover .backArrow { transform: translateX(-3px); }
+  .winCard:hover .winSpark { opacity: 1; transform: scaleY(1.06); }
+  .stockRow:hover { background: #0a1120; transform: scale(1.01); }
+  .stockRow:hover .stkLogo { transform: scale(1.12); }
+}
 body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
