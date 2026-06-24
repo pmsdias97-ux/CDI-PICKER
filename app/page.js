@@ -282,7 +282,7 @@ function CompetitionTimer({settings}){
 // browser only reads them via loadGameSettings above.
 
 /* ---- Keys ---------------------------------------------------------------- */
-const K={MYNAME:"ci_myname"};
+const K={MYNAME:"ci_myname",MYPIN:"ci_mypin"};
 
 /* ============================================================================
    ROOT
@@ -359,6 +359,25 @@ export default function App(){
       const pfs=(portfolioRows||[])
         .filter(row=>row.users?.has_submitted_portfolio)
         .map(mapPortfolioFromSupabase);
+      // Pré-lançamento: as ações dos oficiais estão ocultas ao anon (privacidade).
+      // Buscar as TUAS próprias (nome + código) para o teu detalhe funcionar.
+      if(isPreLaunch(gs)&&mn?.trim()){
+        const myPin=sget(K.MYPIN);
+        if(myPin){
+          try{
+            const r=await fetch("/api/portfolio/mine",{method:"POST",headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({name:mn.trim(),pin:String(myPin)})});
+            const d=await r.json();
+            if(d?.ok&&Array.isArray(d.stocks)&&d.stocks.length){
+              const mine=d.stocks.map(s=>({ticker:s.ticker,companyName:s.company_name,exchange:"",
+                side:s.side==="short"?"short":"long",initialPrice:Number(s.initial_price),
+                initialWeight:Number(s.initial_weight)/100,currency:s.currency||"USD",allocated:PER_STOCK}));
+              const i=pfs.findIndex(p=>p.normName===norm(mn.trim()));
+              if(i>=0) pfs[i]={...pfs[i],stocks:mine};
+            }
+          }catch{}
+        }
+      }
       setPortfolios(pfs);
       await refreshLivePrices(pfs);
     }
@@ -400,7 +419,8 @@ export default function App(){
   const submitted=hasSubmitted;
 
   const ranking=useMemo(()=>
-    portfolios.map(p=>({...p,...pfStats(p,livePrices)})).sort((a,b)=>b.total-a.total)
+    portfolios.map(p=>({...p,...pfStats(p,livePrices)}))
+      .sort((a,b)=>(Number.isFinite(b.total)?b.total:-Infinity)-(Number.isFinite(a.total)?a.total:-Infinity))
   ,[portfolios,livePrices]);
 
   // S&P 500 benchmark — alinhado no tempo: "se tivesses metido no SPY em vez das
@@ -448,6 +468,7 @@ export default function App(){
     if(!res.ok||!data?.ok) return{error:data?.error||"Não foi possível submeter o portefólio."};
 
     sset(K.MYNAME, trimmedName);
+    sset(K.MYPIN, String(pin)); // teu próprio código, no teu dispositivo (para veres o teu portefólio no pré-lançamento)
     setMyName(trimmedName);
     await load();
     setHasSubmitted(true);
@@ -471,6 +492,7 @@ export default function App(){
     }catch{ return{error:"Falha de ligação. Tenta novamente."}; }
     if(!res.ok||!data?.ok) return{error:data?.error||"Não foi possível verificar o nome/código."};
     sset(K.MYNAME, data.name||name);
+    sset(K.MYPIN, String(pin));
     setMyName(data.name||name);
     setHasSubmitted(true);
     setPage("ranking");
@@ -798,7 +820,7 @@ function Home({nav,submitted,count,settings,ranking,livePrices}){
               <span style={{width:7,height:7,borderRadius:"50%",background:"#ef4444",display:"inline-block"}}/>AO VIVO
             </span>
           </div>
-          <WinnersGrid top={ranking.slice(0,5)} livePrices={livePrices} nav={nav}/>
+          <WinnersGrid top={ranking.filter(p=>Number.isFinite(p.total)).slice(0,5)} livePrices={livePrices} nav={nav}/>
         </section>
       )}
 
