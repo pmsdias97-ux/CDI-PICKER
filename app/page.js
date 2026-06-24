@@ -1410,7 +1410,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
             </span>
             <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}><Rolling text={pct(p.total)}/></span>
             <span style={{textAlign:"right",alignSelf:"center",fontFamily:"monospace",fontSize:13,fontWeight:600,
-              color:alpha==null?"#4b5563":alpha>=0?"#4ade80":"#f87171"}}>{alpha==null?"—":`${alpha>=0?"+":""}${(alpha*100).toFixed(2)}%`}</span>
+              color:alpha==null?"#4b5563":alpha>=0?"#4ade80":"#f87171"}}>{alpha==null?"—":<Rolling text={`${alpha>=0?"+":""}${(alpha*100).toFixed(2)}%`}/>}</span>
             <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:14,fontWeight:700}}>
               <span style={{color:"#4ade80"}}>{p.pos}</span><span style={{color:"#4b5563"}}>/</span><span style={{color:"#f87171"}}>{p.neg}</span>
             </span>
@@ -1797,7 +1797,7 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,reload,sh
             <span style={{color:"#f87171"}}>▼ {st.neg} negativas</span>
             {alpha!=null&&(
               <span title="A tua rentabilidade menos a do S&P 500 no mesmo período">
-                Alpha: <strong style={{color:alpha>=0?"#4ade80":"#f87171"}}>{alpha>=0?"+":""}{(alpha*100).toFixed(2)}%</strong>
+                Alpha: <strong style={{color:alpha>=0?"#4ade80":"#f87171"}}><Rolling text={`${alpha>=0?"+":""}${(alpha*100).toFixed(2)}%`}/></strong>
               </span>
             )}
           </div>
