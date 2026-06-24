@@ -17,7 +17,7 @@ export async function POST(request) {
   catch (e) { return Response.json({ error: e.message }, { status: 500 }); }
 
   const { data, error } = await supabase
-    .from("users").select("has_submitted_portfolio").ilike("telegram_name", name).maybeSingle();
+    .from("users").select("has_submitted_portfolio").eq("telegram_name_lower", name.toLowerCase()).maybeSingle();
   if (error) return Response.json({ error: "Não foi possível verificar o nome." }, { status: 500 });
 
   return Response.json({ available: !(data?.has_submitted_portfolio === true) });

@@ -68,7 +68,7 @@ export async function POST(request) {
 
   // One portfolio per name.
   const { data: existing, error: lookupErr } = await supabase
-    .from("users").select("id, has_submitted_portfolio").ilike("telegram_name", name).maybeSingle();
+    .from("users").select("id, has_submitted_portfolio").eq("telegram_name_lower", name.toLowerCase()).maybeSingle();
   if (lookupErr) return Response.json({ error: "Não foi possível verificar o nome." }, { status: 500 });
   if (existing?.has_submitted_portfolio) {
     return Response.json({ error: "Já existe um portefólio com esse nome. Cada membro só pode participar uma vez." }, { status: 409 });
@@ -92,7 +92,13 @@ export async function POST(request) {
   if (!userId) {
     const { data: userRow, error: userErr } = await supabase
       .from("users").insert({ telegram_name: name, has_submitted_portfolio: false }).select("id").single();
-    if (userErr || !userRow) return Response.json({ error: "Não foi possível registar o utilizador." }, { status: 500 });
+    if (userErr || !userRow) {
+      // 23505 = violação do índice único do nome (race condition): nome já registado.
+      if (userErr?.code === "23505") {
+        return Response.json({ error: "Já existe um portefólio com esse nome. Cada membro só pode participar uma vez." }, { status: 409 });
+      }
+      return Response.json({ error: "Não foi possível registar o utilizador." }, { status: 500 });
+    }
     userId = userRow.id;
   }
 

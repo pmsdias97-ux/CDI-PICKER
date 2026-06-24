@@ -413,7 +413,7 @@ export default function App(){
       const { data: userRow, error: userError }=await supabase
         .from("users")
         .select("has_submitted_portfolio")
-        .ilike("telegram_name", mn.trim())
+        .eq("telegram_name_lower", mn.trim().toLowerCase())
         .maybeSingle();
       if(!userError&&userRow) submitted=userRow.has_submitted_portfolio===true;
     }

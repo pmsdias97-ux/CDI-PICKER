@@ -19,7 +19,7 @@ export async function POST(request) {
   catch (e) { return Response.json({ error: e.message }, { status: 500 }); }
 
   const { data: user, error } = await supabase
-    .from("users").select("id, telegram_name, has_submitted_portfolio").ilike("telegram_name", name).maybeSingle();
+    .from("users").select("id, telegram_name, has_submitted_portfolio").eq("telegram_name_lower", name.toLowerCase()).maybeSingle();
   if (error) return Response.json({ error: "Não foi possível verificar o nome." }, { status: 500 });
   if (!user || user.has_submitted_portfolio !== true) {
     return Response.json({ error: "Não encontrámos um portefólio submetido com esse nome." }, { status: 404 });

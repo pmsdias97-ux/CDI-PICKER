@@ -25,12 +25,15 @@ export async function POST(request) {
 
   // Evitar duplicar um nome já usado por outro utilizador.
   const { data: existing } = await supabase
-    .from("users").select("id").ilike("telegram_name", name).maybeSingle();
+    .from("users").select("id").eq("telegram_name_lower", name.toLowerCase()).maybeSingle();
   if (existing && existing.id !== userId) {
     return Response.json({ error: "Já existe um membro com esse nome." }, { status: 409 });
   }
 
   const { error } = await supabase.from("users").update({ telegram_name: name }).eq("id", userId);
-  if (error) return Response.json({ error: "Não foi possível guardar o nome." }, { status: 500 });
+  if (error) {
+    if (error.code === "23505") return Response.json({ error: "Já existe um membro com esse nome." }, { status: 409 });
+    return Response.json({ error: "Não foi possível guardar o nome." }, { status: 500 });
+  }
   return Response.json({ ok: true });
 }
