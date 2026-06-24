@@ -12,7 +12,7 @@ export async function GET(request) {
   const raw = new URL(request.url).searchParams.get("tickers") || "";
   const tickers = [...new Set(
     raw.split(",").map((t) => t.trim().toUpperCase()).filter(Boolean)
-  )].filter(isValidTicker).slice(0, 100);
+  )].filter(isValidTicker).slice(0, 300);
 
   if (!tickers.length) {
     return Response.json({ prices: {}, changes: {}, errors: {} });

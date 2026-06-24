@@ -458,7 +458,9 @@ export default function App(){
     </div>
   );
 
-  const sh=(children)=><Shell page={page} nav={nav} submitted={submitted} toast={toast}>{children}</Shell>;
+  const sh=(children)=><Shell page={page} nav={nav} submitted={submitted} toast={toast}
+    onMyPortfolio={()=>{ setDetailKey(myPf?.key||null); nav("detail"); }}
+    myPortfolioActive={page==="detail" && (!detailKey || detailKey===myPf?.key)}>{children}</Shell>;
 
   if(page==="home")   return sh(<Home nav={nav} submitted={submitted} count={portfolios.length} settings={settings} ranking={ranking} livePrices={livePrices}/>);
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
@@ -480,15 +482,15 @@ export default function App(){
 }
 
 /* ---- Shell --------------------------------------------------------------- */
-function Shell({children,page,nav,submitted,toast}){
+function Shell({children,page,nav,submitted,toast,onMyPortfolio,myPortfolioActive}){
   return(
     <div style={{minHeight:"100vh",position:"relative",
       background:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",
       backgroundColor:"#070d1c",
       color:"#e2e8f0",fontFamily:"system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",overflowX:"hidden"}}>
-      <style>{`@media(max-width:640px){.navWide{display:none}}`}</style>
+      <style>{`@media(max-width:640px){.navWide{display:none}}.cdiNav{justify-content:flex-start}@media(min-width:641px){.cdiNav{justify-content:center}}`}</style>
       <header style={{position:"sticky",top:0,zIndex:50,padding:"12px 14px"}}>
-        <Nav page={page} nav={nav} submitted={submitted} />
+        <Nav page={page} nav={nav} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} />
         <div style={{position:"absolute",top:12,right:14}}><MarketStatus/></div>
       </header>
       <main>{children}</main>
@@ -537,12 +539,14 @@ function MarketStatus(){
 }
 
 /* ---- Nav ----------------------------------------------------------------- */
-function Nav({page,nav,submitted}){
+function Nav({page,nav,submitted,onMyPortfolio,myPortfolioActive}){
   return(
-    <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+    <div className="cdiNav" style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
       <NavLink label="Início" active={page==="home"} onClick={()=>nav("home")}/>
       <NavLink label="Ranking" active={page==="ranking"} onClick={()=>nav("ranking")} locked={!submitted}/>
-      <NavLink label={<>Criar<span className="navWide"> Portefólio</span></>} active={page==="create"} onClick={()=>nav("create")}/>
+      {submitted
+        ? <NavLink label={<>Meu<span className="navWide"> Portefólio</span></>} active={myPortfolioActive} onClick={onMyPortfolio}/>
+        : <NavLink label={<>Criar<span className="navWide"> Portefólio</span></>} active={page==="create"} onClick={()=>nav("create")}/>}
     </div>
   );
 }
@@ -1290,7 +1294,6 @@ function LockedGate({nav,recoverByName,showToast}){
 
 /* ---- Ranking ------------------------------------------------------------- */
 function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,onCompare}){
-  const medals=["🥇","🥈","🥉"];
   const [cmp,setCmp]=useState(false);
   const [sel,setSel]=useState([]);
   const toggleSel=k=>setSel(s=>s.includes(k)?s.filter(x=>x!==k):(s.length>=2?[s[1],k]:[...s,k]));
@@ -1319,7 +1322,11 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
               background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":"none",transition:"background 0.15s"}}
             onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)"; }}
             onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
-            <span style={{fontSize:16}}>{medals[i]||<span style={{fontSize:13,color:"#374151",fontWeight:700}}>{i+1}</span>}</span>
+            <span style={{display:"flex",alignItems:"center"}}>
+              {i<3
+                ? <span style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0,...RANK_BADGE[i+1]}}>{i+1}</span>
+                : <span style={{fontSize:13,color:"#374151",fontWeight:700}}>{i+1}</span>}
+            </span>
             <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
               <span style={{overflowWrap:"anywhere",lineHeight:1.2}}>{p.name}</span>
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
