@@ -14,13 +14,23 @@ export async function GET(request) {
   try { supabase = getSupabaseAdmin(); }
   catch (e) { return Response.json({ error: e.message }, { status: 500 }); }
 
+  // Snapshot rules:
+  //   - DEMO (official=false): sempre (mostra uma amostra da evolução desde já).
+  //   - OFICIAL (official=true): só depois de a competição arrancar (1 jul) — antes
+  //     disso as rentabilidades são provisórias e o baseline ainda vai ser reposto.
+  const { data: gs } = await supabase
+    .from("game_settings").select("competition_started").eq("id", 1).maybeSingle();
+  const started = gs?.competition_started === true;
+
   // Only portfolios whose user has submitted.
   const { data: rows, error } = await supabase
     .from("portfolios")
-    .select("id, users!inner(has_submitted_portfolio), portfolio_stocks(ticker, initial_price, side)");
+    .select("id, official, users!inner(has_submitted_portfolio), portfolio_stocks(ticker, initial_price, side)");
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  const portfolios = (rows || []).filter((r) => r.users?.has_submitted_portfolio);
+  const portfolios = (rows || []).filter(
+    (r) => r.users?.has_submitted_portfolio && (r.official === false || started)
+  );
   if (!portfolios.length) return Response.json({ ok: true, snapshots: 0 });
 
   // One price lookup per unique ticker (Yahoo→CNBC fallback, cached).

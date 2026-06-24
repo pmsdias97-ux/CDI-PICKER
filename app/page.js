@@ -1358,7 +1358,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
     <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
       <div className="rkRow" style={{padding:"10px 20px",borderBottom:"1px solid #1f2937",
         fontSize:11,color:"#4b5563",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>
-        <span>#</span><span>Membro</span>
+        <span style={{textAlign:"center"}}>#</span><span>Membro</span>
         <span style={{textAlign:"right"}}>Rentab.</span>
         <span style={{textAlign:"right"}}>Alpha</span>
         <span style={{textAlign:"center"}}>🟢/🔴</span>
@@ -1376,10 +1376,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
               background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":"none",transition:"background 0.15s"}}
             onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)"; }}
             onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
-            <span style={{display:"flex",alignItems:"center"}}>
+            <span style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
               {i<3
                 ? <span style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0,...RANK_BADGE[i+1]}}>{i+1}</span>
-                : <span style={{fontSize:13,color:"#374151",fontWeight:700}}>{i+1}</span>}
+                : <span style={{fontSize:13,color:"#94a3b8",fontWeight:700}}>{i+1}</span>}
             </span>
             <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
               <span style={{overflowWrap:"anywhere",lineHeight:1.2}}>{p.name}</span>
@@ -1637,26 +1637,26 @@ function SectorDonut({stocks}){
   const total=stocks.length||1;
   const segs=Object.entries(counts).sort((a,b)=>b[1]-a[1])
     .map(([name,n],i)=>({name,n,pct:n/total,color:SECTOR_COLORS[i%SECTOR_COLORS.length]}));
-  const R=42,SW=14,C=2*Math.PI*R;
+  const R=32.5,SW=26,C=2*Math.PI*R;
   let off=0;
   return(
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:16,flexWrap:"wrap"}}>
-      <svg viewBox="0 0 100 100" style={{width:"clamp(96px,26vw,120px)",height:"auto",flexShrink:0,transform:"rotate(-90deg)"}}>
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:14}}>
+      <svg viewBox="0 0 100 100" style={{width:"clamp(110px,32vw,140px)",height:"auto",flexShrink:0,overflow:"visible",transform:"rotate(-90deg)"}}>
         {segs.map((s,i)=>{ const len=s.pct*C; const el=(
           <circle key={i} cx="50" cy="50" r={R} fill="none" stroke={s.color}
-            strokeWidth={hi===i?SW+3:SW} opacity={hi==null||hi===i?1:0.25}
+            strokeWidth={hi===i?SW+4:SW} opacity={hi==null||hi===i?1:0.28}
             style={{transition:"opacity .15s, stroke-width .15s",cursor:"pointer"}}
             onMouseEnter={()=>setHi(i)} onMouseLeave={()=>setHi(null)}
             strokeDasharray={`${len.toFixed(2)} ${(C-len).toFixed(2)}`} strokeDashoffset={(-off).toFixed(2)}/>
         ); off+=len; return el; })}
       </svg>
-      <div style={{flex:1,minWidth:120,display:"flex",flexDirection:"column",gap:6}}>
+      <div style={{width:"100%",display:"flex",flexDirection:"column",gap:6}}>
         {segs.map((s,i)=>(
           <div key={i} onMouseEnter={()=>setHi(i)} onMouseLeave={()=>setHi(null)}
             style={{display:"flex",alignItems:"center",gap:10,fontSize:13,padding:"2px 6px",borderRadius:7,cursor:"pointer",
               opacity:hi==null||hi===i?1:0.4,background:hi===i?"rgba(255,255,255,0.05)":"transparent",transition:"opacity .15s, background .15s"}}>
             <span style={{width:10,height:10,borderRadius:3,background:s.color,flexShrink:0}}/>
-            <span style={{flex:1,color:"#cbd5e1",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</span>
+            <span style={{flex:1,minWidth:0,color:"#cbd5e1",overflowWrap:"break-word"}}>{s.name}</span>
             <span style={{color:"#e2e8f0",fontWeight:700,fontFamily:"monospace"}}>{s.n}</span>
             <span style={{color:"#6b7280",fontFamily:"monospace",minWidth:38,textAlign:"right"}}>{Math.round(s.pct*100)}%</span>
           </div>

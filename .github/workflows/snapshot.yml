@@ -1,0 +1,25 @@
+name: Daily snapshot
+
+# Gatilho fiável para o snapshot diário da evolução (independente do cron da Vercel).
+# Corre todos os dias às 22:00 UTC e também pode ser disparado à mão (workflow_dispatch).
+# Requer o segredo CRON_SECRET nos GitHub Secrets do repositório
+# (Settings > Secrets and variables > Actions > New repository secret),
+# com o MESMO valor que está na Vercel e no .env.local.
+
+on:
+  schedule:
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger snapshot endpoint
+        run: |
+          code=$(curl -s -o /tmp/out.txt -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://cdi-picker.vercel.app/api/cron/snapshot)
+          echo "HTTP $code"
+          cat /tmp/out.txt; echo
+          test "$code" = "200"
