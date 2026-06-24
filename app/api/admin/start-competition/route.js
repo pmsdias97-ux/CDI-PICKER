@@ -1,10 +1,12 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
-import { fetchQuote } from "../../../lib/marketData";
+import { fetchQuote, fetchOpenFresh } from "../../../lib/marketData";
 import { checkAdminPassword, rateLimited } from "../../../lib/apiGuards";
 
-// Arranque oficial: fixa o preço de partida (ao vivo, no momento do clique) para
-// TODOS os portefólios, para começarem nas mesmas condições. Marca a competição
-// como iniciada. Mantém os snapshots de evolução. Protegido por ADMIN_PASSWORD.
+// Arranque oficial: fixa o preço de partida no PREÇO DE ABERTURA do dia (open) para
+// TODOS os portefólios, para começarem nas mesmas condições (o jogo arranca na
+// abertura de mercado de 1 jul). Se o open não estiver disponível, usa o preço ao
+// vivo como fallback. Marca a competição como iniciada. Mantém os snapshots de
+// evolução. Protegido por ADMIN_PASSWORD.
 export async function POST(request) {
   const rl = rateLimited(request, "admin-start", { max: 10, windowMs: 60_000 });
   if (!rl.ok) return Response.json({ error: "Demasiados pedidos." }, { status: 429 });
@@ -23,14 +25,21 @@ export async function POST(request) {
     .from("portfolios").select("id, portfolio_stocks(ticker)");
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  // Preços ao vivo de todos os tickers + SPY (Yahoo→CNBC, cache).
+  // Preço de ABERTURA de cada ticker + SPY (open). Fallback ao preço ao vivo se o
+  // open não estiver disponível, para nunca ficar null.
   const tickers = [...new Set((pfs || []).flatMap((p) => (p.portfolio_stocks || []).map((s) => s.ticker)))];
   const prices = {};
+  let usedOpen = 0, usedLive = 0;
   for (const t of tickers) {
-    const p = await fetchQuote(t);
-    if (typeof p === "number") prices[t] = p;
+    const open = await fetchOpenFresh(t);
+    if (Number.isFinite(open)) { prices[t] = open; usedOpen++; }
+    else {
+      const live = await fetchQuote(t);
+      if (typeof live === "number") { prices[t] = live; usedLive++; }
+    }
   }
-  const spy = await fetchQuote("SPY");
+  const spyOpen = await fetchOpenFresh("SPY");
+  const spy = Number.isFinite(spyOpen) ? spyOpen : await fetchQuote("SPY");
 
   let stocksUpdated = 0, missing = 0;
   for (const t of tickers) {
@@ -47,5 +56,5 @@ export async function POST(request) {
     .from("game_settings").update({ competition_started: true }).eq("id", 1);
   if (flagErr) return Response.json({ error: flagErr.message }, { status: 500 });
 
-  return Response.json({ ok: true, tickers: tickers.length, stocksUpdated, missing, spy: typeof spy === "number" ? spy : null });
+  return Response.json({ ok: true, tickers: tickers.length, stocksUpdated, missing, usedOpen, usedLive, spy: typeof spy === "number" ? spy : null, spyUsedOpen: Number.isFinite(spyOpen) });
 }

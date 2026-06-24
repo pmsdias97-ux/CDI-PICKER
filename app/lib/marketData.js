@@ -66,12 +66,20 @@ async function yahooQuote(symbol) {
   url.searchParams.set("interval", "1d");
   const data = await yahooJson(url.toString(), 300);
   if (data.chart?.error) throw new Error(data.chart.error.description || "Yahoo error");
-  const meta = data.chart?.result?.[0]?.meta;
+  const result = data.chart?.result?.[0];
+  const meta = result?.meta;
   const price = meta?.regularMarketPrice;
   if (!Number.isFinite(price)) return null;
   const prevClose = meta?.chartPreviousClose ?? meta?.previousClose;
+  // Preço de abertura do dia: meta.regularMarketOpen, ou o candle diário (range=1d).
+  let open = meta?.regularMarketOpen;
+  if (!Number.isFinite(open)) {
+    const opens = result?.indicators?.quote?.[0]?.open;
+    if (Array.isArray(opens)) open = [...opens].reverse().find((v) => Number.isFinite(v));
+  }
   return {
     price,
+    open: Number.isFinite(open) ? open : null,
     name: meta?.longName || meta?.shortName || null,
     exchange: meta?.fullExchangeName || meta?.exchangeName || null,
     currency: meta?.currency || null,
@@ -114,8 +122,10 @@ async function cnbcFetchQuote(sym) {
   const price = parseFloat(String(quote.last).replace(/,/g, ""));
   if (!Number.isFinite(price)) return null;
   const change = parseFloat(String(quote.change).replace(/,/g, ""));
+  const open = parseFloat(String(quote.open).replace(/,/g, ""));
   return {
     price,
+    open: Number.isFinite(open) ? open : null,
     name: quote.name || quote.shortName || null,
     exchange: quote.exchange || quote.exchangeName || null,
     currency: quote.currencyCode || null,
@@ -193,6 +203,15 @@ export async function fetchQuoteFull(ticker) {
 export async function fetchQuote(ticker) {
   const quote = await fetchQuoteFull(ticker);
   return quote?.price ?? null;
+}
+
+// Preço de ABERTURA do dia (open), sempre fresco (ignora a cache SWR) — usado no
+// arranque oficial para fixar o baseline na abertura de mercado, não num valor antigo.
+export async function fetchOpenFresh(ticker) {
+  const symbol = String(ticker || "").trim().toUpperCase();
+  if (!symbol) return null;
+  const q = await loadQuote(symbol);
+  return Number.isFinite(q?.open) ? q.open : null;
 }
 
 // Daily close history. Returns [{date:'YYYY-MM-DD', close}] ascending, or null.

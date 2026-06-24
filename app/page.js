@@ -773,7 +773,7 @@ function Home({nav,submitted,count,settings,ranking,livePrices}){
           {[
             {n:"01",icon:"✏️",t:"Insere o teu nome",d:"Usa exatamente o mesmo nome que tens no grupo de Telegram da comunidade."},
             {n:"02",icon:"🔍",t:"Escolhe 8 ações",d:"Pesquisa por ticker ou nome da empresa. Tens de selecionar exatamente 8 ações."},
-            {n:"03",icon:"🚀",t:"Submete o portefólio",d:"Depois da submissão, tens acesso ao ranking completo e aos portefólios dos outros."},
+            {n:"03",icon:"🚀",t:"Submete o portefólio",d:"Depois da submissão ficas inscrito; os portefólios dos outros só ficam visíveis quando a competição arranca."},
           ].map(c=>(
             <div key={c.n} style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,position:"relative",overflow:"hidden"}}>
               <div style={{position:"absolute",top:16,right:20,fontSize:36,fontWeight:800,color:"#1f2937",lineHeight:1}}>{c.n}</div>
@@ -794,11 +794,12 @@ function Home({nav,submitted,count,settings,ranking,livePrices}){
               "Cada participante cria exatamente 1 portefólio com 8 ações",
               "Cada ação representa 12,5% do portefólio (peso igual)",
               "Podes abrir até 2 posições short",
-              "O preço de cada ação é registado no momento da submissão",
-              "Não podes ver os outros portefólios antes de submeter o teu",
+              "Não vês os portefólios dos outros até a competição começar, a 1 de julho de 2026",
               "Depois de submetido, o portefólio fica bloqueado",
-              "O ranking é atualizado automaticamente com os preços atuais",
+              "As posições arrancam ao preço de abertura do mercado de 1 de julho",
               "A rentabilidade é calculada como a média das 8 ações",
+              "O ranking usa os preços de mercado mais recentes",
+              "A competição dura 1 ano: o vencedor é apurado a 30 de junho de 2027",
             ].map((r,i)=>(
               <div key={i} style={{display:"flex",alignItems:"flex-start",gap:12}}>
                 <span style={{color:"#22c55e",fontWeight:700,marginTop:1,flexShrink:0}}>✓</span>
@@ -1239,18 +1240,26 @@ function LockedGate({nav,recoverByName,showToast}){
     if(r?.error) showToast(r.error,"error");
   }
   return(
-    <div style={{maxWidth:480,margin:"80px auto",padding:"0 20px",textAlign:"center"}}>
-      <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:20,padding:48}}>
+    <div style={{maxWidth:480,margin:"40px auto 80px",padding:"0 20px"}}>
+      <button onClick={()=>nav("home")}
+        style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:14,marginBottom:20,
+          display:"flex",alignItems:"center",gap:6,padding:0}}>
+        ← Voltar ao início
+      </button>
+      <div style={{textAlign:"center",background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:20,padding:48}}>
         <div style={{fontSize:40,marginBottom:16}}>🔒</div>
         <h1 style={{fontSize:22,fontWeight:700,marginBottom:12}}>Área bloqueada</h1>
-        <p style={{fontSize:14,color:"#6b7280",marginBottom:28}}>
-          Só podes ver o ranking e os portefólios dos outros membros depois de submeteres o teu próprio portefólio de 8 ações.
+        <p style={{fontSize:14,color:"#6b7280",marginBottom:28,lineHeight:1.6}}>
+          Submete o teu portefólio de 8 ações para entrares no jogo.<br/>
+          Os portefólios dos outros membros só ficam visíveis quando a competição começar,<br/>
+          a 1 de julho de 2026.
         </p>
         <Btn onClick={()=>nav("create")} primary>Criar o meu portefólio</Btn>
 
         <div style={{marginTop:32,paddingTop:24,borderTop:"1px solid #1f2937"}}>
-          <p style={{fontSize:13,color:"#6b7280",marginBottom:12}}>
-            Já submeteste o teu portefólio? Escreve o teu nome do Telegram e o teu código de 3 dígitos para voltares a aceder.
+          <p style={{fontSize:13,color:"#6b7280",marginBottom:12,lineHeight:1.6}}>
+            Já submeteste o teu portefólio?<br/>
+            Insere o teu nome de registo e o código de 3 dígitos para voltares a aceder.
           </p>
           <div style={{display:"flex",flexDirection:"column",gap:8,maxWidth:260,margin:"0 auto"}}>
             <input value={name} onChange={e=>setName(e.target.value)}
@@ -1999,7 +2008,7 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
   },[pw,portfolios]);
 
   async function startCompetition(){
-    if(!confirm("Iniciar a competição AGORA?\n\nVai fixar o preço de partida de TODOS os portefólios com a cotação ao vivo deste momento (todos começam iguais). Faz isto no dia 1 à abertura do mercado.")) return;
+    if(!confirm("Iniciar a competição AGORA?\n\nVai fixar o preço de partida de TODOS os portefólios no PREÇO DE ABERTURA do mercado (todos começam iguais). Faz isto a 1 de julho, depois da abertura.")) return;
     try{
       const res=await fetch("/api/admin/start-competition",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
       const data=await res.json();
