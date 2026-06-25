@@ -50,6 +50,9 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Títulos das boxes (Evolução / Exposição) centrados em mobile */
+@media (max-width: 560px) { .detailCardTitle { text-align: center; } }
+
 /* Reflexo metálico (shimmer) subtil nos badges do Top 3 (ouro/prata/bronze) */
 .rankShine { position: relative; overflow: hidden; }
 .rankShine::after {

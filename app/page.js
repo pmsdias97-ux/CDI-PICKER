@@ -250,12 +250,16 @@ function TiltCard({children,style}){
   );
 }
 // Só marca as posições SHORT — long é o normal, não precisa de badge.
+// Círculo com seta diagonal para baixo (aposta na queda), junto ao ticker.
 function SideBadge({side}){
   if(side!=="short") return null;
   return(
-    <span style={{fontSize:"clamp(8px,2.2vw,10px)",fontWeight:800,letterSpacing:"0.5px",borderRadius:5,padding:"1px 5px",flexShrink:0,
-      color:"#fbbf24",background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.35)"}}>
-      SHORT
+    <span title="Posição short (aposta na queda)" style={{display:"inline-flex",alignItems:"center",justifyContent:"center",
+      width:"clamp(15px,4.2vw,18px)",height:"clamp(15px,4.2vw,18px)",borderRadius:"50%",flexShrink:0,
+      background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.4)"}}>
+      <svg style={{width:"clamp(8px,2.3vw,10px)",height:"clamp(8px,2.3vw,10px)"}} viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M7 7L17 17"/><path d="M17 10V17H10"/>
+      </svg>
     </span>
   );
 }
@@ -2054,8 +2058,10 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competiti
             <div style={{minWidth:0}}>
               <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
                 <StockLogo ticker={s.ticker} size={32}/>
-                <span style={{fontWeight:800,fontSize:14,color:"#e2e8f0"}}>{s.ticker}</span>
-                <SideBadge side={s.side}/>
+                <span style={{display:"inline-flex",alignItems:"center",gap:2,minWidth:0}}>
+                  <span style={{fontWeight:800,fontSize:14,color:"#e2e8f0"}}>{s.ticker}</span>
+                  <SideBadge side={s.side}/>
+                </span>
               </div>
               <div style={{fontSize:13,color:"#6b7280",marginTop:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.companyName}</div>
             </div>
@@ -2066,8 +2072,11 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competiti
               const dayVal=Number.isFinite(rawDay)?(s.side==="short"?-rawDay:rawDay):null;
               const v=retMode==="day"?dayVal:s.ret;
               const toggle=()=>setRetMode(m=>m==="total"?"day":"total");
-              const base={textAlign:"center",fontFamily:"monospace",fontSize:"clamp(11px,2.9vw,15px)",fontWeight:700,
-                whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"};
+              // Célula preenche a altura toda da linha (margem negativa cobre o padding)
+              // → clicar em qualquer ponto da coluna alterna, não só no número.
+              const base={fontFamily:"monospace",fontSize:"clamp(11px,2.9vw,15px)",fontWeight:700,
+                whiteSpace:"nowrap",cursor:"pointer",userSelect:"none",
+                alignSelf:"stretch",margin:"-14px 0",display:"flex",alignItems:"center",justifyContent:"center"};
               if(v==null) return <span onClick={toggle} title="Alternar Desde submissão / Diário" style={{...base,color:"#4b5563"}}>—</span>;
               return(
                 <span onClick={toggle} title="Alternar Desde submissão / Diário"
@@ -2085,11 +2094,11 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competiti
       {/* Evolução (#5) + Exposição por setor */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16,marginBottom:16}}>
         <div style={{...GLASS,borderRadius:16,padding:24}}>
-          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Evolução da rentabilidade</h3>
+          <h3 className="detailCardTitle" style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Evolução da rentabilidade</h3>
           <EvolutionChart portfolioId={pf.id} currentReturn={st.total} submittedAt={pf.submittedAt} competitionStarted={competitionStarted} gameStartDate={gameStartDate}/>
         </div>
         <div style={{...GLASS,borderRadius:16,padding:24}}>
-          <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Exposição por setor</h3>
+          <h3 className="detailCardTitle" style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Exposição por setor</h3>
           <SectorDonut stocks={pf.stocks}/>
         </div>
       </div>
@@ -2329,7 +2338,7 @@ function Duel({a,b,livePrices,spy,nav}){
 
       {/* Evolução sobreposta */}
       <div style={{...GLASS,borderRadius:16,padding:24,marginBottom:16}}>
-        <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Evolução da rentabilidade</h3>
+        <h3 className="detailCardTitle" style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Evolução da rentabilidade</h3>
         <DuelChart a={a} b={b} curA={sa.total} curB={sb.total}/>
       </div>
 
