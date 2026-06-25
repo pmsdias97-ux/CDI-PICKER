@@ -571,7 +571,7 @@ export default function App(){
     <div style={{minHeight:"100vh",
       background:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",
       backgroundAttachment:"fixed",
-      display:"flex",alignItems:"center",justifyContent:"center",color:"#4b5563",fontFamily:"system-ui,sans-serif"}}>
+      display:"flex",alignItems:"center",justifyContent:"center",color:"#4b5563",fontFamily:"var(--font-app), system-ui, sans-serif"}}>
       <style>{`@keyframes cdiPulse{0%,100%{opacity:.45;transform:scale(.92)}50%{opacity:1;transform:scale(1)}}`}</style>
       <img src="/logo.png" alt="A carregar…"
         style={{width:"clamp(96px,16vw,140px)",height:"auto",animation:"cdiPulse 1.4s ease-in-out infinite"}}/>
@@ -607,7 +607,7 @@ function Shell({children,page,nav,submitted,toast,onMyPortfolio,myPortfolioActiv
     <div style={{minHeight:"100vh",position:"relative",
       background:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",
       backgroundColor:"#070d1c",
-      color:"#e2e8f0",fontFamily:"system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",overflowX:"hidden"}}>
+      color:"#e2e8f0",fontFamily:"var(--font-app), system-ui, -apple-system, sans-serif",overflowX:"hidden"}}>
       <style>{`@media(max-width:640px){.navWide{display:none}}.cdiNav{justify-content:flex-start}@media(min-width:641px){.cdiNav{justify-content:center}}`}</style>
       <header style={{position:"sticky",top:0,zIndex:50,padding:"12px 14px"}}>
         <Nav page={page} nav={nav} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} />

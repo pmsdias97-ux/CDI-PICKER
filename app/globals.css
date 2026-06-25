@@ -40,7 +40,14 @@ html, body {
 }
 body {
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-app), system-ui, Arial, Helvetica, sans-serif;
+}
+
+/* TESTE de fonte: os números (que usam fontFamily:"monospace" inline) passam à
+   fonte principal, mantendo alinhamento com algarismos tabulares. */
+[style*="monospace"] {
+  font-family: var(--font-app), system-ui, sans-serif !important;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Gráficos (Recharts): sem caixa de foco/realce ao clicar ou tocar */

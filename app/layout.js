@@ -1,4 +1,4 @@
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -11,6 +11,12 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Fonte principal da app: Inter (auto-hospedada, consistente em todos os dispositivos).
+const appSans = Inter({
+  variable: "--font-app",
+  subsets: ["latin"],
+});
+
 export const metadata = {
   title: "CDI PICKER",
   description: "O jogo de portefólios da nossa comunidade. Escolhe 8 ações, submete o teu portefólio e compete pelo melhor retorno.",
@@ -20,7 +26,7 @@ export default function RootLayout({ children }) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${appSans.variable} h-full antialiased`}
     >
       {/* suppressHydrationWarning: extensões (ex.: Grammarly) injetam atributos
           no <body> antes da hidratação, causando um mismatch benigno. */}
