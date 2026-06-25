@@ -217,6 +217,16 @@ export async function fetchOpenFresh(ticker) {
   return Number.isFinite(q?.open) ? q.open : null;
 }
 
+// Preço da sessão REGULAR, sempre fresco (ignora a cache SWR). Atenção: `regularMarketPrice`
+// só é o FECHO do dia quando corrido DEPOIS do fecho de mercado — usado no passo 1 do
+// arranque (trancar baselines no fecho de 30 jun, à noite). Durante a sessão é intraday.
+export async function fetchCloseFresh(ticker) {
+  const symbol = String(ticker || "").trim().toUpperCase();
+  if (!symbol) return null;
+  const q = await loadQuote(symbol);
+  return Number.isFinite(q?.price) ? q.price : null;
+}
+
 // Daily close history. Returns [{date:'YYYY-MM-DD', close}] ascending, or null.
 // Yahoo's chart 429s this IP for history, so we use Alpha Vantage (free key, but
 // only 25 req/day) with a long 6h cache. Yahoo is tried first opportunistically.

@@ -279,12 +279,12 @@ function StockLogo({ticker,size=28}){
 }
 
 /* ---- Shared game settings (Supabase) ------------------------------------- */
-const DEFAULT_SETTINGS={submissionsOpen:true,gameStartDate:"",gameEndDate:"",competitionStarted:false};
+const DEFAULT_SETTINGS={submissionsOpen:true,gameStartDate:"",gameEndDate:"",competitionStarted:false,baselinesLockedAt:null};
 async function loadGameSettings(){
   try{
     const { data, error }=await supabase
       .from("game_settings")
-      .select("submissions_open,game_start_date,game_end_date,competition_started")
+      .select("submissions_open,game_start_date,game_end_date,competition_started,baselines_locked_at")
       .eq("id",1)
       .maybeSingle();
     if(error||!data) return null;
@@ -293,6 +293,7 @@ async function loadGameSettings(){
       gameStartDate:data.game_start_date||"",
       gameEndDate:data.game_end_date||"",
       competitionStarted:data.competition_started===true,
+      baselinesLockedAt:data.baselines_locked_at||null,
     };
   }catch{ return null; }
 }
@@ -2478,15 +2479,33 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
   const aranking = apfs.map(p=>({...p,...pfStats(p,livePrices)}))
     .sort((a,b)=>(Number.isFinite(b.total)?b.total:-Infinity)-(Number.isFinite(a.total)?a.total:-Infinity));
 
+  // PASSO 1 — trancar preços de partida no fecho de 30 jun. dryRun pré-vê sem gravar.
+  async function lockBaselines(dryRun){
+    if(!dryRun&&!confirm("Trancar o preço de partida de TODOS os portefólios no FECHO de 30 jun?\n\nFaz isto a 30 de junho DEPOIS do fecho do mercado US (~21:00 PT). Não revela os oficiais — isso é o passo 2 (Arrancar).")) return;
+    try{
+      const res=await fetch("/api/admin/lock-baselines",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,dryRun})});
+      const data=await res.json();
+      if(!res.ok||!data?.ok){ showToast(data?.error||"Não foi possível trancar os preços.","error"); return; }
+      if(dryRun){
+        const sample=(data.sample||[]).map(s=>`${s.ticker} ${s.close??"—"}`).join(", ");
+        showToast(`Pré-visualização: ${data.tickers} tickers (fecho ${data.usedClose}, vivo ${data.usedLive}, sem ${data.missing}). ${sample}`);
+        return;
+      }
+      setSettings(s=>({...(s||{}),baselinesLockedAt:data.lockedAt}));
+      await reload();
+      showToast(`${data.stocksUpdated} ações trancadas no fecho de 30 jun.`);
+    }catch{ showToast("Falha de ligação.","error"); }
+  }
+  // PASSO 2 — arrancar (revela os oficiais). Os preços já têm de estar trancados.
   async function startCompetition(){
-    if(!confirm("Iniciar a competição AGORA?\n\nVai fixar o preço de partida de TODOS os portefólios no PREÇO DE ABERTURA do mercado (todos começam iguais). Faz isto a 1 de julho, depois da abertura.")) return;
+    if(!confirm("Arrancar a competição?\n\nVai REVELAR os portefólios oficiais. Os preços de partida já têm de estar trancados (fecho de 30 jun). Faz isto a 1 de julho.")) return;
     try{
       const res=await fetch("/api/admin/start-competition",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
       const data=await res.json();
-      if(!res.ok||!data?.ok){ showToast(data?.error||"Não foi possível iniciar a competição.","error"); return; }
+      if(!res.ok||!data?.ok){ showToast(data?.error||"Não foi possível arrancar a competição.","error"); return; }
       setSettings(s=>({...(s||{}),competitionStarted:true}));
       await reload();
-      showToast(`Competição iniciada — ${data.stocksUpdated} ações fixadas.`);
+      showToast("Competição a decorrer.");
     }catch{ showToast("Falha de ligação.","error"); }
   }
   async function savePin(p){
@@ -2676,16 +2695,46 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
           </div>
           <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,gridColumn:"1/-1"}}>
             <h3 style={{fontWeight:700,marginBottom:8}}>Competição</h3>
-            <p style={{fontSize:13,color:"#6b7280",margin:"0 0 14px",lineHeight:1.5}}>
-              Estado: <strong style={{color:settings.competitionStarted?"#4ade80":"#fbbf24"}}>{settings.competitionStarted?"A decorrer":"Por iniciar (modo demonstração)"}</strong>.
-              {!settings.competitionStarted&&" Clica no dia 1 à abertura — fixa o preço de partida de todos os portefólios ao vivo."}
+            <p style={{fontSize:13,color:"#94a3b8",margin:"0 0 16px",lineHeight:1.5}}>
+              Estado: <strong style={{color:settings.competitionStarted?"#4ade80":settings.baselinesLockedAt?"#60a5fa":"#fbbf24"}}>
+                {settings.competitionStarted?"A decorrer":settings.baselinesLockedAt?"Preços trancados — pronto a arrancar":"Por iniciar (modo demonstração)"}</strong>.
             </p>
-            <button onClick={startCompetition} disabled={settings.competitionStarted}
-              style={{background:settings.competitionStarted?"rgba(255,255,255,0.06)":"linear-gradient(180deg,#34d36a,#22c55e)",
-                color:settings.competitionStarted?"#64748b":"#062b14",border:"1px solid rgba(255,255,255,0.2)",borderRadius:10,
-                padding:"11px 20px",fontSize:14,fontWeight:700,cursor:settings.competitionStarted?"not-allowed":"pointer"}}>
-              🚀 Iniciar competição
-            </button>
+
+            {/* PASSO 1 — trancar preços de partida no fecho de 30 jun */}
+            <div style={{marginBottom:18}}>
+              <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",marginBottom:6}}>Passo 1 — Trancar preços de partida</div>
+              <p style={{fontSize:12.5,color:"#94a3b8",margin:"0 0 10px",lineHeight:1.5}}>
+                A 30 jun, depois do fecho US (~21:00 PT). Fixa o baseline de todos no fecho de 30 jun.
+                {settings.baselinesLockedAt&&<><br/><span style={{color:"#4ade80"}}>✅ Trancado a {new Date(settings.baselinesLockedAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}</span></>}
+              </p>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                <button onClick={()=>lockBaselines(true)} disabled={settings.competitionStarted}
+                  style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:10,
+                    padding:"10px 16px",fontSize:13.5,fontWeight:600,color:"#cbd5e1",cursor:settings.competitionStarted?"not-allowed":"pointer"}}>
+                  🔍 Pré-ver fecho (não grava)
+                </button>
+                <button onClick={()=>lockBaselines(false)} disabled={settings.competitionStarted||!!settings.baselinesLockedAt}
+                  style={{background:(settings.competitionStarted||settings.baselinesLockedAt)?"rgba(255,255,255,0.06)":"linear-gradient(180deg,#38bdf8,#0ea5e9)",
+                    color:(settings.competitionStarted||settings.baselinesLockedAt)?"#64748b":"#04222e",border:"1px solid rgba(255,255,255,0.2)",borderRadius:10,
+                    padding:"10px 16px",fontSize:13.5,fontWeight:700,cursor:(settings.competitionStarted||settings.baselinesLockedAt)?"not-allowed":"pointer"}}>
+                  🔒 Trancar preços (fecho 30 jun)
+                </button>
+              </div>
+            </div>
+
+            {/* PASSO 2 — arrancar (revela oficiais) */}
+            <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:16}}>
+              <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",marginBottom:6}}>Passo 2 — Arrancar competição</div>
+              <p style={{fontSize:12.5,color:"#94a3b8",margin:"0 0 10px",lineHeight:1.5}}>
+                A 1 jul. Revela os portefólios oficiais.{!settings.baselinesLockedAt&&<span style={{color:"#fbbf24"}}> Tranca primeiro os preços (passo 1).</span>}
+              </p>
+              <button onClick={startCompetition} disabled={settings.competitionStarted||!settings.baselinesLockedAt}
+                style={{background:(settings.competitionStarted||!settings.baselinesLockedAt)?"rgba(255,255,255,0.06)":"linear-gradient(180deg,#34d36a,#22c55e)",
+                  color:(settings.competitionStarted||!settings.baselinesLockedAt)?"#64748b":"#062b14",border:"1px solid rgba(255,255,255,0.2)",borderRadius:10,
+                  padding:"11px 20px",fontSize:14,fontWeight:700,cursor:(settings.competitionStarted||!settings.baselinesLockedAt)?"not-allowed":"pointer"}}>
+                🚀 Arrancar competição
+              </button>
+            </div>
           </div>
           <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,gridColumn:"1/-1"}}>
             <button onClick={reload}
