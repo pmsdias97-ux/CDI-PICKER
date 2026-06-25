@@ -1377,6 +1377,17 @@ const RACE_COLORS=["#4ade80","#38bdf8","#fbbf24","#f472b6","#a78bfa","#fb923c","
 // Eixo X: só dia (DD/MM). Tooltip: dia + hora (DD/MM HH:mm), em hora local.
 function raceTick(iso){ const d=new Date(iso); if(Number.isNaN(d.getTime())) return String(iso); const p=n=>String(n).padStart(2,"0"); return `${p(d.getDate())}/${p(d.getMonth()+1)}`; }
 function raceFull(iso){ const d=new Date(iso); if(Number.isNaN(d.getTime())) return String(iso); const p=n=>String(n).padStart(2,"0"); return `${p(d.getDate())}/${p(d.getMonth()+1)} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+// Ignora pontos gravados com o mercado US fechado (cotações repetidas → linhas
+// "achatadas"). Dias úteis, 9:30–16:15 ET (DST automático via fuso New York).
+function isMktOpen(iso){
+  const d=new Date(iso); if(Number.isNaN(d.getTime())) return false;
+  const parts=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",weekday:"short",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(d);
+  const v=k=>parts.find(x=>x.type===k)?.value;
+  const wd=v("weekday"); if(wd==="Sat"||wd==="Sun") return false;
+  let h=parseInt(v("hour"),10); if(h===24) h=0;
+  const m=h*60+parseInt(v("minute"),10);
+  return m>=570&&m<=975;
+}
 function SeasonRaceTooltip({active,payload,label}){
   if(!active||!payload||!payload.length) return null;
   const rows=[...payload].filter(p=>p.value!=null).sort((a,b)=>b.value-a.value);
@@ -1393,9 +1404,11 @@ function SeasonRaceTooltip({active,payload,label}){
     </div>
   );
 }
-function SeasonRace({ranking,preLaunch,myNorm}){
+const raceColorOf=(p,i)=> p._me?"#ffffff":RACE_COLORS[i%RACE_COLORS.length];
+function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate}){
   const [snaps,setSnaps]=useState(null);
   const [mounted,setMounted]=useState(false);
+  const [hi,setHi]=useState(null); // portefólio em destaque (hover no nome ou na linha)
   useEffect(()=>{ setMounted(true); },[]);
   // Pré-1jul: linhas dos DEMOS (pré-visualização). Depois: Top 10 oficiais.
   // O próprio é SEMPRE incluído (mesmo fora do Top 10), com a linha destacada.
@@ -1425,27 +1438,32 @@ function SeasonRace({ranking,preLaunch,myNorm}){
   const data=useMemo(()=>{
     if(!snaps) return null;
     const nameById={}; shown.forEach(p=>{ nameById[p.id]=p.name; });
+    // Arranque real de cada linha: 1 jul (jogo oficial) ou a submissão (demos).
+    // t0 = o mais antigo → todas começam JUNTAS a 0% (pedido do utilizador).
+    const baseOf=()=> (competitionStarted&&gameStartDate)?`${String(gameStartDate).slice(0,10)}T00:00:00.000Z`:null;
+    const bases=shown.map(p=>baseOf()||p.submittedAt).filter(Boolean).sort();
+    const t0=bases[0]||null;
     const byT={};
     for(const s of snaps){
       const nm=nameById[s.portfolio_id]; if(!nm) continue;
-      const t=s.captured_at; if(!t) continue;
+      const t=s.captured_at; if(!t||!isMktOpen(t)) continue;   // ignora mercado fechado
+      if(t0&&t<t0) continue;                                    // ignora antes do arranque
+      // VALOR REAL (rentabilidade desde a submissão) — igual ao ranking. SEM rebase.
       (byT[t]=byT[t]||{t})[nm]=Number(s.total_return)*100;
     }
-    // ponto de agora (ao vivo) com a rentabilidade atual de cada um.
+    // ponto de agora (ao vivo) — também igual ao ranking (p.total).
     const now=new Date().toISOString();
     const nowRow=byT[now]||{t:now};
     shown.forEach(p=>{ if(Number.isFinite(p.total)) nowRow[p.name]=p.total*100; });
     byT[now]=nowRow;
-    const rows=Object.values(byT).sort((a,b)=>a.t<b.t?-1:1);
-    // Rebaseia cada linha ao seu primeiro valor → todos começam em 0%.
-    shown.forEach(p=>{
-      let base=null;
-      for(const r of rows){ if(Number.isFinite(r[p.name])){ base=r[p.name]; break; } }
-      if(base==null) return;
-      for(const r of rows){ if(Number.isFinite(r[p.name])) r[p.name]=+(r[p.name]-base).toFixed(2); }
-    });
-    return rows;
-  },[snaps,shown]);
+    // âncora a 0% no arranque comum (todas começam juntas).
+    if(t0){
+      const a=byT[t0]||{t:t0};
+      shown.forEach(p=>{ if(!Number.isFinite(a[p.name])) a[p.name]=0; });
+      byT[t0]=a;
+    }
+    return Object.values(byT).sort((a,b)=>a.t<b.t?-1:1);
+  },[snaps,shown,competitionStarted,gameStartDate]);
 
   if(!shown.length) return null;
   const enoughData=data&&data.length>=2;
@@ -1469,15 +1487,46 @@ function SeasonRace({ranking,preLaunch,myNorm}){
             <YAxis tickFormatter={(v)=>`${v>0?"+":""}${v}%`} tick={{fill:"#64748b",fontSize:11}} width={46} axisLine={false} tickLine={false}/>
             <ReferenceLine y={0} stroke="rgba(255,255,255,0.22)" strokeDasharray="4 4"/>
             <Tooltip content={<SeasonRaceTooltip/>}/>
-            <Legend wrapperStyle={{fontSize:12,paddingTop:8}} iconType="circle"/>
-            {shown.map((p,i)=>(
-              <Line key={p.key} type="monotone" dataKey={p.name} name={p._me?`${p.name} (tu)`:p.name}
-                stroke={p._me?"#ffffff":RACE_COLORS[i%RACE_COLORS.length]}
-                strokeWidth={p._me?3.5:2} dot={false} connectNulls isAnimationActive={false}
-                activeDot={p._me?{r:4}:false}/>
-            ))}
+            {shown.map((p,i)=>{
+              const dim=hi&&hi!==p.name;
+              return(
+                <Line key={p.key} type="monotone" dataKey={p.name} name={p._me?`${p.name} (tu)`:p.name}
+                  stroke={raceColorOf(p,i)}
+                  strokeWidth={hi===p.name?(p._me?4.5:3.2):(p._me?3.5:2)}
+                  strokeOpacity={dim?0.15:1}
+                  dot={false} connectNulls isAnimationActive={false}
+                  activeDot={hi===p.name?{r:4}:(p._me?{r:3.5}:false)}
+                  label={hi===p.name?(lp)=>{
+                    if(!lp||lp.value==null||lp.index!==data.length-1) return null;
+                    return(<text key="rl" x={lp.x} y={lp.y-9} textAnchor="end"
+                      fill={raceColorOf(p,i)} fontSize={12.5} fontWeight={700} fontFamily="ui-monospace, monospace"
+                      style={{paintOrder:"stroke",stroke:"rgba(8,15,32,0.9)",strokeWidth:3,strokeLinejoin:"round"}}>
+                      {lp.value>=0?"+":""}{Number(lp.value).toFixed(2)}%
+                    </text>);
+                  }:false}/>
+              );
+            })}
           </LineChart>
         </ResponsiveContainer>
+      )}
+      {mounted&&enoughData&&(
+        <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"6px 16px",marginTop:14,padding:"0 4px"}}>
+          {shown.map((p,i)=>{
+            const dim=hi&&hi!==p.name;
+            return(
+              <span key={p.key} onMouseEnter={()=>setHi(p.name)} onMouseLeave={()=>setHi(null)}
+                style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"default",
+                  opacity:dim?0.3:1,transition:"opacity .15s ease"}}>
+                <span style={{width:7,height:7,borderRadius:"50%",background:raceColorOf(p,i),flexShrink:0,
+                  boxShadow:hi===p.name?`0 0 0 3px ${raceColorOf(p,i)}33`:"none",transition:"box-shadow .15s ease"}}/>
+                <span style={{fontSize:12.5,letterSpacing:.2,whiteSpace:"nowrap",
+                  color:hi===p.name?"#f1f5f9":"#94a3b8",fontWeight:hi===p.name?600:400,transition:"color .15s ease"}}>
+                  {p._me?`${p.name} (tu)`:p.name}
+                </span>
+              </span>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -1601,7 +1650,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
             <div style={{marginBottom:32}}>
               {sectionTitle("Demo")}
               {tableFor(demos)}
-              <SeasonRace ranking={ranking} preLaunch={preLaunch} myNorm={myNorm}/>
+              <SeasonRace ranking={ranking} preLaunch={preLaunch} myNorm={myNorm} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""}/>
             </div>
           )}
           <div>
@@ -1691,7 +1740,7 @@ function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarte
   const startTs=startDate?`${startDate}T00:00:00.000Z`:null;
   const byT={};
   for(const s of snaps){
-    const t=s.captured_at; if(!t) continue;
+    const t=s.captured_at; if(!t||!isMktOpen(t)) continue; // ignora mercado fechado
     if(startTs&&t<startTs) continue;              // ignora antes do arranque (reset)
     byT[t]=Number(s.total_return)*100;
   }
@@ -1701,6 +1750,13 @@ function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarte
   const enough=data.length>=2;
   const last=enough?data[data.length-1].r:0;
   const col=last>=0?"#4ade80":"#f87171";
+  // Domínio do Y com FOLGA (para a linha não parecer que foi à falência):
+  // margem generosa por baixo do ponto mais baixo + um pouco acima do 0%.
+  const vals=data.map(d=>d.r).filter(Number.isFinite);
+  const lo=Math.min(0,...vals), hi=Math.max(0,...vals);
+  const span=Math.max(hi-lo,1);
+  const yMin=Math.floor(lo-Math.min(Math.max(span*0.45,1.5),4));
+  const yMax=Math.ceil(hi+Math.min(Math.max(span*0.15,0.6),2));
   const provisional=!competitionStarted; // pré-jogo: não conta, vai recomeçar a 1 jul
 
   return(
@@ -1716,7 +1772,7 @@ function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarte
           <LineChart data={data} margin={{top:8,right:14,left:-6,bottom:0}}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false}/>
             <XAxis dataKey="t" tickFormatter={raceTick} tick={{fill:"#64748b",fontSize:11}} minTickGap={28} axisLine={false} tickLine={false}/>
-            <YAxis tickFormatter={(v)=>`${v>0?"+":""}${v}%`} tick={{fill:"#64748b",fontSize:11}} width={46} axisLine={false} tickLine={false}/>
+            <YAxis domain={[yMin,yMax]} tickFormatter={(v)=>`${v>0?"+":""}${v}%`} tick={{fill:"#64748b",fontSize:11}} width={46} axisLine={false} tickLine={false}/>
             <ReferenceLine y={0} stroke="rgba(255,255,255,0.22)" strokeDasharray="4 4"/>
             <Tooltip content={<EvoTooltip/>}/>
             <Line type="monotone" dataKey="r" stroke={col} strokeWidth={2.4} dot={false} isAnimationActive={false}/>

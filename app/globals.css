@@ -40,3 +40,15 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Gráficos (Recharts): sem caixa de foco/realce ao clicar ou tocar */
+.recharts-wrapper,
+.recharts-wrapper *,
+.recharts-surface,
+.recharts-responsive-container {
+  outline: none !important;
+}
+.recharts-wrapper,
+.recharts-responsive-container {
+  -webkit-tap-highlight-color: transparent;
+}

@@ -1,19 +1,22 @@
 name: Snapshot evolução
 
 # Gatilho fiável para os snapshots da evolução (independente do cron da Vercel,
-# que no plano Hobby só corre 1×/dia). Corre 2×/dia durante o mercado dos EUA:
-#   - 16:00 UTC (~meio da sessão)
-#   - 21:00 UTC (~pós-fecho)
-# Cada corrida grava um ponto por "slot" (hora), por isso dá 2 pontos/dia e um
-# re-run no mesmo slot não duplica. Também pode ser disparado à mão.
+# que no plano Hobby só corre 1×/dia). Corre DE HORA A HORA, em dias úteis, na
+# janela 14:00–21:00 UTC — que cobre o mercado aberto tanto no horário de verão
+# (EDT, 13:30–20:00 UTC) como de inverno (EST, 14:30–21:00 UTC).
+# O próprio endpoint só grava com o mercado ABERTO (guarda usMarketOpen: dias úteis,
+# horas de sessão, exclui feriados e respeita os meios-dias). Por isso as horas fora
+# de sessão (ex.: 14:00 em EST, 21:00 em EDT) são simplesmente ignoradas — resultam
+# ~7 pontos/dia, sem chamar a API com o mercado fechado.
+# Cada corrida grava um ponto por "slot" (hora); um re-run no mesmo slot não duplica.
+# Também pode ser disparado à mão (workflow_dispatch).
 # Requer o segredo CRON_SECRET nos GitHub Secrets do repositório
 # (Settings > Secrets and variables > Actions > New repository secret),
 # com o MESMO valor que está na Vercel e no .env.local.
 
 on:
   schedule:
-    - cron: "0 16 * * *"
-    - cron: "0 21 * * *"
+    - cron: "0 14-21 * * 1-5"
   workflow_dispatch:
 
 jobs:
