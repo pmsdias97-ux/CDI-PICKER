@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useId } from "react";
 import { supabase } from "./supabase";
 import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } from "./lib/stocks";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 
 /* ============================================================================
    CONVERSAS DE INVESTIDORES
@@ -39,6 +39,46 @@ function marketStatus(){
     const open=!weekend&&!MARKET_HOLIDAYS_US.has(date)&&t>=570&&t<960;
     return{open,label:open?"Mercado aberto":"Mercado fechado",et};
   }catch{ return{open:false,label:"Mercado fechado",et:""}; }
+}
+
+// Offset (ms) do fuso ET num dado instante — trata do horário de verão/inverno.
+function etOffsetMs(instant){
+  const p=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).formatToParts(instant);
+  const m={}; for(const x of p) m[x.type]=x.value;
+  let h=parseInt(m.hour,10); if(h===24) h=0;
+  const asUTC=Date.UTC(+m.year,+m.month-1,+m.day,h,+m.minute,+m.second);
+  return asUTC-instant.getTime();
+}
+// Tempo (ms) até à próxima ABERTURA do mercado (09:30 ET em dia de sessão, saltando
+// fins-de-semana e feriados). Devolve 0 se o mercado estiver aberto agora.
+function msUntilMarketOpen(){
+  try{
+    if(marketStatus().open) return 0;
+    const now=Date.now();
+    const etDate=new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+    const [y,mo,d]=etDate.split("-").map(Number);
+    for(let i=0;i<14;i++){
+      const cand=new Date(Date.UTC(y,mo-1,d+i));
+      const cy=cand.getUTCFullYear(),cmo=cand.getUTCMonth()+1,cd=cand.getUTCDate();
+      const dow=cand.getUTCDay();
+      const key=`${cy}-${String(cmo).padStart(2,"0")}-${String(cd).padStart(2,"0")}`;
+      if(dow===0||dow===6||MARKET_HOLIDAYS_US.has(key)) continue; // só dias de sessão
+      const guess=Date.UTC(cy,cmo-1,cd,9,30);                     // 09:30 "como UTC"
+      const inst=guess-etOffsetMs(new Date(guess));               // → instante real (09:30 ET)
+      if(inst>now) return inst-now;
+    }
+    return 0;
+  }catch{ return 0; }
+}
+// "falta HHmm" no formato 01H02 (<24h) ou "falta Nd 01H02" (>=24h). Sem segundos.
+function fmtCountdown(ms){
+  if(ms<=0) return "";
+  const totalMin=Math.floor(ms/60000);
+  const days=Math.floor(totalMin/1440);
+  const h=Math.floor((totalMin%1440)/60);
+  const m=totalMin%60;
+  const hhmm=`${String(h).padStart(2,"0")}H${String(m).padStart(2,"0")}`;
+  return days>0?`falta ${days}d ${hhmm}`:`falta ${hhmm}`;
 }
 
 // Mapa curado de setores (sem APIs). Tickers fora do mapa caem em "Outros".
@@ -597,22 +637,30 @@ function MarketStatus(){
   },[]);
   if(!st) return null;
   const c=st.open?"#34d399":"#f87171";
+  const countdown=st.open?"":fmtCountdown(msUntilMarketOpen());
   return(
     <>
       <style>{`
         @keyframes mktPulse{0%{box-shadow:0 0 8px var(--mk),0 0 0 0 var(--mk)}70%{box-shadow:0 0 8px var(--mk),0 0 0 6px transparent}100%{box-shadow:0 0 8px var(--mk),0 0 0 0 transparent}}
         @media(max-width:480px){.mktLabel{display:none}}
       `}</style>
-      <div title={st.label} style={{display:"inline-flex",alignItems:"center",gap:9,flexShrink:0,
-        padding:"6px 13px 6px 11px",borderRadius:999,
-        background:"rgba(255,255,255,0.05)",backdropFilter:"blur(18px) saturate(170%)",WebkitBackdropFilter:"blur(18px) saturate(170%)",
-        border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 6px 22px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.10)"}}>
-        <span style={{"--mk":`${c}90`,width:8,height:8,borderRadius:"50%",background:c,flexShrink:0,
-          boxShadow:`0 0 8px ${c}`,animation:st.open?"mktPulse 2s ease-out infinite":"none"}}/>
-        <span className="mktLabel" style={{fontSize:12,fontWeight:600,color:"#cbd5e1",letterSpacing:"0.2px",whiteSpace:"nowrap"}}>{st.label}</span>
-        <span style={{fontSize:11,fontWeight:600,fontFamily:"monospace",color:"#64748b",whiteSpace:"nowrap"}}>
-          {st.et} ET
-        </span>
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+        <div title={st.label} style={{display:"inline-flex",alignItems:"center",gap:9,flexShrink:0,
+          padding:"6px 13px 6px 11px",borderRadius:999,
+          background:"rgba(255,255,255,0.05)",backdropFilter:"blur(18px) saturate(170%)",WebkitBackdropFilter:"blur(18px) saturate(170%)",
+          border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 6px 22px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.10)"}}>
+          <span style={{"--mk":`${c}90`,width:8,height:8,borderRadius:"50%",background:c,flexShrink:0,
+            boxShadow:`0 0 8px ${c}`,animation:st.open?"mktPulse 2s ease-out infinite":"none"}}/>
+          <span className="mktLabel" style={{fontSize:12,fontWeight:600,color:"#cbd5e1",letterSpacing:"0.2px",whiteSpace:"nowrap"}}>{st.label}</span>
+          <span style={{fontSize:11,fontWeight:600,fontFamily:"monospace",color:"#64748b",whiteSpace:"nowrap"}}>
+            {st.et} ET
+          </span>
+        </div>
+        {countdown&&(
+          <span style={{fontSize:10.5,fontFamily:"monospace",color:"#64748b",letterSpacing:"0.2px",whiteSpace:"nowrap"}}>
+            {countdown}
+          </span>
+        )}
       </div>
     </>
   );
@@ -1762,13 +1810,13 @@ function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarte
   return(
     <div style={{width:"100%"}}>
       {!mounted?(
-        <div style={{height:180}}/>
+        <div style={{height:210}}/>
       ):!enough?(
         <div style={{height:120,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:"#4b5563",textAlign:"center"}}>
           Começa a preencher-se nos próximos dias.
         </div>
       ):(
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={210}>
           <LineChart data={data} margin={{top:8,right:14,left:-6,bottom:0}}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false}/>
             <XAxis dataKey="t" tickFormatter={raceTick} tick={{fill:"#64748b",fontSize:11}} minTickGap={28} axisLine={false} tickLine={false}/>
@@ -1892,6 +1940,8 @@ function OwnLockedGate({pf,nav,reload,showToast}){
   );
 }
 function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competitionStarted,gameStartDate,reload,showToast}){
+  // Coluna de rentabilidade da lista: "total" (desde a compra) ↔ "day" (diário).
+  const [retMode,setRetMode]=useState("total");
   if(!pf) return(
     <div style={{textAlign:"center",padding:80,color:"#4b5563"}}>
       Portefólio não encontrado. <button onClick={()=>nav("ranking")} style={{color:"#22c55e",background:"none",border:"none",cursor:"pointer"}}>Voltar</button>
@@ -1963,16 +2013,21 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competiti
       </TiltCard>
 
       <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
-        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",
+        <div style={{display:"grid",alignItems:"center",gridTemplateColumns:"1.6fr 1fr 1fr 1.4fr",
           padding:"10px 20px",borderBottom:"1px solid #1f2937",
-          fontSize:11,color:"#4b5563",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>
+          fontSize:11,color:"#4b5563",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,lineHeight:1.2}}>
           <span>Ação</span>
-          <span style={{textAlign:"right"}}>Preço inicial</span>
-          <span style={{textAlign:"right"}}>Preço atual</span>
-          <span style={{textAlign:"right"}}>Rentab.</span>
+          <span style={{textAlign:"center"}}>Preço inicial</span>
+          <span style={{textAlign:"center"}}>Preço atual</span>
+          <span onClick={()=>setRetMode(m=>m==="total"?"day":"total")}
+            title="Clica para alternar entre 'Desde submissão' e 'Diário'"
+            style={{textAlign:"center",cursor:"pointer",userSelect:"none",lineHeight:1.2,display:"block"}}>
+            {retMode==="day"?"Diário":"Desde submissão"}
+            <span style={{fontSize:9,opacity:0.85,marginLeft:4}}>▾</span>
+          </span>
         </div>
         {bySorted.map(s=>(
-          <div key={s.ticker} className="stockRow" style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",alignItems:"center",gap:4,padding:"14px 20px",borderBottom:"1px solid #0f172a"}}>
+          <div key={s.ticker} className="stockRow" style={{display:"grid",gridTemplateColumns:"1.6fr 1fr 1fr 1.4fr",alignItems:"center",gap:4,padding:"14px 20px",borderBottom:"1px solid #0f172a"}}>
             <div style={{minWidth:0}}>
               <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
                 <StockLogo ticker={s.ticker} size={32}/>
@@ -1981,12 +2036,23 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competiti
               </div>
               <div style={{fontSize:13,color:"#6b7280",marginTop:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.companyName}</div>
             </div>
-            <span style={{textAlign:"right",fontFamily:"monospace",fontSize:"clamp(10.5px,2.7vw,13px)",color:"#6b7280",whiteSpace:"nowrap"}}>{money(s.initialPrice,s.currency)}</span>
-            <span style={{textAlign:"right",fontFamily:"monospace",fontSize:"clamp(10.5px,2.7vw,13px)",color:"#e2e8f0",whiteSpace:"nowrap"}}>{money(s.cur,s.currency)}</span>
-            <span style={{textAlign:"right",fontFamily:"monospace",fontSize:"clamp(11px,2.9vw,15px)",fontWeight:700,whiteSpace:"nowrap",
-              color:s.ret>=0?"#4ade80":"#f87171"}}>
-              {s.ret>=0?"▲":"▼"} {pct(Math.abs(s.ret)).replace(/[+-]/,"")}
-            </span>
+            <span style={{textAlign:"center",fontFamily:"monospace",fontSize:"clamp(10.5px,2.7vw,13px)",color:"#6b7280",whiteSpace:"nowrap"}}>{money(s.initialPrice,s.currency)}</span>
+            <span style={{textAlign:"center",fontFamily:"monospace",fontSize:"clamp(10.5px,2.7vw,13px)",color:"#e2e8f0",whiteSpace:"nowrap"}}>{money(s.cur,s.currency)}</span>
+            {(()=>{
+              const rawDay=dc[s.ticker];
+              const dayVal=Number.isFinite(rawDay)?(s.side==="short"?-rawDay:rawDay):null;
+              const v=retMode==="day"?dayVal:s.ret;
+              const toggle=()=>setRetMode(m=>m==="total"?"day":"total");
+              const base={textAlign:"center",fontFamily:"monospace",fontSize:"clamp(11px,2.9vw,15px)",fontWeight:700,
+                whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"};
+              if(v==null) return <span onClick={toggle} title="Alternar Desde submissão / Diário" style={{...base,color:"#4b5563"}}>—</span>;
+              return(
+                <span onClick={toggle} title="Alternar Desde submissão / Diário"
+                  style={{...base,color:v>=0?"#4ade80":"#f87171"}}>
+                  {v>=0?"▲":"▼"} {pct(Math.abs(v)).replace(/[+-]/,"")}
+                </span>
+              );
+            })()}
           </div>
         ))}
       </div>
@@ -2009,17 +2075,18 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competiti
           fica POR BAIXO das boxes (desktop) ou ENTRE elas (mobile), via grid-areas. */}
       <style>{`
         .dayGrid{display:grid;gap:16px;align-items:start;grid-template-columns:1fr 1fr;grid-template-areas:"best worst" "pill pill"}
-        .dayPill{grid-area:pill;justify-self:center;display:inline-flex;align-items:center;font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#cbd5e1;border-radius:999px;padding:6px 18px;border:1px solid transparent;background:linear-gradient(90deg,rgba(34,197,94,0.20),rgba(239,68,68,0.20)) padding-box,linear-gradient(90deg,rgba(34,197,94,0.55),rgba(239,68,68,0.55)) border-box}
-        @media(max-width:560px){.dayGrid{grid-template-columns:1fr;grid-template-areas:"best" "pill" "worst"}.dayPill{background:linear-gradient(180deg,rgba(34,197,94,0.20),rgba(239,68,68,0.20)) padding-box,linear-gradient(180deg,rgba(34,197,94,0.55),rgba(239,68,68,0.55)) border-box}}
+        .dayPill{grid-area:pill;justify-self:center;position:relative;display:inline-flex;align-items:center;font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#cbd5e1;border-radius:999px;padding:6px 18px;background:rgba(255,255,255,0.05)}
+        .dayPill::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;background:linear-gradient(90deg,rgba(74,222,128,0.8),rgba(248,113,113,0.8));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+        @media(max-width:560px){.dayGrid{grid-template-columns:1fr;grid-template-areas:"best" "pill" "worst"}.dayPill::before{background:linear-gradient(180deg,rgba(74,222,128,0.8),rgba(248,113,113,0.8))}}
       `}</style>
       <div className="dayGrid">
-        <div style={{...GLASS,gridArea:"best",borderRadius:16,padding:24,
+        <div style={{...GLASS,gridArea:"best",minWidth:0,borderRadius:16,padding:24,
           background:"linear-gradient(160deg, rgba(34,197,94,0.12), rgba(34,197,94,0.03))",
           border:"1px solid rgba(34,197,94,0.20)"}}>
           <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><DayChip up/></div>
           {byDay.length?<TopList items={byDay.slice(0,3)}/>:<p style={{fontSize:13,color:"#6b7280",textAlign:"center",margin:0}}>Sem variação do dia disponível.</p>}
         </div>
-        <div style={{...GLASS,gridArea:"worst",borderRadius:16,padding:24,
+        <div style={{...GLASS,gridArea:"worst",minWidth:0,borderRadius:16,padding:24,
           background:"linear-gradient(160deg, rgba(239,68,68,0.12), rgba(239,68,68,0.03))",
           border:"1px solid rgba(239,68,68,0.20)"}}>
           <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><DayChip/></div>
