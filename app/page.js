@@ -820,7 +820,7 @@ function Home({nav,submitted,count,settings,ranking,livePrices,onMyPortfolio}){
           O jogo de portefólios da nossa comunidade. Escolhe as tuas 8 ações,
           submete o teu portefólio e compete com os outros membros pelo melhor retorno.
         </p>
-        <style>{`@media(max-width:520px){.heroBtns{flex-wrap:nowrap;gap:8px}.heroBtns>button{flex:1;min-width:0;padding-left:8px;padding-right:8px;font-size:13px;white-space:nowrap}}`}</style>
+        <style>{`@media(max-width:520px){.heroBtns{flex-wrap:nowrap;gap:8px;align-items:stretch}.heroBtns>button{flex:1;min-width:0;padding:9px 8px;font-size:12.5px;line-height:1.2;white-space:normal}}`}</style>
         <div className="heroBtns" style={{display:"flex",justifyContent:"center",gap:12,flexWrap:"wrap"}}>
           {submitted?(
             <>
@@ -2005,27 +2005,27 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competiti
         </div>
       </div>
 
-      {/* Destaques — melhor/pior performance DO DIA */}
-      <div style={{display:"flex",justifyContent:"center",marginBottom:14}}>
-        <span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:12,fontWeight:700,
-          letterSpacing:"0.5px",textTransform:"uppercase",color:"#94a3b8",
-          borderRadius:999,padding:"5px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)"}}>
-          Performance de hoje
-        </span>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16}}>
-        <div style={{...GLASS,borderRadius:16,padding:24,
+      {/* Destaques — melhor/pior performance DO DIA. A pill "Performance de hoje"
+          fica POR BAIXO das boxes (desktop) ou ENTRE elas (mobile), via grid-areas. */}
+      <style>{`
+        .dayGrid{display:grid;gap:16px;align-items:start;grid-template-columns:1fr 1fr;grid-template-areas:"best worst" "pill pill"}
+        .dayPill{grid-area:pill;justify-self:center;display:inline-flex;align-items:center;font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#cbd5e1;border-radius:999px;padding:6px 18px;border:1px solid transparent;background:linear-gradient(90deg,rgba(34,197,94,0.20),rgba(239,68,68,0.20)) padding-box,linear-gradient(90deg,rgba(34,197,94,0.55),rgba(239,68,68,0.55)) border-box}
+        @media(max-width:560px){.dayGrid{grid-template-columns:1fr;grid-template-areas:"best" "pill" "worst"}.dayPill{background:linear-gradient(180deg,rgba(34,197,94,0.20),rgba(239,68,68,0.20)) padding-box,linear-gradient(180deg,rgba(34,197,94,0.55),rgba(239,68,68,0.55)) border-box}}
+      `}</style>
+      <div className="dayGrid">
+        <div style={{...GLASS,gridArea:"best",borderRadius:16,padding:24,
           background:"linear-gradient(160deg, rgba(34,197,94,0.12), rgba(34,197,94,0.03))",
           border:"1px solid rgba(34,197,94,0.20)"}}>
           <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><DayChip up/></div>
           {byDay.length?<TopList items={byDay.slice(0,3)}/>:<p style={{fontSize:13,color:"#6b7280",textAlign:"center",margin:0}}>Sem variação do dia disponível.</p>}
         </div>
-        <div style={{...GLASS,borderRadius:16,padding:24,
+        <div style={{...GLASS,gridArea:"worst",borderRadius:16,padding:24,
           background:"linear-gradient(160deg, rgba(239,68,68,0.12), rgba(239,68,68,0.03))",
           border:"1px solid rgba(239,68,68,0.20)"}}>
           <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><DayChip/></div>
           {byDay.length?<TopList items={[...byDay].reverse().slice(0,3)}/>:<p style={{fontSize:13,color:"#6b7280",textAlign:"center",margin:0}}>Sem variação do dia disponível.</p>}
         </div>
+        <div className="dayPill">Performance de hoje</div>
       </div>
       </div>{/* /coluna direita */}
       </div>{/* /cdiDetail */}

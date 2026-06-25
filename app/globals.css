@@ -20,8 +20,10 @@
 }
 
 html, body {
-  background: #070d1c;
+  background: #0c1a36; /* topo do gradiente do site → overscroll parece "azul infinito" */
   min-height: 100%;
+  /* não fazer pull-to-refresh nem bounce ao insistir no scroll-up no topo */
+  overscroll-behavior: none;
 }
 
 /* Hover (desktop) — micro-interações reutilizáveis */
