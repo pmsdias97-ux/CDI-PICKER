@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useId } from "react";
 import { supabase } from "./supabase";
 import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } from "./lib/stocks";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from "recharts";
 
 /* ============================================================================
    CONVERSAS DE INVESTIDORES
@@ -1371,6 +1372,114 @@ function LockedGate({nav,recoverByName,showToast}){
   );
 }
 
+/* ---- Season Race (evolução multi-linha, estilo "season race") ------------ */
+const RACE_COLORS=["#4ade80","#38bdf8","#fbbf24","#f472b6","#a78bfa","#fb923c","#2dd4bf","#facc15","#22d3ee","#fca5a5"];
+function raceShortDate(d){ const [,m,day]=String(d).split("-"); return m&&day?`${day}/${m}`:d; }
+function SeasonRaceTooltip({active,payload,label}){
+  if(!active||!payload||!payload.length) return null;
+  const rows=[...payload].filter(p=>p.value!=null).sort((a,b)=>b.value-a.value);
+  return(
+    <div style={{background:"rgba(8,15,32,0.95)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,padding:"8px 11px",fontSize:12,boxShadow:"0 8px 24px rgba(0,0,0,0.45)"}}>
+      <div style={{color:"#94a3b8",marginBottom:6,fontFamily:"monospace"}}>{raceShortDate(label)}</div>
+      {rows.map(p=>(
+        <div key={p.dataKey} style={{display:"flex",alignItems:"center",gap:8,lineHeight:1.6}}>
+          <span style={{width:8,height:8,borderRadius:"50%",background:p.color,flexShrink:0}}/>
+          <span style={{color:"#cbd5e1",flex:1,whiteSpace:"nowrap"}}>{p.dataKey}</span>
+          <span style={{fontFamily:"monospace",fontWeight:700,color:p.value>=0?"#4ade80":"#f87171"}}>{p.value>=0?"+":""}{p.value.toFixed(2)}%</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+function SeasonRace({ranking,preLaunch,myNorm}){
+  const [snaps,setSnaps]=useState(null);
+  const [mounted,setMounted]=useState(false);
+  useEffect(()=>{ setMounted(true); },[]);
+  // Pré-1jul: linhas dos DEMOS (pré-visualização). Depois: Top 10 oficiais.
+  // O próprio é SEMPRE incluído (mesmo fora do Top 10), com a linha destacada.
+  const shown=useMemo(()=>{
+    const pool=preLaunch
+      ? ranking.filter(p=>!p.official&&Number.isFinite(p.total))
+      : ranking.filter(p=>p.official&&Number.isFinite(p.total));
+    let list=pool.slice(0,10);
+    const me=myNorm?pool.find(p=>p.normName===myNorm):null; // só se estiver no mesmo grupo (tem dados)
+    if(me&&!list.some(p=>p.id===me.id)) list=[...list,{...me,_me:true}];
+    return list.map(p=>({...p,_me:p._me||(myNorm&&p.normName===myNorm)}));
+  },[ranking,preLaunch,myNorm]);
+  const ids=shown.map(p=>p.id).join(",");
+  useEffect(()=>{
+    const idList=ids?ids.split(","):[];
+    if(!idList.length){ setSnaps([]); return; }
+    let cancel=false;
+    (async()=>{
+      const { data }=await supabase
+        .from("portfolio_snapshots").select("portfolio_id,date,total_return")
+        .in("portfolio_id",idList).order("date",{ascending:true});
+      if(!cancel) setSnaps(data||[]);
+    })();
+    return()=>{ cancel=true; };
+  },[ids]);
+
+  const data=useMemo(()=>{
+    if(!snaps) return null;
+    const nameById={}; shown.forEach(p=>{ nameById[p.id]=p.name; });
+    const byDate={};
+    for(const s of snaps){
+      const nm=nameById[s.portfolio_id]; if(!nm) continue;
+      (byDate[s.date]=byDate[s.date]||{date:s.date})[nm]=Number(s.total_return)*100;
+    }
+    // ponto de hoje (ao vivo) com a rentabilidade atual de cada um.
+    const today=new Date().toISOString().slice(0,10);
+    const todayRow=byDate[today]||{date:today};
+    shown.forEach(p=>{ if(Number.isFinite(p.total)) todayRow[p.name]=p.total*100; });
+    byDate[today]=todayRow;
+    const rows=Object.values(byDate).sort((a,b)=>a.date<b.date?-1:1);
+    // Rebaseia cada linha ao seu primeiro valor → todos começam em 0%.
+    shown.forEach(p=>{
+      let base=null;
+      for(const r of rows){ if(Number.isFinite(r[p.name])){ base=r[p.name]; break; } }
+      if(base==null) return;
+      for(const r of rows){ if(Number.isFinite(r[p.name])) r[p.name]=+(r[p.name]-base).toFixed(2); }
+    });
+    return rows;
+  },[snaps,shown]);
+
+  if(!shown.length) return null;
+  const enoughData=data&&data.length>=2;
+
+  return(
+    <div style={{...{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"},borderRadius:16,padding:"20px 16px 12px",marginTop:24}}>
+      <p style={{fontSize:12,color:"#94a3b8",margin:"0 0 12px",textAlign:"center"}}>
+        {preLaunch?"Pré-visualização com os portefólios demo. A partir de 1 de julho mostrará o Top 10 oficial":"Top 10 — rentabilidade ao longo da competição"}
+      </p>
+      {!mounted?(
+        <div style={{height:300}}/>
+      ):!enoughData?(
+        <div style={{height:120,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:"#4b5563",textAlign:"center"}}>
+          Ainda sem histórico suficiente — o gráfico preenche-se a partir dos próximos dias.
+        </div>
+      ):(
+        <ResponsiveContainer width="100%" height={320}>
+          <LineChart data={data} margin={{top:8,right:14,left:-6,bottom:0}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false}/>
+            <XAxis dataKey="date" tickFormatter={raceShortDate} tick={{fill:"#64748b",fontSize:11}} minTickGap={28} axisLine={false} tickLine={false}/>
+            <YAxis tickFormatter={(v)=>`${v>0?"+":""}${v}%`} tick={{fill:"#64748b",fontSize:11}} width={46} axisLine={false} tickLine={false}/>
+            <ReferenceLine y={0} stroke="rgba(255,255,255,0.22)" strokeDasharray="4 4"/>
+            <Tooltip content={<SeasonRaceTooltip/>}/>
+            <Legend wrapperStyle={{fontSize:12,paddingTop:8}} iconType="circle"/>
+            {shown.map((p,i)=>(
+              <Line key={p.key} type="monotone" dataKey={p.name} name={p._me?`${p.name} (tu)`:p.name}
+                stroke={p._me?"#ffffff":RACE_COLORS[i%RACE_COLORS.length]}
+                strokeWidth={p._me?3.5:2} dot={false} connectNulls isAnimationActive={false}
+                activeDot={p._me?{r:4}:false}/>
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+  );
+}
+
 /* ---- Ranking ------------------------------------------------------------- */
 function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,onCompare}){
   const [cmp,setCmp]=useState(false);
@@ -1489,6 +1598,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
             <div style={{marginBottom:32}}>
               {sectionTitle("Demo")}
               {tableFor(demos)}
+              <SeasonRace ranking={ranking} preLaunch={preLaunch} myNorm={myNorm}/>
             </div>
           )}
           <div>
