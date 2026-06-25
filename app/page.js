@@ -578,7 +578,18 @@ export default function App(){
     </div>
   );
 
-  const sh=(children)=><Shell page={page} nav={nav} submitted={submitted} toast={toast}
+  // Lugar (rank) do portefólio em detalhe — ao vivo, dentro do grupo (demo/oficial).
+  // 0 = sem classificação ("em espera"). Usado para o tema da página e pelo <Detail>.
+  const detailPf=portfolios.find(p=>p.key===detailKey)||myPf;
+  const detailRank=(()=>{
+    if(!detailPf) return 0;
+    if(detailPf.official&&isPreLaunch(settings)) return 0;
+    const group=ranking.filter(r=>r.official===detailPf.official);
+    const i=group.findIndex(r=>r.key===detailPf.key);
+    return i>=0?i+1:0;
+  })();
+
+  const sh=(children)=><Shell page={page} detailRank={detailRank} nav={nav} submitted={submitted} toast={toast}
     onMyPortfolio={()=>{ setDetailKey(myPf?.key||null); nav("detail"); }}
     myPortfolioActive={page==="detail" && (!detailKey || detailKey===myPf?.key)}>{children}</Shell>;
 
@@ -587,26 +598,26 @@ export default function App(){
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} preLaunch={isPreLaunch(settings)} settings={settings} onSelect={(k)=>{setDetailKey(k);nav("detail");}} onCompare={(a,b)=>{setDuelKeys([a,b]);nav("duel");}}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="duel")   return sh(submitted?<Duel a={ranking.find(p=>p.key===duelKeys?.[0])} b={ranking.find(p=>p.key===duelKeys?.[1])} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
-  if(page==="detail") return sh(submitted?<Detail pf={portfolios.find(p=>p.key===detailKey)||myPf} rank={(()=>{
-    const pf=portfolios.find(p=>p.key===detailKey)||myPf;
-    if(!pf) return 0;
-    // Classificação dentro do próprio grupo (demo entre demos; oficial entre oficiais).
-    // "Em espera" (oficial antes de arrancar) não tem classificação.
-    if(pf.official&&isPreLaunch(settings)) return 0;
-    const group=ranking.filter(r=>r.official===pf.official);
-    const i=group.findIndex(r=>r.key===pf.key);
-    return i>=0?i+1:0;
-  })()} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} myNorm={norm(myName)} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} myNorm={norm(myName)} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
   return null;
 }
 
 /* ---- Shell --------------------------------------------------------------- */
-function Shell({children,page,nav,submitted,toast,onMyPortfolio,myPortfolioActive}){
+function Shell({children,page,detailRank,nav,submitted,toast,onMyPortfolio,myPortfolioActive}){
+  // Premium (ouro/prata/bronze) SÓ no detalhe do Top 3. Tudo o resto — ranking, 4º+,
+  // o próprio portefólio (quando fora do pódio), homepage, etc. — fica AZUL original.
+  // Mesma lógica de degradê (brilho radial no topo + fade vertical).
+  const GOLD={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(250,204,21,0.32) 0%, rgba(245,158,11,0.13) 38%, transparent 72%), linear-gradient(180deg,#261c0a 0%,#1c150b 55%,#120d08 80%,#0c0905 100%)",color:"#0c0905"};
+  const SILVER={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(226,232,240,0.16) 0%, rgba(203,213,225,0.06) 38%, transparent 72%), linear-gradient(180deg,#1e222a 0%,#171b22 55%,#0f1216 80%,#0a0c0f 100%)",color:"#0a0c0f"};
+  const BRONZE={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(217,119,6,0.26) 0%, rgba(180,83,9,0.10) 38%, transparent 72%), linear-gradient(180deg,#241608 0%,#1b1109 55%,#120c07 80%,#0c0805 100%)",color:"#0c0805"};
+  const BLUE={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",color:"#070d1c"};
+  const medal=page==="detail"?(detailRank===1?GOLD:detailRank===2?SILVER:detailRank===3?BRONZE:null):null;
+  const theme=medal||BLUE;
   return(
     <div style={{minHeight:"100vh",position:"relative",
-      background:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",
-      backgroundColor:"#070d1c",
+      background:theme.bg,
+      backgroundColor:theme.color,
       color:"#e2e8f0",fontFamily:"var(--font-app), system-ui, -apple-system, sans-serif",overflowX:"hidden"}}>
       <style>{`@media(max-width:640px){.navWide{display:none}}.cdiNav{justify-content:flex-start}@media(min-width:641px){.cdiNav{justify-content:center}}`}</style>
       <header style={{position:"sticky",top:0,zIndex:50,padding:"12px 14px"}}>
@@ -1603,12 +1614,20 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
         const spyRet=spy?spy.returnFor(p):null;
         const alpha=spyRet==null?null:p.total-spyRet;
         const picked=cmp&&sel.includes(p.key);
+        // Top 3: ouro (1º, amarelo vivo) / prata (2º) / bronze-âmbar (3º). 4º-10º: cor geral.
+        const rr=i<3?[
+          {bg:"rgba(250,204,21,0.12)",hov:"rgba(250,204,21,0.18)",bar:"#facc15"},
+          {bg:"rgba(241,245,249,0.12)",hov:"rgba(241,245,249,0.18)",bar:"#e2e8f0"},
+          {bg:"rgba(245,158,11,0.11)",hov:"rgba(245,158,11,0.17)",bar:"#d97706"},
+        ][i]:null;
+        // Top 3: sem fundo em repouso (só a barra lateral); o glow da cor aparece no hover.
         const baseBg=picked?"rgba(59,130,246,0.16)":me?"rgba(34,197,94,0.04)":"transparent";
+        const hoverBg=picked?baseBg:rr?rr.hov:me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)";
         return(
           <div key={p.key} className="rkRow" onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
             style={{padding:"14px 20px",borderBottom:"1px solid #0f172a",cursor:"pointer",
-              background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":"none",transition:"background 0.15s"}}
-            onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)"; }}
+              background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":rr?`inset 3px 0 0 ${rr.bar}`:"none",transition:"background 0.15s"}}
+            onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=hoverBg; }}
             onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
             <span style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
               {i<3
@@ -1985,14 +2004,11 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competiti
       <TiltCard style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,marginBottom:16}}>
         <div style={{textAlign:"center"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14,marginBottom:16,minWidth:0}}>
-            {rank>0&&(
-              <span style={{width:46,height:46,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
-                fontSize:rank<=3?22:18,fontWeight:800,
-                color:rank===1?"#fbbf24":rank===2?"#cbd5e1":rank===3?"#f59e0b":"#64748b",
-                border:`2px solid ${rank===1?"rgba(251,191,36,0.6)":rank===2?"rgba(203,213,225,0.5)":rank===3?"rgba(245,158,11,0.5)":"rgba(255,255,255,0.12)"}`,
-                boxShadow:rank===1?"0 0 16px rgba(251,191,36,0.35)":"none"}}>
-                {rank<=3?["🥇","🥈","🥉"][rank-1]:rank}
-              </span>
+            {rank>0&&(rank<=3
+              ? <span style={{width:46,height:46,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+                  fontSize:20,fontWeight:800,...RANK_BADGE[rank]}}>{rank}</span>
+              : <span style={{width:46,height:46,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+                  fontSize:18,fontWeight:800,color:"#64748b",border:"2px solid rgba(255,255,255,0.12)"}}>{rank}</span>
             )}
             <h1 style={{fontSize:"clamp(22px,5vw,26px)",fontWeight:800,letterSpacing:"-0.5px",margin:0,minWidth:0,lineHeight:1.2,overflowWrap:"anywhere"}}>{pf.name}</h1>
           </div>
