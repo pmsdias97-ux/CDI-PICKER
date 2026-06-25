@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "backup": "node scripts/backup.mjs",
-    "restore": "node scripts/restore.mjs"
+    "restore": "node scripts/restore.mjs",
+    "db:apply": "node scripts/db-apply.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
@@ -21,6 +22,7 @@
     "@tailwindcss/postcss": "^4",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
+    "pg": "^8.22.0",
     "tailwindcss": "^4"
   }
 }

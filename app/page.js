@@ -556,7 +556,7 @@ export default function App(){
     const group=ranking.filter(r=>r.official===pf.official);
     const i=group.findIndex(r=>r.key===pf.key);
     return i>=0?i+1:0;
-  })()} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} myNorm={norm(myName)} preLaunch={isPreLaunch(settings)} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  })()} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} myNorm={norm(myName)} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
   return null;
 }
@@ -1374,13 +1374,15 @@ function LockedGate({nav,recoverByName,showToast}){
 
 /* ---- Season Race (evolução multi-linha, estilo "season race") ------------ */
 const RACE_COLORS=["#4ade80","#38bdf8","#fbbf24","#f472b6","#a78bfa","#fb923c","#2dd4bf","#facc15","#22d3ee","#fca5a5"];
-function raceShortDate(d){ const [,m,day]=String(d).split("-"); return m&&day?`${day}/${m}`:d; }
+// Eixo X: só dia (DD/MM). Tooltip: dia + hora (DD/MM HH:mm), em hora local.
+function raceTick(iso){ const d=new Date(iso); if(Number.isNaN(d.getTime())) return String(iso); const p=n=>String(n).padStart(2,"0"); return `${p(d.getDate())}/${p(d.getMonth()+1)}`; }
+function raceFull(iso){ const d=new Date(iso); if(Number.isNaN(d.getTime())) return String(iso); const p=n=>String(n).padStart(2,"0"); return `${p(d.getDate())}/${p(d.getMonth()+1)} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 function SeasonRaceTooltip({active,payload,label}){
   if(!active||!payload||!payload.length) return null;
   const rows=[...payload].filter(p=>p.value!=null).sort((a,b)=>b.value-a.value);
   return(
     <div style={{background:"rgba(8,15,32,0.95)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,padding:"8px 11px",fontSize:12,boxShadow:"0 8px 24px rgba(0,0,0,0.45)"}}>
-      <div style={{color:"#94a3b8",marginBottom:6,fontFamily:"monospace"}}>{raceShortDate(label)}</div>
+      <div style={{color:"#94a3b8",marginBottom:6,fontFamily:"monospace"}}>{raceFull(label)}</div>
       {rows.map(p=>(
         <div key={p.dataKey} style={{display:"flex",alignItems:"center",gap:8,lineHeight:1.6}}>
           <span style={{width:8,height:8,borderRadius:"50%",background:p.color,flexShrink:0}}/>
@@ -1413,8 +1415,8 @@ function SeasonRace({ranking,preLaunch,myNorm}){
     let cancel=false;
     (async()=>{
       const { data }=await supabase
-        .from("portfolio_snapshots").select("portfolio_id,date,total_return")
-        .in("portfolio_id",idList).order("date",{ascending:true});
+        .from("portfolio_snapshots").select("portfolio_id,captured_at,total_return")
+        .in("portfolio_id",idList).order("captured_at",{ascending:true});
       if(!cancel) setSnaps(data||[]);
     })();
     return()=>{ cancel=true; };
@@ -1423,17 +1425,18 @@ function SeasonRace({ranking,preLaunch,myNorm}){
   const data=useMemo(()=>{
     if(!snaps) return null;
     const nameById={}; shown.forEach(p=>{ nameById[p.id]=p.name; });
-    const byDate={};
+    const byT={};
     for(const s of snaps){
       const nm=nameById[s.portfolio_id]; if(!nm) continue;
-      (byDate[s.date]=byDate[s.date]||{date:s.date})[nm]=Number(s.total_return)*100;
+      const t=s.captured_at; if(!t) continue;
+      (byT[t]=byT[t]||{t})[nm]=Number(s.total_return)*100;
     }
-    // ponto de hoje (ao vivo) com a rentabilidade atual de cada um.
-    const today=new Date().toISOString().slice(0,10);
-    const todayRow=byDate[today]||{date:today};
-    shown.forEach(p=>{ if(Number.isFinite(p.total)) todayRow[p.name]=p.total*100; });
-    byDate[today]=todayRow;
-    const rows=Object.values(byDate).sort((a,b)=>a.date<b.date?-1:1);
+    // ponto de agora (ao vivo) com a rentabilidade atual de cada um.
+    const now=new Date().toISOString();
+    const nowRow=byT[now]||{t:now};
+    shown.forEach(p=>{ if(Number.isFinite(p.total)) nowRow[p.name]=p.total*100; });
+    byT[now]=nowRow;
+    const rows=Object.values(byT).sort((a,b)=>a.t<b.t?-1:1);
     // Rebaseia cada linha ao seu primeiro valor → todos começam em 0%.
     shown.forEach(p=>{
       let base=null;
@@ -1462,7 +1465,7 @@ function SeasonRace({ranking,preLaunch,myNorm}){
         <ResponsiveContainer width="100%" height={320}>
           <LineChart data={data} margin={{top:8,right:14,left:-6,bottom:0}}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false}/>
-            <XAxis dataKey="date" tickFormatter={raceShortDate} tick={{fill:"#64748b",fontSize:11}} minTickGap={28} axisLine={false} tickLine={false}/>
+            <XAxis dataKey="t" tickFormatter={raceTick} tick={{fill:"#64748b",fontSize:11}} minTickGap={28} axisLine={false} tickLine={false}/>
             <YAxis tickFormatter={(v)=>`${v>0?"+":""}${v}%`} tick={{fill:"#64748b",fontSize:11}} width={46} axisLine={false} tickLine={false}/>
             <ReferenceLine y={0} stroke="rgba(255,255,255,0.22)" strokeDasharray="4 4"/>
             <Tooltip content={<SeasonRaceTooltip/>}/>
@@ -1649,17 +1652,30 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
    rentabilidade. Acrescenta o ponto "hoje" ao vivo para nunca ficar vazio.
    Enche-se ao longo dos dias à medida que o cron corre.
 --------------------------------------------------------------------------- */
-function EvolutionChart({portfolioId,currentReturn}){
+function EvoTooltip({active,payload,label}){
+  if(!active||!payload||!payload.length) return null;
+  const v=payload[0]?.value;
+  if(v==null) return null;
+  return(
+    <div style={{background:"rgba(8,15,32,0.95)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,padding:"6px 10px",fontSize:12,boxShadow:"0 8px 24px rgba(0,0,0,0.45)"}}>
+      <span style={{color:"#94a3b8"}}>{raceFull(label)}</span>
+      {" · "}
+      <span style={{fontFamily:"monospace",fontWeight:700,color:v>=0?"#4ade80":"#f87171"}}>{v>=0?"+":""}{Number(v).toFixed(2)}%</span>
+    </div>
+  );
+}
+function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarted,gameStartDate}){
   const [snaps,setSnaps]=useState(null);
-  const [hi,setHi]=useState(null); // ponto sob o rato (tooltip)
+  const [mounted,setMounted]=useState(false);
+  useEffect(()=>{ setMounted(true); },[]);
   useEffect(()=>{
     let cancel=false;
     (async()=>{
       const { data }=await supabase
         .from("portfolio_snapshots")
-        .select("date,total_return")
+        .select("captured_at,total_return")
         .eq("portfolio_id",portfolioId)
-        .order("date",{ascending:true});
+        .order("captured_at",{ascending:true});
       if(!cancel) setSnaps(data||[]);
     })();
     return()=>{ cancel=true; };
@@ -1667,78 +1683,51 @@ function EvolutionChart({portfolioId,currentReturn}){
 
   if(snaps===null) return <p style={{fontSize:13,color:"#4b5563",margin:0}}>A carregar evolução…</p>;
 
-  const today=new Date().toISOString().slice(0,10);
-  const series=snaps.map(s=>({date:s.date,r:Number(s.total_return)}));
-  if(typeof currentReturn==="number"){
-    if(series.length&&series[series.length-1].date===today) series[series.length-1].r=currentReturn;
-    else series.push({date:today,r:currentReturn});
+  const now=new Date().toISOString();
+  // Arranque: pré-1jul → data de submissão; depois do arranque → 1 jul (reset).
+  const startDate=(competitionStarted&&gameStartDate)
+    ? String(gameStartDate).slice(0,10)
+    : (submittedAt?String(submittedAt).slice(0,10):null);
+  const startTs=startDate?`${startDate}T00:00:00.000Z`:null;
+  const byT={};
+  for(const s of snaps){
+    const t=s.captured_at; if(!t) continue;
+    if(startTs&&t<startTs) continue;              // ignora antes do arranque (reset)
+    byT[t]=Number(s.total_return)*100;
   }
-  // Ainda não há histórico real (o jogo começou hoje). Mostra uma pré-visualização
-  // de exemplo, claramente marcada, para se ver como vai ficar.
-  const isExample=series.length<2;
-  const drawn=isExample
-    ? [0,0.006,-0.003,0.009,0.004,0.012,0.009,0.017].map((r,i)=>({date:`d${i}`,r}))
-    : series;
-
-  const W=800,H=160,P=8;
-  const vals=drawn.map(p=>p.r).concat([0]);
-  let min=Math.min(...vals),max=Math.max(...vals);
-  if(min===max){ min-=0.01; max+=0.01; }
-  const pad=(max-min)*0.1; min-=pad; max+=pad;
-  const x=i=>P+(i/(drawn.length-1))*(W-2*P);
-  const y=v=>P+(1-(v-min)/(max-min))*(H-2*P);
-  const line=drawn.map((p,i)=>`${i===0?"M":"L"}${x(i).toFixed(1)},${y(p.r).toFixed(1)}`).join(" ");
-  const area=`${line} L${x(drawn.length-1).toFixed(1)},${(H-P).toFixed(1)} L${x(0).toFixed(1)},${(H-P).toFixed(1)} Z`;
-  const last=drawn[drawn.length-1].r;
-  const col=isExample?"#64748b":(last>=0?"#22c55e":"#f87171");
-  const zeroY=y(0);
-  const onMove=(e)=>{
-    if(isExample||drawn.length<2) return;
-    const r=e.currentTarget.getBoundingClientRect();
-    const frac=(e.clientX-r.left)/r.width;
-    const i=Math.max(0,Math.min(drawn.length-1,Math.round(frac*(drawn.length-1))));
-    setHi(i);
-  };
+  if(typeof currentReturn==="number"&&(!startTs||now>startTs)) byT[now]=currentReturn*100;
+  if(startTs) byT[startTs]=0;                     // arranca SEMPRE a 0%
+  const data=Object.entries(byT).map(([t,r])=>({t,r})).sort((a,b)=>a.t<b.t?-1:1);
+  const enough=data.length>=2;
+  const last=enough?data[data.length-1].r:0;
+  const col=last>=0?"#4ade80":"#f87171";
+  const provisional=!competitionStarted; // pré-jogo: não conta, vai recomeçar a 1 jul
 
   return(
-    <div style={{width:"100%",position:"relative",opacity:isExample?0.55:1}}
-      onMouseMove={onMove} onMouseLeave={()=>setHi(null)}>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{width:"100%",height:160,display:"block"}}>
-        <defs>
-          <linearGradient id="evoFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={col} stopOpacity="0.28"/>
-            <stop offset="100%" stopColor={col} stopOpacity="0"/>
-          </linearGradient>
-        </defs>
-        {min<0&&max>0&&(
-          <line x1={P} y1={zeroY} x2={W-P} y2={zeroY} stroke="rgba(255,255,255,0.18)" strokeWidth="1" strokeDasharray="4 4"/>
-        )}
-        <path d={area} fill="url(#evoFill)"/>
-        <path d={line} fill="none" stroke={col} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"
-          strokeDasharray={isExample?"6 5":undefined} vectorEffect="non-scaling-stroke"/>
-      </svg>
-      {hi!=null&&!isExample&&(()=>{
-        const leftPct=x(hi)/W*100, topPx=y(drawn[hi].r), clamped=Math.max(12,Math.min(88,leftPct));
-        return(
-          <>
-            <div style={{position:"absolute",left:`${leftPct}%`,top:0,height:160,width:1,background:"rgba(255,255,255,0.22)",transform:"translateX(-0.5px)",pointerEvents:"none"}}/>
-            <div style={{position:"absolute",left:`${leftPct}%`,top:topPx,transform:"translate(-50%,-50%)",width:9,height:9,borderRadius:"50%",background:col,boxShadow:`0 0 8px ${col}`,pointerEvents:"none"}}/>
-            <div style={{position:"absolute",left:`${clamped}%`,top:topPx-12,transform:"translate(-50%,-100%)",pointerEvents:"none",whiteSpace:"nowrap",
-              background:"rgba(8,15,32,0.92)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:8,padding:"5px 9px",fontSize:12,color:"#e2e8f0",boxShadow:"0 6px 20px rgba(0,0,0,0.4)"}}>
-              <span style={{color:"#94a3b8"}}>{series[hi]?.date}</span> · <span style={{fontFamily:"monospace",fontWeight:700,color:col}}>{pct(drawn[hi].r)}</span>
-            </div>
-          </>
-        );
-      })()}
-      {isExample
-        ? <div style={{textAlign:"center",fontSize:12,color:"#6b7280",marginTop:6}}>
-            Exemplo — o teu gráfico começa a preencher a partir de amanhã (um ponto por dia).
-          </div>
-        : <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#4b5563",marginTop:6}}>
-            <span>{series[0].date}</span>
-            <span style={{color:col,fontWeight:700,fontFamily:"monospace"}}>{pct(last)}</span>
-            <span>{series[series.length-1].date}</span>
-          </div>}
+    <div style={{width:"100%"}}>
+      {!mounted?(
+        <div style={{height:180}}/>
+      ):!enough?(
+        <div style={{height:120,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:"#4b5563",textAlign:"center"}}>
+          Começa a preencher-se nos próximos dias.
+        </div>
+      ):(
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={data} margin={{top:8,right:14,left:-6,bottom:0}}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false}/>
+            <XAxis dataKey="t" tickFormatter={raceTick} tick={{fill:"#64748b",fontSize:11}} minTickGap={28} axisLine={false} tickLine={false}/>
+            <YAxis tickFormatter={(v)=>`${v>0?"+":""}${v}%`} tick={{fill:"#64748b",fontSize:11}} width={46} axisLine={false} tickLine={false}/>
+            <ReferenceLine y={0} stroke="rgba(255,255,255,0.22)" strokeDasharray="4 4"/>
+            <Tooltip content={<EvoTooltip/>}/>
+            <Line type="monotone" dataKey="r" stroke={col} strokeWidth={2.4} dot={false} isAnimationActive={false}/>
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+      {provisional&&(
+        <div style={{textAlign:"center",fontSize:12,color:"#6b7280",marginTop:8,lineHeight:1.5}}>
+          Esta evolução não conta para a estatística. O gráfico vai recomeçar do 0 a partir do dia 1 de julho.
+        </div>
+      )}
     </div>
   );
 }
@@ -1846,7 +1835,7 @@ function OwnLockedGate({pf,nav,reload,showToast}){
     </div>
   );
 }
-function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,reload,showToast}){
+function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competitionStarted,gameStartDate,reload,showToast}){
   if(!pf) return(
     <div style={{textAlign:"center",padding:80,color:"#4b5563"}}>
       Portefólio não encontrado. <button onClick={()=>nav("ranking")} style={{color:"#22c55e",background:"none",border:"none",cursor:"pointer"}}>Voltar</button>
@@ -1952,7 +1941,7 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,reload,sh
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16,marginBottom:16}}>
         <div style={{...GLASS,borderRadius:16,padding:24}}>
           <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Evolução da rentabilidade</h3>
-          <EvolutionChart portfolioId={pf.id} currentReturn={st.total}/>
+          <EvolutionChart portfolioId={pf.id} currentReturn={st.total} submittedAt={pf.submittedAt} competitionStarted={competitionStarted} gameStartDate={gameStartDate}/>
         </div>
         <div style={{...GLASS,borderRadius:16,padding:24}}>
           <h3 style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Exposição por setor</h3>

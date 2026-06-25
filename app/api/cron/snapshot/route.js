@@ -1,8 +1,26 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
 import { fetchQuote } from "../../../lib/marketData";
 
-// Daily snapshot of each portfolio's return, for the evolution chart (#5).
-// Secured by CRON_SECRET: Vercel Cron sends `Authorization: Bearer $CRON_SECRET`.
+export const maxDuration = 60; // muitos tickers → damos folga à função
+
+// Corre N tarefas com concorrência limitada (não rebenta a função nem martela a API).
+async function mapPool(items, size, fn) {
+  const out = new Array(items.length);
+  let i = 0;
+  async function worker() {
+    while (i < items.length) {
+      const idx = i++;
+      out[idx] = await fn(items[idx]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(size, items.length) }, worker));
+  return out;
+}
+
+// Snapshot do retorno de cada portefólio para os gráficos (evolução / season race).
+// Pode correr várias vezes por dia (ex.: 2×) — cada corrida grava um ponto por
+// "slot" (hora arredondada), por isso re-runs no mesmo slot não duplicam.
+// Secured by CRON_SECRET: o gatilho envia `Authorization: Bearer $CRON_SECRET`.
 export async function GET(request) {
   const secret = process.env.CRON_SECRET;
   const auth = request.headers.get("authorization");
@@ -33,15 +51,19 @@ export async function GET(request) {
   );
   if (!portfolios.length) return Response.json({ ok: true, snapshots: 0 });
 
-  // One price lookup per unique ticker (Yahoo→CNBC fallback, cached).
+  // One price lookup per unique ticker (Yahoo→CNBC fallback, cached), em paralelo
+  // limitado para a corrida caber no tempo da função mesmo com muitos membros.
   const tickers = [...new Set(portfolios.flatMap((p) => (p.portfolio_stocks || []).map((s) => s.ticker)))];
   const prices = {};
-  for (const t of tickers) {
-    const p = await fetchQuote(t);
-    if (typeof p === "number") prices[t] = p;
-  }
+  const quotes = await mapPool(tickers, 5, async (t) => [t, await fetchQuote(t)]);
+  for (const [t, p] of quotes) if (typeof p === "number") prices[t] = p;
 
-  const date = new Date().toISOString().slice(0, 10);
+  // captured_at = instante da corrida arredondado à hora (o "slot" intraday).
+  const now = new Date();
+  const slot = new Date(now);
+  slot.setUTCMinutes(0, 0, 0);
+  const capturedAt = slot.toISOString();
+  const date = now.toISOString().slice(0, 10);
   const snapshots = [];
   for (const pf of portfolios) {
     const stocks = pf.portfolio_stocks || [];
@@ -53,15 +75,15 @@ export async function GET(request) {
       return s.side === "short" ? -base : base; // short = espelho
     });
     const total = rets.reduce((a, b) => a + b, 0) / rets.length;
-    snapshots.push({ portfolio_id: pf.id, date, total_return: total });
+    snapshots.push({ portfolio_id: pf.id, date, captured_at: capturedAt, total_return: total });
   }
 
   if (!snapshots.length) return Response.json({ ok: true, snapshots: 0 });
 
   const { error: upErr } = await supabase
     .from("portfolio_snapshots")
-    .upsert(snapshots, { onConflict: "portfolio_id,date" });
+    .upsert(snapshots, { onConflict: "portfolio_id,captured_at" });
   if (upErr) return Response.json({ error: upErr.message }, { status: 500 });
 
-  return Response.json({ ok: true, snapshots: snapshots.length, date });
+  return Response.json({ ok: true, snapshots: snapshots.length, date, captured_at: capturedAt });
 }

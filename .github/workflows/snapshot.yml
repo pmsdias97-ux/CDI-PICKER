@@ -1,14 +1,19 @@
-name: Daily snapshot
+name: Snapshot evolução
 
-# Gatilho fiável para o snapshot diário da evolução (independente do cron da Vercel).
-# Corre todos os dias às 22:00 UTC e também pode ser disparado à mão (workflow_dispatch).
+# Gatilho fiável para os snapshots da evolução (independente do cron da Vercel,
+# que no plano Hobby só corre 1×/dia). Corre 2×/dia durante o mercado dos EUA:
+#   - 16:00 UTC (~meio da sessão)
+#   - 21:00 UTC (~pós-fecho)
+# Cada corrida grava um ponto por "slot" (hora), por isso dá 2 pontos/dia e um
+# re-run no mesmo slot não duplica. Também pode ser disparado à mão.
 # Requer o segredo CRON_SECRET nos GitHub Secrets do repositório
 # (Settings > Secrets and variables > Actions > New repository secret),
 # com o MESMO valor que está na Vercel e no .env.local.
 
 on:
   schedule:
-    - cron: "0 22 * * *"
+    - cron: "0 16 * * *"
+    - cron: "0 21 * * *"
   workflow_dispatch:
 
 jobs:
