@@ -762,9 +762,9 @@ function WinnersGrid({top,livePrices,nav}){
 }
 
 const RANK_BADGE={
-  1:{background:"linear-gradient(145deg,#fde68a,#f59e0b)",color:"#3a2800",boxShadow:"0 3px 12px rgba(245,158,11,0.45)"},
-  2:{background:"linear-gradient(145deg,#f8fafc,#94a3b8)",color:"#1e293b",boxShadow:"0 3px 10px rgba(148,163,184,0.3)"},
-  3:{background:"linear-gradient(145deg,#fcd9a8,#b45309)",color:"#2e1800",boxShadow:"0 3px 10px rgba(180,83,9,0.3)"},
+  1:{background:"linear-gradient(145deg,#fde68a,#f59e0b)",color:"#3a2800",boxShadow:"0 0 14px rgba(245,158,11,0.55), 0 3px 12px rgba(245,158,11,0.4)"},
+  2:{background:"linear-gradient(145deg,#f8fafc,#94a3b8)",color:"#1e293b",boxShadow:"0 0 12px rgba(203,213,225,0.5), 0 3px 10px rgba(148,163,184,0.3)"},
+  3:{background:"linear-gradient(145deg,#fcd9a8,#b45309)",color:"#2e1800",boxShadow:"0 0 12px rgba(217,119,6,0.5), 0 3px 10px rgba(180,83,9,0.3)"},
 };
 function WinnerCard({p,rank,livePrices,series,onClick}){
   const up=p.total>=0;
@@ -1631,7 +1631,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
             onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
             <span style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
               {i<3
-                ? <span style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0,...RANK_BADGE[i+1]}}>{i+1}</span>
+                ? <span className="rankShine" style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0,...RANK_BADGE[i+1],"--shine-delay":`${i*1.2}s`}}>{i+1}</span>
                 : <span style={{fontSize:13,color:"#94a3b8",fontWeight:700}}>{i+1}</span>}
             </span>
             <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
@@ -1973,6 +1973,13 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competiti
     return <OwnLockedGate pf={pf} nav={nav} reload={reload} showToast={showToast}/>;
   }
   const st=pfStats(pf,livePrices);
+  // Acento premium no cartão principal conforme o lugar (ouro/prata/bronze).
+  const CARD_ACCENT={
+    1:{border:"1px solid rgba(245,158,11,0.45)",glow:"0 0 38px rgba(245,158,11,0.20)"},
+    2:{border:"1px solid rgba(203,213,225,0.42)",glow:"0 0 36px rgba(203,213,225,0.16)"},
+    3:{border:"1px solid rgba(217,119,6,0.42)",glow:"0 0 36px rgba(217,119,6,0.17)"},
+  };
+  const acc=rank<=3?CARD_ACCENT[rank]:null;
   const rows=pf.stocks.map(s=>{
     const cur=curPrice(s.ticker,s.initialPrice,livePrices);
     return{...s,cur,ret:stockRet(s,livePrices)};
@@ -2001,12 +2008,12 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competiti
 
       <div className="cdiDetail">
       <div>{/* coluna esquerda: portefólio */}
-      <TiltCard style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,marginBottom:16}}>
+      <TiltCard style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:acc?acc.border:"1px solid rgba(255,255,255,0.10)",boxShadow:acc?`${acc.glow}, 0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.16)`:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,marginBottom:16}}>
         <div style={{textAlign:"center"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14,marginBottom:16,minWidth:0}}>
             {rank>0&&(rank<=3
-              ? <span style={{width:46,height:46,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
-                  fontSize:20,fontWeight:800,...RANK_BADGE[rank]}}>{rank}</span>
+              ? <span className="rankShine" style={{width:46,height:46,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+                  fontSize:20,fontWeight:800,...RANK_BADGE[rank],"--shine-delay":`${(rank-1)*1.2}s`}}>{rank}</span>
               : <span style={{width:46,height:46,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
                   fontSize:18,fontWeight:800,color:"#64748b",border:"2px solid rgba(255,255,255,0.12)"}}>{rank}</span>
             )}

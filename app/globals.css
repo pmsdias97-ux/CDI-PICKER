@@ -50,6 +50,17 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Reflexo metálico (shimmer) subtil nos badges do Top 3 (ouro/prata/bronze) */
+.rankShine { position: relative; overflow: hidden; }
+.rankShine::after {
+  content: ""; position: absolute; top: 0; left: -160%; width: 55%; height: 100%;
+  background: linear-gradient(115deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%);
+  transform: skewX(-18deg); pointer-events: none;
+  animation: rankShineSweep 4s ease-in-out infinite; animation-delay: var(--shine-delay, 0s);
+}
+@keyframes rankShineSweep { 0% { left: -160%; } 55%, 100% { left: 160%; } }
+@media (prefers-reduced-motion: reduce) { .rankShine::after { animation: none; } }
+
 /* Gráficos (Recharts): sem caixa de foco/realce ao clicar ou tocar */
 .recharts-wrapper,
 .recharts-wrapper *,
