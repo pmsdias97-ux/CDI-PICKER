@@ -372,6 +372,64 @@ function Confetti({intense}){
     </div>
   );
 }
+
+// Fundo com CROSS-FADE entre temas (página/lugar). Gradientes não animam por CSS, por isso
+// sobrepomos a nova cor por cima da anterior e fazemos fade da opacidade; quando termina,
+// removem-se as camadas antigas. Camada fixa atrás do conteúdo.
+function BgLayer({bg,isNew,onDone}){
+  const [op,setOp]=useState(isNew?0:1);
+  useEffect(()=>{
+    if(!isNew) return;
+    const r=requestAnimationFrame(()=>requestAnimationFrame(()=>setOp(1)));
+    return()=>cancelAnimationFrame(r);
+  },[isNew]);
+  return <div onTransitionEnd={isNew?onDone:undefined}
+    style={{position:"absolute",inset:0,background:bg,opacity:op,transition:"opacity .6s ease"}}/>;
+}
+function BackgroundFade({bg}){
+  const [layers,setLayers]=useState(()=>[{id:0,bg}]);
+  const nid=useRef(0);
+  useEffect(()=>{
+    setLayers(prev=>{
+      if(prev[prev.length-1].bg===bg) return prev;
+      nid.current+=1;
+      return [...prev,{id:nid.current,bg}];
+    });
+  },[bg]);
+  const prune=(id)=>setLayers(prev=>{ const i=prev.findIndex(l=>l.id===id); return i<=0?prev:prev.slice(i); });
+  return(
+    <div aria-hidden="true" style={{position:"fixed",inset:0,zIndex:0,pointerEvents:"none"}}>
+      {layers.map((l,i)=><BgLayer key={l.id} bg={l.bg} isNew={i>0} onDone={()=>prune(l.id)}/>)}
+    </div>
+  );
+}
+
+// Glow dourado que SEGUE o cursor (só desktop), recortado pela forma da própria imagem
+// (máscara). Usado no logo da Home e no troféu do #1. Subtil/premium.
+function GoldGlow({src,alt="",maskSrc,wrapStyle,imgStyle,baseFilter="",glow=16}){
+  const [on,setOn]=useState(false);
+  const [pos,setPos]=useState({x:50,y:50});
+  const [hov,setHov]=useState(false);
+  useEffect(()=>{ try{ setOn(window.matchMedia("(hover:hover) and (pointer:fine)").matches); }catch{} },[]);
+  const handlers=on?{
+    onMouseMove:(e)=>{ const r=e.currentTarget.getBoundingClientRect(); setPos({x:((e.clientX-r.left)/r.width)*100,y:((e.clientY-r.top)/r.height)*100}); setHov(true); },
+    onMouseLeave:()=>setHov(false),
+  }:{};
+  const mask=maskSrc?{WebkitMaskImage:`url(${maskSrc})`,maskImage:`url(${maskSrc})`,
+    WebkitMaskSize:"100% 100%",maskSize:"100% 100%",WebkitMaskRepeat:"no-repeat",maskRepeat:"no-repeat",
+    WebkitMaskPosition:"center",maskPosition:"center"}:{};
+  return(
+    <span {...handlers} style={{position:"relative",display:"inline-block",lineHeight:0,...wrapStyle}}>
+      <img src={src} alt={alt} style={{display:"block",transition:"filter .3s ease",...imgStyle,
+        filter:(hov&&on)?`${baseFilter} drop-shadow(0 0 ${glow}px rgba(245,158,11,0.32))`:baseFilter}}/>
+      {on&&(
+        <span aria-hidden="true" style={{position:"absolute",inset:0,pointerEvents:"none",
+          background:`radial-gradient(circle at ${pos.x}% ${pos.y}%, rgba(253,224,71,0.38), rgba(245,158,11,0.10) 42%, transparent 72%)`,
+          mixBlendMode:"screen",opacity:hov?1:0,transition:"opacity .35s ease",...mask}}/>
+      )}
+    </span>
+  );
+}
 // Só marca as posições SHORT — long é o normal, não precisa de badge.
 // Círculo com seta diagonal para baixo (aposta na queda), junto ao ticker.
 function SideBadge({side}){
@@ -798,15 +856,15 @@ function Shell({children,page,detailRank,detailIsOwn,nav,submitted,toast,onMyPor
       :(page==="detail"&&!detailIsOwn?BLUE_REF:BLUE));
   return(
     <div style={{minHeight:"100vh",position:"relative",
-      background:theme.bg,
-      backgroundColor:theme.color,
+      backgroundColor:theme.color,transition:"background-color .6s ease",
       color:"#e2e8f0",fontFamily:"var(--font-app), system-ui, -apple-system, sans-serif",overflowX:"hidden"}}>
+      <BackgroundFade bg={theme.bg}/>
       <style>{`@media(max-width:640px){.navWide{display:none}}.cdiNav{justify-content:flex-start}@media(min-width:641px){.cdiNav{justify-content:center}}`}</style>
       <header style={{position:"sticky",top:0,zIndex:50,padding:"12px 14px"}}>
         <Nav page={page} nav={nav} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} />
         <div style={{position:"absolute",top:12,right:14}}><MarketStatus/></div>
       </header>
-      <main>{children}</main>
+      <main style={{position:"relative",zIndex:1}}>{children}</main>
       <BackToTop maxWidth={page==="ranking"?900:page==="detail"?1320:null}/>
       {toast&&(
         <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:9999,
@@ -1044,8 +1102,9 @@ function Home({nav,submitted,count,settings,ranking,livePrices,onMyPortfolio}){
     <div>
       {/* Hero */}
       <section style={{textAlign:"center",padding:"100px 24px 80px",maxWidth:780,margin:"0 auto"}}>
-        <img src="/logo.png" alt="Conversas de Investidores"
-          style={{display:"block",width:"clamp(120px,18vw,180px)",height:"auto",margin:"0 auto 32px"}}/>
+        <GoldGlow src="/logo.png" alt="Conversas de Investidores" maskSrc="/logo.png" glow={20}
+          wrapStyle={{margin:"0 auto 32px"}}
+          imgStyle={{width:"clamp(120px,18vw,180px)",height:"auto"}}/>
         <h1 style={{fontSize:"clamp(40px,6vw,72px)",fontWeight:800,lineHeight:1.1,letterSpacing:"-2px",margin:"0 0 24px"}}>
           Conversas de{" "}
           <span style={{color:"#22c55e"}}>Investidores</span>
@@ -2226,10 +2285,10 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competiti
       <div>{/* coluna esquerda: portefólio */}
       <div style={{position:"relative",marginBottom:16}}>
         {rank===1&&(
-          <img src="/cdi-trophy.png" alt="Troféu de 1º lugar"
-            style={{position:"absolute",top:"clamp(-66px,-7vw,-54px)",left:"50%",transform:"translateX(-50%)",
-              width:"clamp(60px,7vw,72px)",height:"auto",zIndex:5,pointerEvents:"none",
-              filter:"drop-shadow(0 12px 22px rgba(0,0,0,0.5)) drop-shadow(0 0 20px rgba(245,158,11,0.4))"}}/>
+          <GoldGlow src="/cdi-trophy.png" alt="Troféu de 1º lugar" maskSrc="/cdi-trophy.png" glow={26}
+            baseFilter="drop-shadow(0 12px 22px rgba(0,0,0,0.5)) drop-shadow(0 0 20px rgba(245,158,11,0.4))"
+            wrapStyle={{position:"absolute",top:"clamp(-66px,-7vw,-54px)",left:"50%",transform:"translateX(-50%)",width:"clamp(60px,7vw,72px)",zIndex:5}}
+            imgStyle={{width:"100%",height:"auto"}}/>
         )}
       <TiltCard style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:acc?acc.border:"1px solid rgba(255,255,255,0.10)",boxShadow:acc?`${acc.glow}, 0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.16)`:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28}}>
         <div style={{textAlign:"center"}}>
