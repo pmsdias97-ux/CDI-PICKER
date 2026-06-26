@@ -573,6 +573,137 @@ function StockLogo({ticker,size=28}){
   );
 }
 
+/* ---- Aba ATH: distância ao máximo histórico (S&P 500) -------------------- */
+function fmtCap(v){
+  if(!Number.isFinite(v)||v<=0) return "—";
+  if(v>=1e12) return `$${(v/1e12).toFixed(2)}T`;
+  if(v>=1e9)  return `$${(v/1e9).toFixed(0)}B`;
+  if(v>=1e6)  return `$${(v/1e6).toFixed(0)}M`;
+  return `$${v.toFixed(0)}`;
+}
+function fmtMoney(v){ return Number.isFinite(v)?`$${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—"; }
+function sinceLabel(ts){
+  if(!ts) return "—";
+  const t=new Date(ts).getTime(); if(!Number.isFinite(t)) return "—";
+  const days=Math.floor((Date.now()-t)/86400000);
+  if(days<=0) return "hoje";
+  if(days===1) return "1 dia";
+  if(days<31) return `${days} dias`;
+  const months=Math.round(days/30.44);
+  if(months<12) return months<=1?"1 mês":`${months} meses`;
+  const years=days/365.25;
+  return years<1.95?`${years.toFixed(1)} anos`:`${years.toFixed(years<10?1:0)} anos`;
+}
+function ATH(){
+  const [rows,setRows]=useState(null);
+  const [q,setQ]=useState("");
+  const [sortKey,setSortKey]=useState("marketcap"); // marketcap | down | since
+  const [updatedAt,setUpdatedAt]=useState(null);
+  useEffect(()=>{
+    let cancel=false;
+    (async()=>{
+      const { data }=await supabase.from("sp500_ath")
+        .select("symbol,name,price,marketcap,ath,ath_ts,updated_at");
+      if(cancel) return;
+      const list=(data||[]).map(r=>{
+        const price=Number(r.price), ath=Number(r.ath);
+        return { symbol:r.symbol, name:r.name||r.symbol, price, ath, marketcap:Number(r.marketcap),
+          ath_ts:r.ath_ts, down:(Number.isFinite(price)&&Number.isFinite(ath)&&ath>0)?(price/ath-1):null };
+      });
+      setRows(list);
+      setUpdatedAt((data||[]).reduce((m,r)=>{ const t=new Date(r.updated_at||0).getTime(); return t>m?t:m; },0)||null);
+    })();
+    return()=>{ cancel=true; };
+  },[]);
+  const view=useMemo(()=>{
+    if(!rows) return [];
+    const needle=norm(q);
+    let list=needle?rows.filter(r=>norm(r.symbol).includes(needle)||norm(r.name).includes(needle)):rows;
+    const cmp={
+      marketcap:(a,b)=>(b.marketcap||0)-(a.marketcap||0),
+      down:(a,b)=>(a.down??0)-(b.down??0),                                   // mais abaixo do ATH primeiro
+      since:(a,b)=>new Date(b.ath_ts||0).getTime()-new Date(a.ath_ts||0).getTime(), // ATH mais recente primeiro
+    }[sortKey]||(()=>0);
+    return [...list].sort(cmp);
+  },[rows,q,sortKey]);
+  const GLASS={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
+  const Hd=({k,children,align="right"})=>(
+    <span onClick={()=>setSortKey(k)} style={{textAlign:align,cursor:"pointer",userSelect:"none",
+      color:sortKey===k?"#e2e8f0":"#94a3b8",display:"flex",alignItems:"center",gap:4,
+      justifyContent:align==="right"?"flex-end":align==="center"?"center":"flex-start"}}>
+      {children}{sortKey===k&&<span style={{fontSize:9}}>▾</span>}
+    </span>
+  );
+  return(
+    <div style={{maxWidth:1040,margin:"0 auto",padding:"40px 20px 120px"}}>
+      <style>{`
+        .athRow{display:grid;grid-template-columns:44px 1fr 116px 96px 110px 110px 92px;gap:10px;align-items:center}
+        @media(max-width:760px){
+          .athRow{grid-template-columns:28px 1fr 80px 92px;gap:8px}
+          .athHideSm{display:none}
+        }
+      `}</style>
+      <h1 style={{textAlign:"center",fontSize:28,fontWeight:800,letterSpacing:"-0.5px",margin:"0 0 4px"}}>Distância ao máximo histórico</h1>
+      <p style={{textAlign:"center",color:"#94a3b8",fontSize:14,margin:"0 0 24px"}}>S&P 500 · preço atual vs. máximo de sempre (ATH)</p>
+
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:14}}>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Procurar ticker ou empresa…"
+          style={{flex:"1 1 260px",maxWidth:420,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.12)",
+            borderRadius:999,padding:"11px 18px",fontSize:14,color:"#e2e8f0",outline:"none"}}/>
+        <span style={{fontSize:12.5,color:"#94a3b8",whiteSpace:"nowrap"}}>
+          {rows?`${updatedAt?`Atualizado ${new Date(updatedAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})} · `:""}${rows.length} ações`:"A carregar…"}
+        </span>
+      </div>
+
+      <div style={{...GLASS,borderRadius:16,overflow:"hidden"}}>
+        <div className="athRow" style={{padding:"10px 18px",borderBottom:"1px solid rgba(255,255,255,0.10)",
+          fontSize:11,textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,color:"#94a3b8"}}>
+          <span style={{textAlign:"center"}}>#</span><span>Empresa</span>
+          <Hd k="marketcap" align="right">Marketcap</Hd>
+          <Hd k="down" align="right">% abaixo</Hd>
+          <span style={{textAlign:"right"}} className="athHideSm">Preço</span>
+          <span style={{textAlign:"right"}} className="athHideSm">ATH</span>
+          <Hd k="since" align="right"><span className="athHideSm">Desde</span></Hd>
+        </div>
+        {rows===null?(
+          <div style={{padding:50,textAlign:"center",color:"#64748b",fontSize:14}}>A carregar dados…</div>
+        ):view.length===0?(
+          <div style={{padding:50,textAlign:"center",color:"#64748b",fontSize:14}}>
+            {rows.length===0?"Ainda sem dados — a tabela vai ser preenchida em breve.":"Sem resultados."}
+          </div>
+        ):view.slice(0,520).map((r,i)=>{
+          const up=r.down!=null&&r.down>=0;
+          const col=r.down==null?"#94a3b8":up?"#4ade80":"#f87171";
+          const bg=r.down==null?"transparent":up?"rgba(34,197,94,0.10)":"rgba(248,113,113,0.10)";
+          const bd=r.down==null?"rgba(255,255,255,0.12)":up?"rgba(34,197,94,0.35)":"rgba(248,113,113,0.35)";
+          return(
+            <div key={r.symbol} className="athRow" style={{padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+              <span style={{textAlign:"center",fontSize:13,color:"#64748b",fontWeight:700}}>{i+1}</span>
+              <span style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+                <StockLogo ticker={r.symbol} size={30}/>
+                <span style={{minWidth:0,display:"flex",flexDirection:"column",lineHeight:1.15}}>
+                  <span style={{fontWeight:700,fontSize:14}}>{r.symbol}</span>
+                  <span style={{fontSize:12,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</span>
+                </span>
+              </span>
+              <span style={{textAlign:"right",fontFamily:"monospace",fontSize:14,fontWeight:700}}>{fmtCap(r.marketcap)}</span>
+              <span style={{textAlign:"right"}}>
+                <span style={{display:"inline-block",fontFamily:"monospace",fontSize:13,fontWeight:800,color:col,
+                  background:bg,border:`1px solid ${bd}`,borderRadius:8,padding:"4px 8px"}}>
+                  {r.down==null?"—":`${up?"+":""}${(r.down*100).toFixed(1)}%`}
+                </span>
+              </span>
+              <span className="athHideSm" style={{textAlign:"right",fontFamily:"monospace",fontSize:14,fontWeight:700}}>{fmtMoney(r.price)}</span>
+              <span className="athHideSm" style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#94a3b8"}}>{fmtMoney(r.ath)}</span>
+              <span className="athHideSm" style={{textAlign:"right",fontSize:12.5,color:"#94a3b8"}}>{sinceLabel(r.ath_ts)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ---- Shared game settings (Supabase) ------------------------------------- */
 const DEFAULT_SETTINGS={submissionsOpen:true,gameStartDate:"",gameEndDate:"",competitionStarted:false,baselinesLockedAt:null};
 async function loadGameSettings(){
@@ -661,6 +792,7 @@ function routeToHash(r){
   if(r.page==="detail"&&r.detailSlug) return `#p/${r.detailSlug}`;
   if(r.page==="duel"&&r.duelSlugs?.[0]&&r.duelSlugs?.[1]) return `#duel/${r.duelSlugs[0]}~${r.duelSlugs[1]}`;
   if(r.page==="ranking") return "#ranking";
+  if(r.page==="ath")     return "#ath";
   if(r.page==="create")  return "#criar";
   if(r.page==="confirm") return "#confirmar";
   if(r.page==="admin")   return "#admin";
@@ -670,6 +802,7 @@ function parseHash(){
   const h=(typeof window!=="undefined"?window.location.hash:"").replace(/^#/,"");
   if(!h) return {page:"home"};
   if(h==="ranking")  return {page:"ranking"};
+  if(h==="ath")      return {page:"ath"};
   if(h==="criar")    return {page:"create"};
   if(h==="confirmar")return {page:"confirm"};
   if(h==="admin")    return {page:"admin"};
@@ -944,6 +1077,7 @@ export default function App(){
   if(page==="home")   return sh(<Home nav={nav} submitted={submitted} count={portfolios.length} settings={settings} ranking={ranking} livePrices={livePrices} onMyPortfolio={openMyPortfolio}/>);
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
+  if(page==="ath")    return sh(<ATH/>);
   if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} preLaunch={isPreLaunch(settings)} settings={settings} onSelect={openDetail} onCompare={openDuel}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} myNorm={norm(myName)} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
@@ -966,7 +1100,7 @@ function Shell({children,page,detailRank,detailIsOwn,nav,submitted,toast,onMyPor
   // petróleo novo. O PRÓPRIO portefólio (fora do pódio) e a homepage → azul original.
   const medal=page==="detail"?(detailRank===1?GOLD:detailRank===2?SILVER:detailRank===3?BRONZE:null):null;
   const theme=medal
-    ||((page==="ranking"||page==="duel")?BLUE_REF
+    ||((page==="ranking"||page==="duel"||page==="ath")?BLUE_REF
       :(page==="detail"&&!detailIsOwn?BLUE_REF:BLUE));
   return(
     <div style={{minHeight:"100vh",position:"relative",
@@ -1040,6 +1174,7 @@ function Nav({page,nav,submitted,onMyPortfolio,myPortfolioActive}){
     <div className="cdiNav" style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
       <NavLink label="Início" active={page==="home"} onClick={()=>nav("home")}/>
       <NavLink label="Ranking" active={page==="ranking"} onClick={()=>nav("ranking")} locked={!submitted}/>
+      <NavLink label="ATH" active={page==="ath"} onClick={()=>nav("ath")}/>
       {submitted
         ? <NavLink label={<>Meu<span className="navWide"> Portefólio</span></>} active={myPortfolioActive} onClick={onMyPortfolio}/>
         : <NavLink label={<>Criar<span className="navWide"> Portefólio</span></>} active={page==="create"} onClick={()=>nav("create")}/>}

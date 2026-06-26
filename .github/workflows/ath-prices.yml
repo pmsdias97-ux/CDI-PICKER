@@ -1,0 +1,26 @@
+name: ATH — preços (hora a hora)
+
+# Atualiza o preço atual + marketcap (shares lidas do site) do S&P 500, de hora a hora,
+# em dias úteis, na janela de mercado US (14:00–21:00 UTC). A distância ao ATH (% abaixo)
+# é recalculada no site a partir destes valores. O ATH em si é atualizado pelo workflow diário.
+# Também disparável à mão. Segredos: CRON_SECRET, SUPABASE_URL, SUPABASE_ANON_KEY.
+
+on:
+  schedule:
+    - cron: "0 14-21 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  prices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r scripts/ath/requirements.txt
+      - run: python scripts/ath/fetch_ath.py --mode prices
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}

@@ -1,0 +1,48 @@
+import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
+
+export const maxDuration = 60; // upsert de ~500 linhas
+
+// Ingestão dos dados da aba ATH (S&P 500). Chamada pelo GitHub Action (Python/yfinance) com
+// Authorization: Bearer $CRON_SECRET. Recebe { rows: [...] } e faz upsert em sp500_ath.
+// O Python envia linhas UNIFORMES e completas (mesmas chaves) → upsert consistente.
+export async function POST(request) {
+  const secret = process.env.CRON_SECRET;
+  const auth = request.headers.get("authorization");
+  if (!secret || auth !== `Bearer ${secret}`) {
+    return Response.json({ error: "Não autorizado." }, { status: 401 });
+  }
+
+  let body;
+  try { body = await request.json(); } catch { body = null; }
+  const rows = Array.isArray(body?.rows) ? body.rows : null;
+  if (!rows || !rows.length) return Response.json({ error: "Sem linhas." }, { status: 400 });
+
+  const now = new Date().toISOString();
+  const clean = [];
+  for (const r of rows) {
+    const symbol = String(r?.symbol || "").toUpperCase().trim();
+    if (!symbol) continue;
+    const row = { symbol, updated_at: now };
+    if (r.name != null) row.name = String(r.name).slice(0, 120);
+    if (Number.isFinite(+r.price)) row.price = +r.price;
+    if (Number.isFinite(+r.marketcap)) row.marketcap = +r.marketcap;
+    if (Number.isFinite(+r.shares)) row.shares = +r.shares;
+    if (Number.isFinite(+r.ath)) row.ath = +r.ath;
+    if (r.ath_ts != null && r.ath_ts !== "") row.ath_ts = r.ath_ts; // ISO string
+    clean.push(row);
+  }
+  if (!clean.length) return Response.json({ error: "Linhas inválidas." }, { status: 400 });
+
+  let supabase;
+  try { supabase = getSupabaseAdmin(); }
+  catch (e) { return Response.json({ error: e.message }, { status: 500 }); }
+
+  let upserted = 0;
+  for (let i = 0; i < clean.length; i += 200) {
+    const batch = clean.slice(i, i + 200);
+    const { error } = await supabase.from("sp500_ath").upsert(batch, { onConflict: "symbol" });
+    if (error) return Response.json({ error: error.message, upserted }, { status: 500 });
+    upserted += batch.length;
+  }
+  return Response.json({ ok: true, upserted });
+}

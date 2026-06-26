@@ -1,0 +1,25 @@
+name: ATH — full (diário)
+
+# Recalcula o máximo histórico (ATH) + nome + preço + marketcap + shares de todo o S&P 500.
+# Corre 1×/dia (após o fecho US). Também pode ser disparado à mão (workflow_dispatch).
+# Segredos necessários no repositório: CRON_SECRET, SUPABASE_URL, SUPABASE_ANON_KEY.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # ~03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  full:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r scripts/ath/requirements.txt
+      - run: python scripts/ath/fetch_ath.py --mode full
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
