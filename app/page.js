@@ -1168,7 +1168,7 @@ function WinnerCard({p,rank,livePrices,series,onClick}){
   );
 }
 
-function MiniSparkline({series,current}){
+function MiniSparkline({series,current,height=48}){
   const uid=useId();
   const today=new Date().toISOString().slice(0,10);
   const pts=(series||[]).map(s=>({date:s.date,r:s.r}));
@@ -1199,7 +1199,7 @@ function MiniSparkline({series,current}){
   const col=isEx?"#64748b":(last>=0?"#34d399":"#fb7185");
   const gid=`spk-${uid}`;
   return(
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className={isEx?undefined:"winSpark"} style={{width:"100%",height:48,display:"block",opacity:isEx?0.55:undefined}}>
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className={isEx?undefined:"winSpark"} style={{width:"100%",height,display:"block",opacity:isEx?0.55:undefined}}>
       <defs>
         <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={col} stopOpacity={isEx?0.16:0.32}/>
@@ -1985,6 +1985,25 @@ function InfoTip({text}){
 function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,onCompare}){
   const [cmp,setCmp]=useState(false);
   const [sel,setSel]=useState([]);
+  // Mini-curva por linha: snapshots por portefólio (histórico). Recarrega só quando o
+  // conjunto de portefólios muda (não a cada atualização de preços).
+  const [seriesById,setSeriesById]=useState({});
+  const idsKey=ranking.map(p=>p.id).filter(Boolean).join(",");
+  useEffect(()=>{
+    let cancel=false;
+    const ids=idsKey?idsKey.split(","):[];
+    if(!ids.length){ setSeriesById({}); return; }
+    (async()=>{
+      const { data }=await supabase
+        .from("portfolio_snapshots").select("portfolio_id,date,total_return")
+        .in("portfolio_id",ids).order("date",{ascending:true});
+      if(cancel) return;
+      const m={};
+      (data||[]).forEach(r=>{ (m[r.portfolio_id]=m[r.portfolio_id]||[]).push({date:r.date,r:Number(r.total_return)}); });
+      setSeriesById(m);
+    })();
+    return()=>{ cancel=true; };
+  },[idsKey]);
   const toggleSel=k=>setSel(s=>s.includes(k)?s.filter(x=>x!==k):(s.length>=2?[s[1],k]:[...s,k]));
   const nameByKey=k=>ranking.find(p=>p.key===k)?.name||"";
   const demos=ranking.filter(p=>!p.official);
@@ -1994,6 +2013,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
       <div className="rkRow" style={{padding:"10px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",
         fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>
         <span style={{textAlign:"center"}}>#</span><span>Membro</span>
+        <span className="rkSpark"></span>
         <span style={{textAlign:"right"}}>Rentab.</span>
         <span style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4}}>Alpha<InfoTip text="A tua rentabilidade menos a do S&P 500 no mesmo período (positivo = bates o mercado)."/></span>
         <span style={{textAlign:"center"}}>🟢/🔴</span>
@@ -2027,6 +2047,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
             <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
               <span style={{overflowWrap:"anywhere",lineHeight:1.2}}>{p.name}</span>
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
+            </span>
+            <span className="rkSpark" style={{alignSelf:"center",display:"flex",alignItems:"center",height:24,minWidth:0,overflow:"hidden"}}>
+              <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24}/>
             </span>
             <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}><Rolling text={pct(p.total)}/></span>
             <span style={{textAlign:"right",alignSelf:"center",fontFamily:"monospace",fontSize:13,fontWeight:600,
@@ -2073,10 +2096,11 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
   return(
     <div style={{maxWidth:900,margin:"0 auto",padding:"40px 20px 120px"}}>
       <style>{`
-        .rkRow{display:grid;grid-template-columns:40px 1fr 100px 100px 92px 110px;gap:8px}
+        .rkRow{display:grid;grid-template-columns:40px 1fr 84px 100px 100px 92px 110px;gap:8px}
         @media(max-width:640px){
           .rkRow{grid-template-columns:26px 1fr 64px 64px 56px;gap:6px}
           .rkHide{display:none}
+          .rkSpark{display:none}
         }
       `}</style>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
