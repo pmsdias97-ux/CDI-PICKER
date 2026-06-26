@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, useId } from "react";
+import { useState, useEffect, useMemo, useCallback, useId, useRef } from "react";
 import { supabase } from "./supabase";
 import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } from "./lib/stocks";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
@@ -249,6 +249,129 @@ function TiltCard({children,style}){
     </div>
   );
 }
+
+// Estado da faixa de voltar: ativa só em desktop (hover/ponteiro fino) e com margem
+// esquerda suficiente. Quando ativa, SUBSTITUI o botão "← Voltar ao ranking".
+function useBackRail(){
+  const [enabled,setEnabled]=useState(false);
+  const [gap,setGap]=useState(0);
+  useEffect(()=>{
+    let ok=false;
+    try{ ok=window.matchMedia("(hover:hover) and (pointer:fine)").matches; }catch{}
+    setEnabled(ok);
+    if(!ok) return;
+    const calc=()=>{ const w=window.innerWidth; setGap(w>1320?(w-1320)/2+20:20); };
+    calc();
+    window.addEventListener("resize",calc);
+    return ()=>window.removeEventListener("resize",calc);
+  },[]);
+  return {active:enabled&&gap>=64,gap};
+}
+
+// Faixa lateral esquerda (desktop): ao passar o cursor pela margem vazia à esquerda do
+// conteúdo, surge um glow + seta ← para voltar. Ocupa exatamente a margem (nunca sobrepõe
+// o cartão). Renderizada só quando useBackRail().active (aí o botão de topo desaparece).
+function LeftBackRail({gap,onBack,label="Voltar ao ranking"}){
+  const [hover,setHover]=useState(false);
+  return(
+    <div onClick={onBack} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
+      role="button" aria-label={label} title={label}
+      style={{position:"fixed",left:0,top:0,bottom:0,width:gap,cursor:"pointer",zIndex:40,
+        display:"flex",alignItems:"center",justifyContent:"center",
+        background:hover?"linear-gradient(90deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.04) 50%, transparent 100%)":"transparent",
+        transition:"background .25s ease"}}>
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10,padding:8,
+        opacity:hover?1:0,transform:hover?"translateX(0)":"translateX(12px)",transition:"opacity .25s ease, transform .25s ease"}}>
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#e2e8f0" strokeWidth="2.2"
+          strokeLinecap="round" strokeLinejoin="round" style={{filter:"drop-shadow(0 0 10px rgba(255,255,255,0.55))"}}>
+          <path d="M15 6l-6 6 6 6"/>
+        </svg>
+        {gap>=150&&<span style={{fontSize:12,color:"#cbd5e1",fontWeight:600,whiteSpace:"nowrap",letterSpacing:"0.3px",filter:"drop-shadow(0 1px 4px rgba(0,0,0,0.5))"}}>{label}</span>}
+      </div>
+    </div>
+  );
+}
+
+// Botão flutuante "voltar ao topo" — só em desktop (hover/ponteiro fino); aparece com scroll.
+// Ancorado junto da coluna de conteúdo (maxWidth): fica ao lado da tabela, não no bordo da janela.
+function BackToTop({maxWidth}){
+  const [show,setShow]=useState(false);
+  const [enabled,setEnabled]=useState(false);
+  useEffect(()=>{
+    let ok=false; try{ ok=window.matchMedia("(hover:hover) and (pointer:fine)").matches; }catch{}
+    setEnabled(ok);
+    if(!ok) return;
+    const onScroll=()=>setShow(window.scrollY>600);
+    onScroll();
+    window.addEventListener("scroll",onScroll,{passive:true});
+    return()=>window.removeEventListener("scroll",onScroll);
+  },[]);
+  if(!enabled) return null;
+  const right=maxWidth?`max(16px, calc((100vw - ${maxWidth}px)/2 - 38px))`:"24px";
+  return(
+    <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} aria-label="Voltar ao topo" title="Voltar ao topo"
+      style={{position:"fixed",right,bottom:24,zIndex:45,width:46,height:46,borderRadius:"50%",cursor:"pointer",
+        background:"rgba(255,255,255,0.08)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",
+        border:"1px solid rgba(255,255,255,0.18)",boxShadow:"0 8px 24px rgba(0,0,0,0.35)",color:"#e2e8f0",
+        display:"flex",alignItems:"center",justifyContent:"center",
+        opacity:show?1:0,transform:show?"translateY(0)":"translateY(12px)",pointerEvents:show?"auto":"none",
+        transition:"opacity .25s ease, transform .25s ease"}}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+    </button>
+  );
+}
+
+// Confete dourado (sem biblioteca) — celebração do 1º lugar. Dispara 1× ao abrir o detalhe
+// do campeão; mais intenso quando o #1 é o próprio. Mobile/tablet/desktop; respeita
+// prefers-reduced-motion (quem reduz movimento não vê animação). pointer-events:none.
+function Confetti({intense}){
+  const ref=useRef(null);
+  const [pieces,setPieces]=useState(null);
+  // 1) Gera as partículas (uma vez), respeitando prefers-reduced-motion.
+  useEffect(()=>{
+    let reduce=false;
+    try{ reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches; }catch{}
+    if(reduce) return;
+    const GOLD=["#facc15","#fcd34d","#f59e0b","#fde68a","#eab308","#fbbf24","#ca8a04"];
+    const n=intense?84:46;
+    setPieces(Array.from({length:n},(_,i)=>({
+      left:Math.random()*100,
+      dur:2000+Math.random()*1600,
+      delay:Math.random()*(intense?900:600),
+      drift:(Math.random()*2-1)*130,
+      rot:(Math.random()*2-1)*900,
+      size:6+Math.random()*7,
+      round:Math.random()<0.35,
+      color:GOLD[i%GOLD.length],
+    })));
+  },[intense]);
+  // 2) Anima cada partícula com a Web Animations API (não depende de keyframes CSS).
+  useEffect(()=>{
+    if(!pieces||!ref.current||typeof window==="undefined") return;
+    const H=window.innerHeight||800;
+    const anims=[];
+    [...ref.current.children].forEach((el,i)=>{
+      const p=pieces[i]; if(!p||!el.animate) return;
+      anims.push(el.animate([
+        {transform:`translate3d(0,${-0.15*H}px,0) rotate(0deg)`,opacity:0},
+        {opacity:1,offset:0.06},
+        {opacity:1,offset:0.88},
+        {transform:`translate3d(${p.drift}px,${1.16*H}px,0) rotate(${p.rot}deg)`,opacity:0},
+      ],{duration:p.dur,delay:p.delay,easing:"cubic-bezier(.2,.6,.5,1)",fill:"forwards"}));
+    });
+    const maxEnd=pieces.reduce((m,p)=>Math.max(m,p.dur+p.delay),0);
+    const t=setTimeout(()=>setPieces(null),maxEnd+150);
+    return()=>{ clearTimeout(t); anims.forEach(a=>{ try{a.cancel();}catch{} }); };
+  },[pieces]);
+  if(!pieces) return null;
+  return(
+    <div ref={ref} aria-hidden="true" style={{position:"fixed",inset:0,zIndex:60,pointerEvents:"none",overflow:"hidden"}}>
+      {pieces.map((p,i)=><span key={i} style={{position:"absolute",top:0,left:`${p.left}%`,
+        width:p.round?p.size*0.85:p.size,height:p.round?p.size*0.85:p.size*1.6,background:p.color,
+        borderRadius:p.round?"50%":"1px",boxShadow:"0 0 4px rgba(245,158,11,0.45)",opacity:0}}/>)}
+    </div>
+  );
+}
 // Só marca as posições SHORT — long é o normal, não precisa de badge.
 // Círculo com seta diagonal para baixo (aposta na queda), junto ao ticker.
 function SideBadge({side}){
@@ -355,6 +478,34 @@ const K={MYNAME:"ci_myname",MYPIN:"ci_mypin"};
 /* ============================================================================
    ROOT
    ============================================================================ */
+/* ---- Routing por hash: URL = fonte de verdade (back/forward + links partilháveis) ----
+   Os links usam o SLUG do nome (ex.: #p/tiago-almeida), resolvido AO VIVO a partir da lista
+   de membros — vale para os atuais e os futuros. Aceita ainda links antigos por id (UUID).
+   O duelo separa os dois slugs por "~". */
+const keyToId=(k)=>k?String(k).replace(/^pf_/,""):"";
+const slugify=(s)=>norm(s).replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
+function findBySlug(list,slug){ return slug?(list||[]).find(p=>slugify(p.name)===slug||keyToId(p.key)===slug)||null:null; }
+function routeToHash(r){
+  if(r.page==="detail"&&r.detailSlug) return `#p/${r.detailSlug}`;
+  if(r.page==="duel"&&r.duelSlugs?.[0]&&r.duelSlugs?.[1]) return `#duel/${r.duelSlugs[0]}~${r.duelSlugs[1]}`;
+  if(r.page==="ranking") return "#ranking";
+  if(r.page==="create")  return "#criar";
+  if(r.page==="confirm") return "#confirmar";
+  if(r.page==="admin")   return "#admin";
+  return "#"; // home
+}
+function parseHash(){
+  const h=(typeof window!=="undefined"?window.location.hash:"").replace(/^#/,"");
+  if(!h) return {page:"home"};
+  if(h==="ranking")  return {page:"ranking"};
+  if(h==="criar")    return {page:"create"};
+  if(h==="confirmar")return {page:"confirm"};
+  if(h==="admin")    return {page:"admin"};
+  const mp=h.match(/^p\/(.+)$/);          if(mp) return {page:"detail",detailSlug:decodeURIComponent(mp[1])};
+  const md=h.match(/^duel\/(.+)~(.+)$/);  if(md) return {page:"duel",duelSlugs:[decodeURIComponent(md[1]),decodeURIComponent(md[2])]};
+  return {page:"home"};
+}
+
 export default function App(){
   const [page,setPage]=useState("home"); // home|create|confirm|ranking|detail|admin
   const [loading,setLoading]=useState(true);
@@ -366,11 +517,31 @@ export default function App(){
   const [livePrices,setLivePrices]=useState({});
   const [dayChange,setDayChange]=useState({}); // variação do dia por ticker
   const [pricesLoading,setPricesLoading]=useState(false);
-  const [detailKey,setDetailKey]=useState(null);
-  const [duelKeys,setDuelKeys]=useState(null); // [keyA, keyB] para o duelo 1v1
+  const [detailSlug,setDetailSlug]=useState(null);
+  const [duelSlugs,setDuelSlugs]=useState(null); // [slugA, slugB] para o duelo 1v1
   const [toast,setToast]=useState(null);
 
   const showToast=useCallback((msg,kind="ok")=>{ setToast({msg,kind}); setTimeout(()=>setToast(null),3500); },[]);
+
+  // Routing: aplica o hash ao estado; navegar empurra o hash (back/forward funciona).
+  const applyRoute=useCallback(()=>{
+    const r=parseHash();
+    setPage(r.page);
+    setDetailSlug(r.detailSlug??null);
+    setDuelSlugs(r.duelSlugs??null);
+  },[]);
+  const goRoute=useCallback((r)=>{
+    if(typeof window!=="undefined"){
+      const hash=routeToHash(r);
+      const url=(hash&&hash!=="#")?hash:(window.location.pathname+window.location.search);
+      window.history.pushState(null,"",url);
+    }
+    applyRoute();
+  },[applyRoute]);
+  const slugForKey=useCallback((key)=>{ const pf=portfolios.find(p=>p.key===key); return pf?(slugify(pf.name)||keyToId(key)):keyToId(key); },[portfolios]);
+  const nav=useCallback((p)=>goRoute({page:p}),[goRoute]);
+  const openDetail=useCallback((k)=>goRoute({page:"detail",detailSlug:slugForKey(k)}),[goRoute,slugForKey]);
+  const openDuel=useCallback((a,b)=>goRoute({page:"duel",duelSlugs:[slugForKey(a),slugForKey(b)]}),[goRoute,slugForKey]);
 
   const refreshLivePrices=useCallback(async(pfs)=>{
     // Inclui "SPY" para o benchmark (preço ao vivo do S&P 500 agora).
@@ -469,22 +640,23 @@ export default function App(){
 
   useEffect(()=>{ load(); },[load]);
   // Ao mudar de ecrã (ou de portefólio aberto), começa no topo do scroll.
-  useEffect(()=>{ if(typeof window!=="undefined") window.scrollTo(0,0); },[page,detailKey,duelKeys]);
+  useEffect(()=>{ if(typeof window!=="undefined") window.scrollTo(0,0); },[page,detailSlug,duelSlugs]);
 
-  // Entrada discreta para a área de admin: abrir a app com #admin no URL
-  // (ex.: localhost:3000/#admin). Continua protegida pela palavra-passe.
+  // Routing por hash: aplica a rota no arranque e em back/forward (e edição manual do hash).
+  // Inclui a entrada de admin (#admin) e os links partilháveis (#p/<id>, #duel/<a>~<b>).
   useEffect(()=>{
-    const applyHash=()=>{ if(window.location.hash==="#admin") setPage("admin"); };
-    applyHash();
-    window.addEventListener("hashchange",applyHash);
-    return()=>window.removeEventListener("hashchange",applyHash);
-  },[]);
+    applyRoute();
+    window.addEventListener("popstate",applyRoute);
+    window.addEventListener("hashchange",applyRoute);
+    return()=>{ window.removeEventListener("popstate",applyRoute); window.removeEventListener("hashchange",applyRoute); };
+  },[applyRoute]);
 
   const myPf=useMemo(()=>{
     if(!myName) return null;
     const n=norm(myName);
     return portfolios.find(p=>p.normName===n)||null;
   },[myName,portfolios]);
+  const openMyPortfolio=useCallback(()=>{ if(myPf?.key) openDetail(myPf.key); else nav("detail"); },[myPf,openDetail,nav]);
 
   const submitted=hasSubmitted;
 
@@ -542,7 +714,7 @@ export default function App(){
     setMyName(trimmedName);
     await load();
     setHasSubmitted(true);
-    setPage("ranking");
+    nav("ranking");
     return{ok:true};
   }
 
@@ -566,11 +738,9 @@ export default function App(){
     setMyName(data.name||name);
     await load(); // recarrega já com o código guardado → junta as tuas ações (sem 2º pedido)
     setHasSubmitted(true);
-    setPage("ranking");
+    nav("ranking");
     return{ok:true};
   }
-
-  const nav=(p)=>setPage(p);
 
   if(loading) return(
     <div style={{minHeight:"100vh",
@@ -585,7 +755,7 @@ export default function App(){
 
   // Lugar (rank) do portefólio em detalhe — ao vivo, dentro do grupo (demo/oficial).
   // 0 = sem classificação ("em espera"). Usado para o tema da página e pelo <Detail>.
-  const detailPf=portfolios.find(p=>p.key===detailKey)||myPf;
+  const detailPf=findBySlug(portfolios,detailSlug)||myPf;
   const detailRank=(()=>{
     if(!detailPf) return 0;
     if(detailPf.official&&isPreLaunch(settings)) return 0;
@@ -596,14 +766,14 @@ export default function App(){
   const detailIsOwn=detailPf?detailPf.normName===norm(myName):false;
 
   const sh=(children)=><Shell page={page} detailRank={detailRank} detailIsOwn={detailIsOwn} nav={nav} submitted={submitted} toast={toast}
-    onMyPortfolio={()=>{ setDetailKey(myPf?.key||null); nav("detail"); }}
-    myPortfolioActive={page==="detail" && (!detailKey || detailKey===myPf?.key)}>{children}</Shell>;
+    onMyPortfolio={openMyPortfolio}
+    myPortfolioActive={page==="detail" && !!detailPf && !!myPf && detailPf.key===myPf.key}>{children}</Shell>;
 
-  if(page==="home")   return sh(<Home nav={nav} submitted={submitted} count={portfolios.length} settings={settings} ranking={ranking} livePrices={livePrices} onMyPortfolio={()=>{ setDetailKey(myPf?.key||null); nav("detail"); }}/>);
+  if(page==="home")   return sh(<Home nav={nav} submitted={submitted} count={portfolios.length} settings={settings} ranking={ranking} livePrices={livePrices} onMyPortfolio={openMyPortfolio}/>);
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
-  if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} preLaunch={isPreLaunch(settings)} settings={settings} onSelect={(k)=>{setDetailKey(k);nav("detail");}} onCompare={(a,b)=>{setDuelKeys([a,b]);nav("duel");}}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
-  if(page==="duel")   return sh(submitted?<Duel a={ranking.find(p=>p.key===duelKeys?.[0])} b={ranking.find(p=>p.key===duelKeys?.[1])} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} preLaunch={isPreLaunch(settings)} settings={settings} onSelect={openDetail} onCompare={openDuel}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} myNorm={norm(myName)} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
   return null;
@@ -637,6 +807,7 @@ function Shell({children,page,detailRank,detailIsOwn,nav,submitted,toast,onMyPor
         <div style={{position:"absolute",top:12,right:14}}><MarketStatus/></div>
       </header>
       <main>{children}</main>
+      <BackToTop maxWidth={page==="ranking"?900:page==="detail"?1320:null}/>
       {toast&&(
         <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:9999,
           width:"max-content",maxWidth:"min(92vw,440px)",
@@ -1999,6 +2170,7 @@ function OwnLockedGate({pf,nav,reload,showToast}){
 function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competitionStarted,gameStartDate,reload,showToast}){
   // Coluna de rentabilidade da lista: "total" (desde a compra) ↔ "day" (diário).
   const [retMode,setRetMode]=useState("total");
+  const rail=useBackRail();
   if(!pf) return(
     <div style={{textAlign:"center",padding:80,color:"#4b5563"}}>
       Portefólio não encontrado. <button onClick={()=>nav("ranking")} style={{color:"#22c55e",background:"none",border:"none",cursor:"pointer"}}>Voltar</button>
@@ -2039,20 +2211,24 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competiti
   const GLASS={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
   return(
     <div style={{maxWidth:1320,margin:"0 auto",padding:"40px 20px 80px"}}>
+      {rail.active&&<LeftBackRail gap={rail.gap} onBack={()=>nav("ranking")}/>}
+      {rank===1&&<Confetti key={pf.key} intense={!!myNorm && pf.normName===myNorm}/>}
       <style>{`.cdiDetail{display:grid;gap:16px;grid-template-columns:1fr}@media(min-width:1000px){.cdiDetail{grid-template-columns:minmax(0,1fr) minmax(0,1.12fr);align-items:start}}`}</style>
+      {!rail.active&&(
       <button onClick={()=>nav("ranking")} className="backLink"
         style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:14,marginBottom:24,
           display:"flex",alignItems:"center",gap:6,padding:0}}>
-        <span className="backArrow">←</span> Voltar ao ranking
+        <span className="backArrow">←</span> Ranking
       </button>
+      )}
 
       <div className="cdiDetail">
       <div>{/* coluna esquerda: portefólio */}
       <div style={{position:"relative",marginBottom:16}}>
         {rank===1&&(
           <img src="/cdi-trophy.png" alt="Troféu de 1º lugar"
-            style={{position:"absolute",top:"clamp(-118px,-15vw,-80px)",right:"clamp(10px,4vw,32px)",
-              width:"clamp(72px,14vw,104px)",height:"auto",zIndex:5,pointerEvents:"none",
+            style={{position:"absolute",top:"clamp(-66px,-7vw,-54px)",left:"50%",transform:"translateX(-50%)",
+              width:"clamp(60px,7vw,72px)",height:"auto",zIndex:5,pointerEvents:"none",
               filter:"drop-shadow(0 12px 22px rgba(0,0,0,0.5)) drop-shadow(0 0 20px rgba(245,158,11,0.4))"}}/>
         )}
       <TiltCard style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:acc?acc.border:"1px solid rgba(255,255,255,0.10)",boxShadow:acc?`${acc.glow}, 0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.16)`:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28}}>
