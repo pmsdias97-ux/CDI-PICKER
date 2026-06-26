@@ -574,12 +574,12 @@ function StockLogo({ticker,size=28}){
 }
 
 /* ---- Shared game settings (Supabase) ------------------------------------- */
-const DEFAULT_SETTINGS={submissionsOpen:true,gameStartDate:"",gameEndDate:"",competitionStarted:false,baselinesLockedAt:null,prankJose:false};
+const DEFAULT_SETTINGS={submissionsOpen:true,gameStartDate:"",gameEndDate:"",competitionStarted:false,baselinesLockedAt:null};
 async function loadGameSettings(){
   try{
     const { data, error }=await supabase
       .from("game_settings")
-      .select("submissions_open,game_start_date,game_end_date,competition_started,baselines_locked_at,prank_jose")
+      .select("submissions_open,game_start_date,game_end_date,competition_started,baselines_locked_at")
       .eq("id",1)
       .maybeSingle();
     if(error||!data) return null;
@@ -589,7 +589,6 @@ async function loadGameSettings(){
       gameEndDate:data.game_end_date||"",
       competitionStarted:data.competition_started===true,
       baselinesLockedAt:data.baselines_locked_at||null,
-      prankJose:data.prank_jose===true,
     };
   }catch{ return null; }
 }
@@ -657,9 +656,6 @@ const K={MYNAME:"ci_myname",MYPIN:"ci_mypin"};
    O duelo separa os dois slugs por "~". */
 const keyToId=(k)=>k?String(k).replace(/^pf_/,""):"";
 const slugify=(s)=>norm(s).replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
-// Reconhece o "José Pinho" em qualquer variante (ex.: "Pinho", "J. Pinho", "zé pinho",
-// "José Pinho") — basta o apelido "pinho" aparecer. Só atua com a piada ARMADA, logo é seguro.
-const isJosePinho=(s)=>norm(s).replace(/[^a-z0-9 ]/g," ").split(/\s+/).includes("pinho");
 function findBySlug(list,slug){ return slug?(list||[]).find(p=>slugify(p.name)===slug||keyToId(p.key)===slug)||null:null; }
 function routeToHash(r){
   if(r.page==="detail"&&r.detailSlug) return `#p/${r.detailSlug}`;
@@ -1360,8 +1356,6 @@ function Create({settings,doSubmit,onDone,showToast}){
   const [addingManual,setAddingManual]=useState(false);
   const [shortMode,setShortMode]=useState(false); // próxima posição: false=long, true=short
   const [checkingName,setCheckingName]=useState(false);
-  const [egg,setEgg]=useState(null); // 🥚 easter egg "José Pinho" (stream ao vivo): null | 1 | 2
-  const eggDone=useRef(false);
   const shortCount=picked.filter(p=>p.side==="short").length;
 
   // Valida o nome cedo (passo 1) para o utilizador não escolher 8 ações em vão.
@@ -1369,14 +1363,6 @@ function Create({settings,doSubmit,onDone,showToast}){
     if(checkingName) return;
     const nm=name.trim();
     if(nm.length<2||!/^\d{3}$/.test(pin)) return;
-    // 🥚 Easter egg do José Pinho (stream ao vivo): só dispara se ARMADO no admin (para os
-    // ensaios não estragarem a surpresa). Lê a flag fresca no momento → o admin pode armar
-    // sem o José recarregar a página.
-    if(!eggDone.current && isJosePinho(nm)){
-      let armed=settings?.prankJose===true;
-      try{ const {data}=await supabase.from("game_settings").select("prank_jose").eq("id",1).maybeSingle(); if(data) armed=data.prank_jose===true; }catch{}
-      if(armed){ setEgg(1); return; }
-    }
     setCheckingName(true);
     try{
       const r=await fetch("/api/portfolio/check-name",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:nm})});
@@ -1389,8 +1375,6 @@ function Create({settings,doSubmit,onDone,showToast}){
     finally{ setCheckingName(false); }
     setStep(2);
   };
-  // Depois do gag (clicar em continuar), segue o fluxo normal.
-  const eggContinue=()=>{ eggDone.current=true; setEgg(null); proceedToStocks(); };
 
   useEffect(()=>{
     const q=query.trim();
@@ -1485,42 +1469,6 @@ function Create({settings,doSubmit,onDone,showToast}){
         <div style={{flex:1,maxWidth:80,height:1,background:step>1?"#22c55e":"#1f2937"}}/>
         <StepDot n={2} active={step===2} done={false} label="Escolher ações"/>
       </div>
-
-      {/* 🥚 Easter egg do José Pinho (stream ao vivo) */}
-      {egg&&(
-        <div style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(4px)",WebkitBackdropFilter:"blur(4px)",
-          display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-          <div style={{maxWidth:460,width:"100%",textAlign:"center",borderRadius:18,padding:"34px 28px",
-            background:"linear-gradient(180deg,#10243a,#0b1828)",border:"1px solid rgba(250,204,21,0.4)",
-            boxShadow:"0 20px 60px rgba(0,0,0,0.6), 0 0 44px rgba(245,158,11,0.2)"}}>
-            {egg===1?(
-              <>
-                <div style={{fontSize:42,marginBottom:12}}>🤔</div>
-                <p style={{fontSize:20,fontWeight:700,lineHeight:1.55,margin:"0 0 26px",color:"#e2e8f0"}}>
-                  Será que quis dizer <span style={{color:"#facc15"}}>Alex Karp</span>?<br/>
-                  Ou <span style={{color:"#facc15"}}>Xana Tradições</span>? 🤔
-                </p>
-                <button onClick={()=>setEgg(2)}
-                  style={{background:"linear-gradient(180deg,#fcd34d,#f59e0b)",color:"#3a2400",border:"none",
-                    borderRadius:12,padding:"13px 26px",fontSize:15,fontWeight:800,cursor:"pointer",
-                    boxShadow:"0 6px 20px rgba(245,158,11,0.35)"}}>Fechar e avançar</button>
-              </>
-            ):(
-              <>
-                <div style={{fontSize:46,marginBottom:14}}>👍🔔</div>
-                <p style={{fontSize:24,fontWeight:900,lineHeight:1.35,letterSpacing:"0.4px",margin:"0 0 28px",
-                  color:"#facc15",textTransform:"uppercase",textShadow:"0 0 18px rgba(245,158,11,0.45)"}}>
-                  Bota like, subscreve o canal, ativa o sininho!
-                </p>
-                <button onClick={eggContinue}
-                  style={{background:"linear-gradient(180deg,#34d36a,#22c55e)",color:"#062b14",border:"none",
-                    borderRadius:12,padding:"13px 28px",fontSize:15,fontWeight:800,cursor:"pointer",
-                    boxShadow:"0 6px 20px rgba(34,197,94,0.35)"}}>Lezzzz goooo 🚀</button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
       {submClosed&&(
         <div style={{background:"#1a1200",border:"1px solid rgba(251,191,36,0.3)",borderRadius:12,padding:"12px 16px",
@@ -2463,13 +2411,10 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competiti
             mid={rank===1?"rgba(245,158,11,0.18)":rank===2?"rgba(226,232,240,0.16)":"rgba(217,119,6,0.18)"}/>
         )}
         {rank===1&&(
-          <Float cx amp={7} duration={4600}
-            style={{position:"absolute",top:"clamp(-66px,-7vw,-54px)",left:"50%",width:"clamp(60px,7vw,72px)",zIndex:5}}>
-            <GoldGlow src="/cdi-trophy.png" alt="Troféu de 1º lugar" maskSrc="/cdi-trophy.png" glow={26}
-              baseFilter="drop-shadow(0 12px 22px rgba(0,0,0,0.5)) drop-shadow(0 0 20px rgba(245,158,11,0.4))"
-              wrapStyle={{display:"block",width:"100%"}}
-              imgStyle={{width:"100%",height:"auto"}}/>
-          </Float>
+          <GoldGlow src="/cdi-trophy.png" alt="Troféu de 1º lugar" maskSrc="/cdi-trophy.png" glow={26}
+            baseFilter="drop-shadow(0 12px 22px rgba(0,0,0,0.5)) drop-shadow(0 0 20px rgba(245,158,11,0.4))"
+            wrapStyle={{position:"absolute",top:"clamp(-66px,-7vw,-54px)",left:"50%",transform:"translateX(-50%)",width:"clamp(60px,7vw,72px)",zIndex:5}}
+            imgStyle={{width:"100%",height:"auto"}}/>
         )}
       <TiltCard style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:acc?acc.border:"1px solid rgba(255,255,255,0.10)",boxShadow:acc?`${acc.glow}, 0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.16)`:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,zIndex:1}}>
         <div style={{textAlign:"center"}}>
@@ -2966,17 +2911,6 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
       showToast(res.ok&&data?.ok?"Definições guardadas.":(data?.error||"Falha ao guardar."),res.ok&&data?.ok?"ok":"error");
     }catch{ showToast("Falha de ligação.","error"); }
   }
-  // Liberta o nome "José Pinho" (apaga portefólios de teste com esse nome) para ele submeter ao vivo.
-  async function freeJose(){
-    if(!confirm("Libertar o nome \"José Pinho\"?\n\nApaga qualquer portefólio de TESTE com esse nome (e variantes), para ele poder submeter ao vivo.")) return;
-    try{
-      const res=await fetch("/api/admin/free-jose",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
-      const data=await res.json();
-      if(!res.ok||!data?.ok){ showToast(data?.error||"Não foi possível libertar o nome.","error"); return; }
-      await reload();
-      showToast(data.freed>0?`Nome libertado (${data.portfolios} portefólio(s) removido(s)).`:"O nome já estava livre.");
-    }catch{ showToast("Falha de ligação.","error"); }
-  }
   async function delPf(p){
     if(!confirm(`Eliminar o portefólio de "${p.name}"?`)) return;
     try{
@@ -3170,21 +3104,6 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
                   color:(settings.competitionStarted||!settings.baselinesLockedAt)?"#64748b":"#062b14",border:"1px solid rgba(255,255,255,0.2)",borderRadius:10,
                   padding:"11px 20px",fontSize:14,fontWeight:700,cursor:(settings.competitionStarted||!settings.baselinesLockedAt)?"not-allowed":"pointer"}}>
                 🚀 Arrancar competição
-              </button>
-            </div>
-          </div>
-          <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,gridColumn:"1/-1"}}>
-            <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-              <button onClick={()=>saveSt({...settings,prankJose:!settings.prankJose})}
-                style={{background:settings.prankJose?"linear-gradient(180deg,#f87171,#ef4444)":"linear-gradient(180deg,#fcd34d,#f59e0b)",
-                  color:settings.prankJose?"#2b0a0a":"#3a2400",border:"1px solid rgba(255,255,255,0.2)",borderRadius:10,
-                  padding:"11px 20px",fontSize:14,fontWeight:800,cursor:"pointer"}}>
-                {settings.prankJose?"Desarmar piada":"🥚 Explodir com tudo"}
-              </button>
-              <button onClick={freeJose}
-                style={{background:"linear-gradient(180deg,#38bdf8,#0ea5e9)",color:"#04222e",border:"1px solid rgba(255,255,255,0.2)",borderRadius:10,
-                  padding:"11px 20px",fontSize:14,fontWeight:800,cursor:"pointer"}}>
-                🔓 Libertar nome (José Pinho)
               </button>
             </div>
           </div>
