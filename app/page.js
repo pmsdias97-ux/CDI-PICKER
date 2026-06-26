@@ -1404,7 +1404,7 @@ function LockedGate({nav,recoverByName,showToast}){
       <div style={{textAlign:"center",background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:20,padding:48}}>
         <div style={{fontSize:40,marginBottom:16}}>🔒</div>
         <h1 style={{fontSize:22,fontWeight:700,marginBottom:12}}>Área bloqueada</h1>
-        <p style={{fontSize:14,color:"#6b7280",marginBottom:28,lineHeight:1.6}}>
+        <p style={{fontSize:14,color:"#94a3b8",marginBottom:28,lineHeight:1.6}}>
           Submete o teu portefólio de 8 ações para entrares no jogo.<br/>
           Os portefólios dos outros membros só ficam visíveis quando a competição começar,<br/>
           a 1 de julho de 2026.
@@ -1412,7 +1412,7 @@ function LockedGate({nav,recoverByName,showToast}){
         <Btn onClick={()=>nav("create")} primary>Criar o meu portefólio</Btn>
 
         <div style={{marginTop:32,paddingTop:24,borderTop:"1px solid #1f2937"}}>
-          <p style={{fontSize:13,color:"#6b7280",marginBottom:12,lineHeight:1.6}}>
+          <p style={{fontSize:13,color:"#94a3b8",marginBottom:12,lineHeight:1.6}}>
             Já submeteste o teu portefólio?<br/>
             Insere o teu nome de registo e o código de 3 dígitos para voltares a aceder.
           </p>
@@ -2048,7 +2048,14 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competiti
 
       <div className="cdiDetail">
       <div>{/* coluna esquerda: portefólio */}
-      <TiltCard style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:acc?acc.border:"1px solid rgba(255,255,255,0.10)",boxShadow:acc?`${acc.glow}, 0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.16)`:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,marginBottom:16}}>
+      <div style={{position:"relative",marginBottom:16}}>
+        {rank===1&&(
+          <img src="/cdi-trophy.png" alt="Troféu de 1º lugar"
+            style={{position:"absolute",top:"clamp(-118px,-15vw,-80px)",right:"clamp(10px,4vw,32px)",
+              width:"clamp(72px,14vw,104px)",height:"auto",zIndex:5,pointerEvents:"none",
+              filter:"drop-shadow(0 12px 22px rgba(0,0,0,0.5)) drop-shadow(0 0 20px rgba(245,158,11,0.4))"}}/>
+        )}
+      <TiltCard style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:acc?acc.border:"1px solid rgba(255,255,255,0.10)",boxShadow:acc?`${acc.glow}, 0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.16)`:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28}}>
         <div style={{textAlign:"center"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14,marginBottom:16,minWidth:0}}>
             {rank>0&&(rank<=3
@@ -2074,6 +2081,7 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competiti
           <p style={{fontSize:13,color:"#94a3b8",margin:"16px 0 0"}}>Submetido a {dt(pf.submittedAt)}</p>
         </div>
       </TiltCard>
+      </div>
 
       <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
         <div style={{display:"grid",alignItems:"center",gridTemplateColumns:"1.6fr 1fr 1fr 1.4fr",
