@@ -64,6 +64,11 @@ body {
 @keyframes rankShineSweep { 0% { left: -160%; } 55%, 100% { left: 160%; } }
 @media (prefers-reduced-motion: reduce) { .rankShine::after { animation: none; } }
 
+/* Respiração subtil dos badges do pódio (Top 3) — pulsa o tamanho/halo lentamente */
+@keyframes cdiRankBreathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+.rankBreathe { animation: cdiRankBreathe 3.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .rankBreathe { animation: none; } }
+
 /* Gráficos (Recharts): sem caixa de foco/realce ao clicar ou tocar */
 .recharts-wrapper,
 .recharts-wrapper *,

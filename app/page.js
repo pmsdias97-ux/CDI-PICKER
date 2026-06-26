@@ -469,6 +469,81 @@ function UpdateBanner(){
     </div>
   );
 }
+
+// Glow ambiente a respirar/derivar LENTAMENTE (Web Animations API, loop infinito; respeita
+// prefers-reduced-motion). BreatheGlow = só a camada de luz; GlowBehind = luz + conteúdo por cima.
+function BreatheGlow({color="rgba(64,170,205,0.5)",mid="rgba(56,189,248,0.16)",inset="-14% -10%",blur=46,base=0.45,duration=22000}){
+  const ref=useRef(null);
+  useEffect(()=>{
+    let reduce=false; try{ reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches; }catch{}
+    const el=ref.current; if(!el||reduce||!el.animate) return;
+    const anim=el.animate([
+      {transform:"translate3d(-5%,-4%,0) scale(1)",opacity:base*0.9},
+      {transform:"translate3d(6%,4%,0) scale(1.14)",opacity:base*1.32},
+      {transform:"translate3d(-2%,6%,0) scale(1.05)",opacity:base*1.02},
+      {transform:"translate3d(-5%,-4%,0) scale(1)",opacity:base*0.9},
+    ],{duration,easing:"ease-in-out",iterations:Infinity});
+    return()=>{ try{anim.cancel();}catch{} };
+  },[]);
+  return <div ref={ref} aria-hidden="true" style={{position:"absolute",inset,zIndex:0,pointerEvents:"none",
+    background:`radial-gradient(closest-side, ${color}, ${mid} 55%, transparent 76%)`,filter:`blur(${blur}px)`,opacity:base,willChange:"transform,opacity"}}/>;
+}
+function GlowBehind({children,color,mid}){
+  return(
+    <div style={{position:"relative"}}>
+      <BreatheGlow color={color} mid={mid}/>
+      <div style={{position:"relative",zIndex:1}}>{children}</div>
+    </div>
+  );
+}
+// Levitação lenta (sobe/desce). cx=true mantém o centramento horizontal translateX(-50%).
+function Float({children,style,cx=false,amp=6,duration=4200}){
+  const ref=useRef(null);
+  useEffect(()=>{
+    let reduce=false; try{ reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches; }catch{}
+    const el=ref.current; if(!el||reduce||!el.animate) return;
+    const x=cx?"-50%":"0px";
+    const anim=el.animate([
+      {transform:`translate(${x}, 0px)`},
+      {transform:`translate(${x}, -${amp}px)`},
+      {transform:`translate(${x}, 0px)`},
+    ],{duration,easing:"ease-in-out",iterations:Infinity});
+    return()=>{ try{anim.cancel();}catch{} };
+  },[]);
+  return <div ref={ref} style={{...style,transform:cx?"translateX(-50%)":(style&&style.transform)}}>{children}</div>;
+}
+
+// Aurora de fundo: 2 manchas de luz MUITO subtis a derivar devagar atrás de toda a app.
+// Fixa, por trás do conteúdo. Respeita prefers-reduced-motion.
+function Aurora(){
+  const r1=useRef(null), r2=useRef(null);
+  useEffect(()=>{
+    let reduce=false; try{ reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches; }catch{}
+    if(reduce) return;
+    const mk=(el,frames,dur)=>el&&el.animate?el.animate(frames,{duration:dur,easing:"ease-in-out",iterations:Infinity}):null;
+    const a1=mk(r1.current,[
+      {transform:"translate3d(-8%,-6%,0) scale(1)"},
+      {transform:"translate3d(10%,8%,0) scale(1.25)"},
+      {transform:"translate3d(-4%,10%,0) scale(1.1)"},
+      {transform:"translate3d(-8%,-6%,0) scale(1)"},
+    ],38000);
+    const a2=mk(r2.current,[
+      {transform:"translate3d(8%,6%,0) scale(1.1)"},
+      {transform:"translate3d(-10%,-8%,0) scale(1)"},
+      {transform:"translate3d(6%,-10%,0) scale(1.2)"},
+      {transform:"translate3d(8%,6%,0) scale(1.1)"},
+    ],46000);
+    return()=>{ try{ a1&&a1.cancel(); a2&&a2.cancel(); }catch{} };
+  },[]);
+  return(
+    <div aria-hidden="true" style={{position:"fixed",inset:0,zIndex:0,pointerEvents:"none",overflow:"hidden"}}>
+      <div ref={r1} style={{position:"absolute",top:"-12%",left:"-6%",width:"62vw",height:"62vw",borderRadius:"50%",
+        background:"radial-gradient(closest-side, rgba(56,189,248,0.10), transparent 70%)",filter:"blur(64px)",willChange:"transform"}}/>
+      <div ref={r2} style={{position:"absolute",bottom:"-16%",right:"-8%",width:"56vw",height:"56vw",borderRadius:"50%",
+        background:"radial-gradient(closest-side, rgba(45,212,191,0.09), transparent 70%)",filter:"blur(64px)",willChange:"transform"}}/>
+    </div>
+  );
+}
 // Só marca as posições SHORT — long é o normal, não precisa de badge.
 // Círculo com seta diagonal para baixo (aposta na queda), junto ao ticker.
 function SideBadge({side}){
@@ -902,6 +977,7 @@ function Shell({children,page,detailRank,detailIsOwn,nav,submitted,toast,onMyPor
       backgroundColor:theme.color,transition:"background-color .6s ease",
       color:"#e2e8f0",fontFamily:"var(--font-app), system-ui, -apple-system, sans-serif",overflowX:"hidden"}}>
       <BackgroundFade bg={theme.bg}/>
+      <Aurora/>
       <style>{`@media(max-width:640px){.navWide{display:none}}.cdiNav{justify-content:flex-start}@media(min-width:641px){.cdiNav{justify-content:center}}`}</style>
       <header style={{position:"sticky",top:0,zIndex:50,padding:"12px 14px"}}>
         <Nav page={page} nav={nav} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} />
@@ -1146,9 +1222,14 @@ function Home({nav,submitted,count,settings,ranking,livePrices,onMyPortfolio}){
     <div>
       {/* Hero */}
       <section style={{textAlign:"center",padding:"100px 24px 80px",maxWidth:780,margin:"0 auto"}}>
-        <GoldGlow src="/logo.png" alt="Conversas de Investidores" maskSrc="/logo.png" glow={20}
-          wrapStyle={{margin:"0 auto 32px"}}
-          imgStyle={{width:"clamp(120px,18vw,180px)",height:"auto"}}/>
+        <span style={{position:"relative",display:"inline-block",margin:"0 auto 32px"}}>
+          <BreatheGlow color="rgba(245,200,80,0.5)" mid="rgba(245,158,11,0.16)" inset="-34% -16%" base={0.4} duration={9000}/>
+          <span style={{position:"relative",zIndex:1,display:"inline-block"}}>
+            <GoldGlow src="/logo.png" alt="Conversas de Investidores" maskSrc="/logo.png" glow={20}
+              wrapStyle={{display:"block"}}
+              imgStyle={{width:"clamp(120px,18vw,180px)",height:"auto"}}/>
+          </span>
+        </span>
         <h1 style={{fontSize:"clamp(40px,6vw,72px)",fontWeight:800,lineHeight:1.1,letterSpacing:"-2px",margin:"0 0 24px"}}>
           Conversas de{" "}
           <span style={{color:"#22c55e"}}>Investidores</span>
@@ -1191,7 +1272,7 @@ function Home({nav,submitted,count,settings,ranking,livePrices,onMyPortfolio}){
               <span style={{width:7,height:7,borderRadius:"50%",background:"#ef4444",display:"inline-block"}}/>AO VIVO
             </span>
           </div>
-          <WinnersGrid top={ranking.filter(p=>Number.isFinite(p.total)).slice(0,5)} livePrices={livePrices} nav={nav}/>
+          <GlowBehind color="rgba(245,200,80,0.42)" mid="rgba(245,158,11,0.14)"><WinnersGrid top={ranking.filter(p=>Number.isFinite(p.total)).slice(0,5)} livePrices={livePrices} nav={nav}/></GlowBehind>
         </section>
       )}
 
@@ -1992,7 +2073,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
             onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
             <span style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
               {i<3
-                ? <span className="rankShine" style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0,...RANK_BADGE[i+1],"--shine-delay":`${i*1.2}s`}}>{i+1}</span>
+                ? <span className="rankShine rankBreathe" style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0,...RANK_BADGE[i+1],"--shine-delay":`${i*1.2}s`}}>{i+1}</span>
                 : <span style={{fontSize:13,color:"#94a3b8",fontWeight:700}}>{i+1}</span>}
             </span>
             <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
@@ -2076,8 +2157,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
           {demos.length>0&&(
             <div style={{marginBottom:32}}>
               {sectionTitle("Demo")}
-              {tableFor(demos)}
-              <SeasonRace ranking={ranking} preLaunch={preLaunch} myNorm={myNorm} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""}/>
+              <GlowBehind>{tableFor(demos)}</GlowBehind>
+              <GlowBehind><SeasonRace ranking={ranking} preLaunch={preLaunch} myNorm={myNorm} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""}/></GlowBehind>
             </div>
           )}
           <div>
@@ -2089,7 +2170,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
               </div>
             </div>
             {officials.length>0
-              ? (preLaunch?pendingList([...officials].sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||"")))):tableFor(officials))
+              ? (preLaunch?pendingList([...officials].sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||"")))):<GlowBehind>{tableFor(officials)}</GlowBehind>)
               : <div style={{background:"rgba(255,255,255,0.04)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:16,
                   padding:40,textAlign:"center",color:"#64748b",fontSize:14}}>
                   Ainda sem inscrições. Os portefólios submetidos a partir de agora entram aqui — admissão oficial a 1 de julho.
@@ -2376,17 +2457,25 @@ function Detail({pf,rank,livePrices,dayChange,spy,nav,myNorm,preLaunch,competiti
       <div className="cdiDetail">
       <div>{/* coluna esquerda: portefólio */}
       <div style={{position:"relative",marginBottom:16}}>
-        {rank===1&&(
-          <GoldGlow src="/cdi-trophy.png" alt="Troféu de 1º lugar" maskSrc="/cdi-trophy.png" glow={26}
-            baseFilter="drop-shadow(0 12px 22px rgba(0,0,0,0.5)) drop-shadow(0 0 20px rgba(245,158,11,0.4))"
-            wrapStyle={{position:"absolute",top:"clamp(-66px,-7vw,-54px)",left:"50%",transform:"translateX(-50%)",width:"clamp(60px,7vw,72px)",zIndex:5}}
-            imgStyle={{width:"100%",height:"auto"}}/>
+        {rank>=1&&rank<=3&&(
+          <BreatheGlow inset="-16% -10%" base={0.4}
+            color={rank===1?"rgba(245,200,80,0.55)":rank===2?"rgba(203,213,225,0.5)":"rgba(217,140,60,0.55)"}
+            mid={rank===1?"rgba(245,158,11,0.18)":rank===2?"rgba(226,232,240,0.16)":"rgba(217,119,6,0.18)"}/>
         )}
-      <TiltCard style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:acc?acc.border:"1px solid rgba(255,255,255,0.10)",boxShadow:acc?`${acc.glow}, 0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.16)`:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28}}>
+        {rank===1&&(
+          <Float cx amp={7} duration={4600}
+            style={{position:"absolute",top:"clamp(-66px,-7vw,-54px)",left:"50%",width:"clamp(60px,7vw,72px)",zIndex:5}}>
+            <GoldGlow src="/cdi-trophy.png" alt="Troféu de 1º lugar" maskSrc="/cdi-trophy.png" glow={26}
+              baseFilter="drop-shadow(0 12px 22px rgba(0,0,0,0.5)) drop-shadow(0 0 20px rgba(245,158,11,0.4))"
+              wrapStyle={{display:"block",width:"100%"}}
+              imgStyle={{width:"100%",height:"auto"}}/>
+          </Float>
+        )}
+      <TiltCard style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:acc?acc.border:"1px solid rgba(255,255,255,0.10)",boxShadow:acc?`${acc.glow}, 0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.16)`:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,zIndex:1}}>
         <div style={{textAlign:"center"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14,marginBottom:16,minWidth:0}}>
             {rank>0&&(rank<=3
-              ? <span className="rankShine" style={{width:46,height:46,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+              ? <span className="rankShine rankBreathe" style={{width:46,height:46,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
                   fontSize:20,fontWeight:800,...RANK_BADGE[rank],"--shine-delay":`${(rank-1)*1.2}s`}}>{rank}</span>
               : <span style={{width:46,height:46,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
                   fontSize:18,fontWeight:800,color:"#94a3b8",border:"2px solid rgba(255,255,255,0.12)"}}>{rank}</span>
@@ -2677,6 +2766,7 @@ function Duel({a,b,livePrices,spy,nav}){
       </button>
 
       {/* Cabeçalho do duelo */}
+      <GlowBehind>
       <div style={{...GLASS,borderRadius:16,padding:"clamp(14px,4vw,28px)",marginBottom:16}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"start",gap:"clamp(6px,2.5vw,16px)"}}>
           <div style={{textAlign:"right",minWidth:0}}>
@@ -2706,6 +2796,7 @@ function Duel({a,b,livePrices,spy,nav}){
           </span>
         </div>
       </div>
+      </GlowBehind>
 
       {/* Evolução sobreposta */}
       <div style={{...GLASS,borderRadius:16,padding:24,marginBottom:16}}>
