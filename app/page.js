@@ -399,7 +399,7 @@ function BackgroundFade({bg}){
   },[bg]);
   const prune=(id)=>setLayers(prev=>{ const i=prev.findIndex(l=>l.id===id); return i<=0?prev:prev.slice(i); });
   return(
-    <div aria-hidden="true" style={{position:"fixed",inset:0,zIndex:0,pointerEvents:"none"}}>
+    <div aria-hidden="true" style={{position:"absolute",inset:0,zIndex:0,pointerEvents:"none"}}>
       {layers.map((l,i)=><BgLayer key={l.id} bg={l.bg} isNew={i>0} onDone={()=>prune(l.id)}/>)}
     </div>
   );
