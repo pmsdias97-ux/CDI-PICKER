@@ -21,6 +21,7 @@ export async function POST(request) {
     submissions_open: s.submissionsOpen !== false,
     game_start_date: s.gameStartDate || null,
     game_end_date: s.gameEndDate || null,
+    prank_jose: s.prankJose === true,
   });
   if (error) return Response.json({ error: "Falha ao guardar definições." }, { status: 500 });
   return Response.json({ ok: true });
