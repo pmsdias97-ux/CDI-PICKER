@@ -12,6 +12,7 @@ Env: CRON_SECRET (obrigatório), ATH_INGEST_URL (default = produção),
      SUPABASE_URL + SUPABASE_ANON_KEY (para o modo prices ler as shares).
 """
 import argparse
+import io
 import os
 import sys
 import time
@@ -32,9 +33,13 @@ def yf_symbol(s):
 
 
 def constituents():
-    """S&P 500 (symbol, name) via Wikipédia."""
+    """S&P 500 (symbol, name) via Wikipédia (com User-Agent de browser; sem ele dá 403)."""
     url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-    df = pd.read_html(url)[0]
+    ua = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+    resp = requests.get(url, headers={"User-Agent": ua}, timeout=30)
+    resp.raise_for_status()
+    df = pd.read_html(io.StringIO(resp.text))[0]
     out = []
     for _, row in df.iterrows():
         sym = yf_symbol(row["Symbol"])
