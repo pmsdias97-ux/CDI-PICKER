@@ -2048,7 +2048,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
               <span style={{overflowWrap:"anywhere",lineHeight:1.2}}>{p.name}</span>
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
             </span>
-            <span className="rkSpark" style={{alignSelf:"center",display:"flex",alignItems:"center",height:24,minWidth:0,overflow:"hidden"}}>
+            <span className="rkSpark">
               <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24}/>
             </span>
             <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}><Rolling text={pct(p.total)}/></span>
@@ -2096,11 +2096,15 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
   return(
     <div style={{maxWidth:900,margin:"0 auto",padding:"40px 20px 120px"}}>
       <style>{`
-        .rkRow{display:grid;grid-template-columns:40px 1fr 84px 100px 100px 92px 110px;gap:8px}
+        .rkRow{display:grid;grid-template-columns:40px 190px 1fr 100px 100px 92px 110px;gap:8px}
+        .rkSpark{display:flex;align-items:center;align-self:center;height:24px;overflow:hidden;min-width:0}
+        @media(max-width:860px){
+          .rkRow{grid-template-columns:40px 1fr 100px 100px 92px 110px}
+          .rkSpark{display:none}
+        }
         @media(max-width:640px){
           .rkRow{grid-template-columns:26px 1fr 64px 64px 56px;gap:6px}
           .rkHide{display:none}
-          .rkSpark{display:none}
         }
       `}</style>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
