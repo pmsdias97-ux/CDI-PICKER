@@ -2835,6 +2835,17 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
       showToast(res.ok&&data?.ok?"Definições guardadas.":(data?.error||"Falha ao guardar."),res.ok&&data?.ok?"ok":"error");
     }catch{ showToast("Falha de ligação.","error"); }
   }
+  // Liberta o nome "José Pinho" (apaga portefólios de teste com esse nome) para ele submeter ao vivo.
+  async function freeJose(){
+    if(!confirm("Libertar o nome \"José Pinho\"?\n\nApaga qualquer portefólio de TESTE com esse nome (e variantes), para ele poder submeter ao vivo.")) return;
+    try{
+      const res=await fetch("/api/admin/free-jose",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
+      const data=await res.json();
+      if(!res.ok||!data?.ok){ showToast(data?.error||"Não foi possível libertar o nome.","error"); return; }
+      await reload();
+      showToast(data.freed>0?`Nome libertado (${data.portfolios} portefólio(s) removido(s)).`:"O nome já estava livre.");
+    }catch{ showToast("Falha de ligação.","error"); }
+  }
   async function delPf(p){
     if(!confirm(`Eliminar o portefólio de "${p.name}"?`)) return;
     try{
@@ -3032,17 +3043,19 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
             </div>
           </div>
           <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,gridColumn:"1/-1"}}>
-            <h3 style={{fontWeight:700,marginBottom:8}}>🥚 Live — piada do "José Pinho"</h3>
-            <p style={{fontSize:13,color:"#94a3b8",margin:"0 0 14px",lineHeight:1.5}}>
-              Estado: <strong style={{color:settings.prankJose?"#4ade80":"#fbbf24"}}>{settings.prankJose?"ARMADA":"Desarmada"}</strong>.{" "}
-              Liga só minutos antes do live — assim os ensaios do José não disparam a piada. Tem efeito imediato (ele não precisa de recarregar).
-            </p>
-            <button onClick={()=>saveSt({...settings,prankJose:!settings.prankJose})}
-              style={{background:settings.prankJose?"linear-gradient(180deg,#f87171,#ef4444)":"linear-gradient(180deg,#fcd34d,#f59e0b)",
-                color:settings.prankJose?"#2b0a0a":"#3a2400",border:"1px solid rgba(255,255,255,0.2)",borderRadius:10,
-                padding:"11px 20px",fontSize:14,fontWeight:800,cursor:"pointer"}}>
-              {settings.prankJose?"Desarmar piada":"🥚 Explodir com tudo"}
-            </button>
+            <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+              <button onClick={()=>saveSt({...settings,prankJose:!settings.prankJose})}
+                style={{background:settings.prankJose?"linear-gradient(180deg,#f87171,#ef4444)":"linear-gradient(180deg,#fcd34d,#f59e0b)",
+                  color:settings.prankJose?"#2b0a0a":"#3a2400",border:"1px solid rgba(255,255,255,0.2)",borderRadius:10,
+                  padding:"11px 20px",fontSize:14,fontWeight:800,cursor:"pointer"}}>
+                {settings.prankJose?"Desarmar piada":"🥚 Explodir com tudo"}
+              </button>
+              <button onClick={freeJose}
+                style={{background:"linear-gradient(180deg,#38bdf8,#0ea5e9)",color:"#04222e",border:"1px solid rgba(255,255,255,0.2)",borderRadius:10,
+                  padding:"11px 20px",fontSize:14,fontWeight:800,cursor:"pointer"}}>
+                🔓 Libertar nome (José Pinho)
+              </button>
+            </div>
           </div>
           <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,gridColumn:"1/-1"}}>
             <button onClick={reload}
