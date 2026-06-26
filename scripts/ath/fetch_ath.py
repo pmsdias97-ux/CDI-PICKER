@@ -57,6 +57,24 @@ def _iso_utc(ts):
         return None
 
 
+def fi_get(fi, *keys):
+    """Acesso tolerante ao fast_info (suporta chave [] e atributo, vários nomes)."""
+    for k in keys:
+        try:
+            v = fi[k]
+            if v is not None:
+                return v
+        except Exception:
+            pass
+        try:
+            v = getattr(fi, k)
+            if v is not None:
+                return v
+        except Exception:
+            pass
+    return None
+
+
 def post_rows(rows):
     if not rows:
         print("[ath] nada para enviar")
@@ -79,7 +97,7 @@ def fetch_full():
     symbols = [s for s, _ in pairs]
     print(f"[ath] full: {len(symbols)} símbolos")
 
-    ath = {}  # symbol -> (ath, ath_ts_iso)
+    info = {}  # symbol -> {ath, ath_ts, price}  (tudo do histórico → fiável)
     for i in range(0, len(symbols), BATCH):
         batch = symbols[i:i + BATCH]
         try:
@@ -91,40 +109,36 @@ def fetch_full():
         for sym in batch:
             try:
                 sub = df[sym] if len(batch) > 1 else df
-                series = sub["High"].dropna() if "High" in sub.columns else sub["Close"].dropna()
-                if series.empty:
+                high = sub["High"].dropna() if "High" in sub.columns else sub["Close"].dropna()
+                close = sub["Close"].dropna()
+                if high.empty or close.empty:
                     continue
-                hi = float(series.max())
-                ath[sym] = (round(hi, 2), _iso_utc(series.idxmax()))
+                info[sym] = {"ath": round(float(high.max()), 2),
+                             "ath_ts": _iso_utc(high.idxmax()),
+                             "price": round(float(close.iloc[-1]), 2)}
             except Exception:
                 continue
+        print(f"[ath] download {min(i + BATCH, len(symbols))}/{len(symbols)} (acumulado {len(info)})")
         time.sleep(1)
 
-    # preço + marketcap + shares via fast_info
+    # marketcap + shares via fast_info (best-effort; se falhar, fica nulo mas a linha entra)
     rows = []
-    tk = yf.Tickers(" ".join(symbols))
-    for sym in symbols:
-        a = ath.get(sym)
-        if not a:
-            continue
-        price = mcap = shares = None
+    for sym, d in info.items():
+        mcap = shares = None
         try:
-            fi = tk.tickers[sym].fast_info
-            price = fi.get("last_price")
-            mcap = fi.get("market_cap")
-            shares = fi.get("shares")
+            fi = yf.Ticker(sym).fast_info
+            mcap = fi_get(fi, "market_cap", "marketCap")
+            shares = fi_get(fi, "shares", "sharesOutstanding", "implied_shares_outstanding")
         except Exception:
             pass
-        if not price:
-            continue
         rows.append({
-            "symbol": sym, "name": names.get(sym, sym),
-            "price": round(float(price), 2),
+            "symbol": sym, "name": names.get(sym, sym), "price": d["price"],
             "marketcap": float(mcap) if mcap else None,
             "shares": float(shares) if shares else None,
-            "ath": a[0], "ath_ts": a[1],
+            "ath": d["ath"], "ath_ts": d["ath_ts"],
         })
-    print(f"[ath] full: {len(rows)} linhas completas")
+    with_cap = sum(1 for r in rows if r["marketcap"])
+    print(f"[ath] full: {len(rows)} linhas (com marketcap: {with_cap})")
     post_rows(rows)
 
 
