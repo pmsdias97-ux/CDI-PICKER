@@ -1272,7 +1272,7 @@ function Home({nav,submitted,count,settings,ranking,livePrices,onMyPortfolio}){
               <span style={{width:7,height:7,borderRadius:"50%",background:"#ef4444",display:"inline-block"}}/>AO VIVO
             </span>
           </div>
-          <GlowBehind color="rgba(245,200,80,0.42)" mid="rgba(245,158,11,0.14)"><WinnersGrid top={ranking.filter(p=>Number.isFinite(p.total)).slice(0,5)} livePrices={livePrices} nav={nav}/></GlowBehind>
+          <WinnersGrid top={ranking.filter(p=>Number.isFinite(p.total)).slice(0,5)} livePrices={livePrices} nav={nav}/>
         </section>
       )}
 
