@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useId, useRef } from "react";
+import { BUILD_VERSION } from "./version";
 import { supabase } from "./supabase";
 import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } from "./lib/stocks";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
@@ -428,6 +429,44 @@ function GoldGlow({src,alt="",maskSrc,wrapStyle,imgStyle,baseFilter="",glow=16})
           mixBlendMode:"screen",opacity:hov?1:0,transition:"opacity .35s ease",...mask}}/>
       )}
     </span>
+  );
+}
+
+// Aviso de NOVA VERSÃO: compara a versão carregada (BUILD_VERSION) com a do servidor quando o
+// separador ganha foco / de 5 em 5 min. Só atua em produção (BUILD_VERSION != "dev"). Ajuda
+// quem tem o site aberto há muito tempo a recarregar para a versão mais recente.
+function UpdateBanner(){
+  const [stale,setStale]=useState(false);
+  useEffect(()=>{
+    if(BUILD_VERSION==="dev"||typeof window==="undefined") return;
+    let stop=false;
+    const check=async()=>{
+      if(stop||document.hidden) return;
+      try{
+        const r=await fetch("/api/version",{cache:"no-store"});
+        const d=await r.json();
+        if(d?.v && d.v!==BUILD_VERSION){ setStale(true); stop=true; }
+      }catch{}
+    };
+    const onVis=()=>{ if(!document.hidden) check(); };
+    document.addEventListener("visibilitychange",onVis);
+    window.addEventListener("focus",check);
+    const id=setInterval(check,5*60*1000);
+    check();
+    return()=>{ document.removeEventListener("visibilitychange",onVis); window.removeEventListener("focus",check); clearInterval(id); };
+  },[]);
+  if(!stale) return null;
+  return(
+    <div role="status" style={{position:"fixed",left:"50%",bottom:24,transform:"translateX(-50%)",zIndex:9990,
+      display:"flex",alignItems:"center",gap:12,maxWidth:"92vw",
+      background:"rgba(15,30,52,0.96)",backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",
+      border:"1px solid rgba(96,165,250,0.45)",borderRadius:999,padding:"10px 12px 10px 18px",
+      boxShadow:"0 12px 34px rgba(0,0,0,0.5)"}}>
+      <span style={{fontSize:13.5,color:"#e2e8f0",fontWeight:600,whiteSpace:"nowrap"}}>Nova versão disponível</span>
+      <button onClick={()=>window.location.reload()}
+        style={{background:"linear-gradient(180deg,#38bdf8,#0ea5e9)",color:"#04222e",border:"none",
+          borderRadius:999,padding:"8px 16px",fontSize:13.5,fontWeight:800,cursor:"pointer",whiteSpace:"nowrap"}}>Atualizar</button>
+    </div>
   );
 }
 // Só marca as posições SHORT — long é o normal, não precisa de badge.
@@ -870,6 +909,7 @@ function Shell({children,page,detailRank,detailIsOwn,nav,submitted,toast,onMyPor
       </header>
       <main style={{position:"relative",zIndex:1}}>{children}</main>
       <BackToTop maxWidth={page==="ranking"?900:page==="detail"?1320:null}/>
+      <UpdateBanner/>
       {toast&&(
         <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:9999,
           width:"max-content",maxWidth:"min(92vw,440px)",
