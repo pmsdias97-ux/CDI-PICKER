@@ -640,12 +640,13 @@ function ATH({myTickers,auth,showToast}){
     setRefreshing(true);
     try{
       const { data }=await supabase.from("sp500_ath")
-        .select("symbol,name,price,marketcap,ath,ath_ts,updated_at");
+        .select("symbol,name,price,marketcap,ath,ath_ts,updated_at,in_sp500");
       if(!mountedRef.current) return;
       const list=(data||[]).map(r=>{
         const price=Number(r.price), ath=Number(r.ath);
         return { symbol:r.symbol, name:r.name||r.symbol, price, ath, marketcap:Number(r.marketcap),
-          ath_ts:r.ath_ts, down:(Number.isFinite(price)&&Number.isFinite(ath)&&ath>0)?(price/ath-1):null };
+          ath_ts:r.ath_ts, in_sp500:r.in_sp500!==false,
+          down:(Number.isFinite(price)&&Number.isFinite(ath)&&ath>0)?(price/ath-1):null };
       });
       setRows(list);
       setUpdatedAt((data||[]).reduce((m,r)=>{ const t=new Date(r.updated_at||0).getTime(); return t>m?t:m; },0)||null);
@@ -735,9 +736,9 @@ function ATH({myTickers,auth,showToast}){
       const cryptos=missing.filter(isCrypto), stocks=missing.filter(t=>!isCrypto(t));
       const out=[];
       if(cryptos.length){
-        let cp={};
-        try{ const r=await fetch(`/api/crypto/price?tickers=${encodeURIComponent(cryptos.join(","))}`); const d=await r.json(); cp=d.prices||{}; }catch{}
-        for(const t of cryptos){ out.push([t,{name:cryptoNameFor(t)||t, price:(typeof cp[t]==="number"?cp[t]:null), fetched:true}]); }
+        let cd={};
+        try{ const r=await fetch(`/api/crypto/price?tickers=${encodeURIComponent(cryptos.join(","))}`); const d=await r.json(); cd=d.data||{}; }catch{}
+        for(const t of cryptos){ const c=cd[t]; out.push([t,{name:cryptoNameFor(t)||t, price:c?c.price:null, marketcap:c?c.marketcap:null, ath:c?c.ath:null, down:c?c.down:null, ath_ts:c?c.ath_ts:null, fetched:true}]); }
       }
       const se=await Promise.all(stocks.slice(0,40).map(async t=>{
         try{ const info=await fetchStockInfo(t); return [t, {name:(info&&info.name)||t, price:(info&&typeof info.price==="number")?info.price:null, fetched:true}]; }
@@ -782,9 +783,11 @@ function ATH({myTickers,auth,showToast}){
       base=filterTickers.map(tk=>{
         const r=bySym.get(tkNorm(tk)); if(r) return r;
         const lq=liteQuotes[tkNorm(tk)];
-        return { symbol:String(tk).toUpperCase(), name:(lq&&lq.name)||String(tk).toUpperCase(), price:lq?lq.price:null, ath:null, marketcap:null, ath_ts:null, down:null, lite:true };
+        return { symbol:String(tk).toUpperCase(), name:(lq&&lq.name)||String(tk).toUpperCase(),
+          price:(lq&&lq.price!=null)?lq.price:null, marketcap:(lq&&lq.marketcap!=null)?lq.marketcap:null,
+          ath:(lq&&lq.ath!=null)?lq.ath:null, ath_ts:(lq&&lq.ath_ts)||null, down:(lq&&lq.down!=null)?lq.down:null, lite:true };
       });
-    } else base=rows;
+    } else base=rows.filter(r=>r.in_sp500!==false); // vista principal = só S&P 500
     const needle=norm(q);
     let list=needle?base.filter(r=>norm(r.symbol).includes(needle)||norm(r.name).includes(needle)):base;
     const val={
@@ -993,7 +996,7 @@ function ATH({myTickers,auth,showToast}){
               <span className="athEmp" style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
                 <StockLogo ticker={r.symbol} size={30}/>
                 <span style={{minWidth:0,display:"flex",flexDirection:"column",lineHeight:1.15}}>
-                  <span className="athSym" style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.symbol}{r.lite&&<span title="Fora do S&P 500 — sem ATH" style={{marginLeft:6,fontSize:8.5,fontWeight:700,color:"#94a3b8",border:"1px solid rgba(255,255,255,0.2)",borderRadius:5,padding:"1px 4px",verticalAlign:"middle",textTransform:"uppercase",letterSpacing:"0.3px"}}>fora</span>}</span>
+                  <span className="athSym" style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.symbol}</span>
                   <span className="athName" style={{fontSize:12,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</span>
                 </span>
               </span>

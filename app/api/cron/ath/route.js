@@ -32,6 +32,7 @@ export async function POST(request) {
     if ("shares" in r) row.shares = num(r.shares);
     if ("ath" in r) row.ath = num(r.ath);
     if ("ath_ts" in r) row.ath_ts = r.ath_ts || null;
+    if ("in_sp500" in r) row.in_sp500 = r.in_sp500 === true;
     clean.push(row);
   }
   if (!clean.length) return Response.json({ error: "Linhas inválidas." }, { status: 400 });

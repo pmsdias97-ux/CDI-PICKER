@@ -16,23 +16,31 @@ export async function GET(request) {
     const id = cryptoIdFor(t);
     if (id) { idByTicker[t] = id; if (!ids.includes(id)) ids.push(id); }
   }
-  if (!ids.length) return Response.json({ prices: {} });
+  if (!ids.length) return Response.json({ data: {} });
 
   try {
     const r = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids.join(","))}&vs_currencies=usd`,
+      `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${encodeURIComponent(ids.join(","))}&per_page=250&page=1`,
       { headers: { "User-Agent": "Mozilla/5.0 (compatible; CDI-PICKER/1.0)", Accept: "application/json" }, cache: "no-store" }
     );
-    if (!r.ok) return Response.json({ prices: {} });
-    const d = await r.json();
-    const prices = {};
+    if (!r.ok) return Response.json({ data: {} });
+    const arr = await r.json();
+    const byId = {};
+    (Array.isArray(arr) ? arr : []).forEach((c) => { if (c && c.id) byId[c.id] = c; });
+    const num = (v) => (typeof v === "number" ? v : null);
+    const data = {};
     for (const t of tickers) {
-      const id = idByTicker[t];
-      const p = id && d[id] ? d[id].usd : null;
-      if (typeof p === "number") prices[t] = p;
+      const c = byId[idByTicker[t]];
+      if (c) data[t] = {
+        price: num(c.current_price),
+        marketcap: num(c.market_cap),
+        ath: num(c.ath),
+        down: typeof c.ath_change_percentage === "number" ? c.ath_change_percentage / 100 : null,
+        ath_ts: c.ath_date || null,
+      };
     }
-    return Response.json({ prices });
+    return Response.json({ data });
   } catch {
-    return Response.json({ prices: {} });
+    return Response.json({ data: {} });
   }
 }

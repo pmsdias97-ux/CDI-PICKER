@@ -22,6 +22,7 @@ import requests
 import yfinance as yf
 
 INGEST_URL = os.environ.get("ATH_INGEST_URL", "https://cdi-picker.vercel.app/api/cron/ath")
+EXTRA_URL = INGEST_URL.replace("/api/cron/ath", "/api/cron/extra-tickers")
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
@@ -91,12 +92,8 @@ def post_rows(rows):
         r.raise_for_status()
 
 
-def fetch_full():
-    pairs = constituents()
-    names = {s: n for s, n in pairs}
-    symbols = [s for s, _ in pairs]
-    print(f"[ath] full: {len(symbols)} símbolos")
-
+def compute_rows(symbols, names, in_sp500):
+    """ATH (max High de toda a história) + preço + marketcap/shares para uma lista de símbolos."""
     info = {}  # symbol -> {ath, ath_ts, price}  (tudo do histórico → fiável)
     for i in range(0, len(symbols), BATCH):
         batch = symbols[i:i + BATCH]
@@ -121,22 +118,62 @@ def fetch_full():
         print(f"[ath] download {min(i + BATCH, len(symbols))}/{len(symbols)} (acumulado {len(info)})")
         time.sleep(1)
 
-    # marketcap + shares via fast_info (best-effort; se falhar, fica nulo mas a linha entra)
+    # marketcap + shares via fast_info (best-effort). Nome: S&P vem da Wikipédia; extras via .info.
     rows = []
     for sym, d in info.items():
         mcap = shares = None
+        nm = names.get(sym)
         try:
-            fi = yf.Ticker(sym).fast_info
+            tk = yf.Ticker(sym)
+            fi = tk.fast_info
             mcap = fi_get(fi, "market_cap", "marketCap")
             shares = fi_get(fi, "shares", "sharesOutstanding", "implied_shares_outstanding")
+            if not nm:
+                try:
+                    inf = tk.info
+                    nm = inf.get("shortName") or inf.get("longName")
+                except Exception:
+                    pass
         except Exception:
             pass
         rows.append({
-            "symbol": sym, "name": names.get(sym, sym), "price": d["price"],
+            "symbol": sym, "name": nm or sym, "price": d["price"],
             "marketcap": float(mcap) if mcap else None,
             "shares": float(shares) if shares else None,
-            "ath": d["ath"], "ath_ts": d["ath_ts"],
+            "ath": d["ath"], "ath_ts": d["ath_ts"], "in_sp500": in_sp500,
         })
+    return rows
+
+
+def extra_tickers(sp_set):
+    """Tickers que os membros têm/vigiam (endpoint protegido), menos os já S&P."""
+    try:
+        r = requests.get(EXTRA_URL, headers={"Authorization": f"Bearer {CRON_SECRET}"}, timeout=30)
+        r.raise_for_status()
+        raw = r.json().get("tickers", [])
+    except Exception as e:
+        print(f"[ath] extra-tickers erro: {e}")
+        return []
+    out = []
+    for t in raw:
+        s = yf_symbol(t)
+        if s and s not in sp_set and s not in out:
+            out.append(s)
+    return out
+
+
+def fetch_full():
+    pairs = constituents()
+    names = {s: n for s, n in pairs}
+    symbols = [s for s, _ in pairs]
+    print(f"[ath] full: {len(symbols)} símbolos S&P")
+    rows = compute_rows(symbols, names, True)
+
+    extra = extra_tickers(set(symbols))
+    if extra:
+        print(f"[ath] extras: {len(extra)} símbolos (watchlists/portefólios)")
+        rows += compute_rows(extra, {}, False)
+
     with_cap = sum(1 for r in rows if r["marketcap"])
     print(f"[ath] full: {len(rows)} linhas (com marketcap: {with_cap})")
     post_rows(rows)
