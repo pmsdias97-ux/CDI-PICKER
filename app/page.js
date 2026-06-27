@@ -1237,21 +1237,23 @@ function Shell({children,page,detailRank,detailIsOwn,nav,submitted,toast,onMyPor
         .cdiNav{justify-content:center}
         .cdiClock{position:absolute;top:12px;right:14px}
         @media(max-width:640px){
-          /* MOBILE: abas numa barra inferior flutuante (liquid glass) com blur forte,
-             para se lerem sobre qualquer conteúdo; relógio fica no topo, centrado. */
-          .cdiClock{position:static;display:flex;justify-content:center}
+          /* MOBILE: abas numa pílula liquid-glass no TOPO (sticky), com blur forte —
+             o conteúdo passa de desfocado a nítido ao deslizar por baixo. Relógio por baixo. */
+          .cdiClock{position:static;display:flex;justify-content:center;margin-top:10px}
           .cdiNav{
-            position:fixed;left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));
-            z-index:60;justify-content:space-around;gap:4px;padding:7px;border-radius:24px;flex-wrap:nowrap;
+            width:max-content;max-width:calc(100% - 16px);margin:0 auto;
+            justify-content:center;align-items:center;gap:4px;padding:3px 5px;border-radius:22px;flex-wrap:nowrap;
             background-color:var(--nav-tint,rgba(255,255,255,0.06));
             transition:background-color .6s ease;
             backdrop-filter:blur(42px) saturate(180%);-webkit-backdrop-filter:blur(42px) saturate(180%);
             border:1px solid rgba(255,255,255,0.14);
-            box-shadow:0 10px 34px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.16);
+            box-shadow:0 8px 28px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.16);
           }
-          .cdiNav>button{flex:1 1 0;justify-content:center;padding:8px 6px!important;font-size:13px!important}
-          .cdiMain{padding-bottom:88px}
-          .cdiBottomFloat{bottom:96px!important}
+          .cdiNav>button{padding:6px 13px!important;font-size:13px!important}
+          /* pílula selecionada mais alta que a barra → fica sobreposta/saliente.
+             a margem negativa impede a barra de crescer (mantém-na fina). */
+          .cdiNavSel{padding-top:12px!important;padding-bottom:12px!important;margin:-7px 0!important;
+            box-shadow:0 7px 20px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.22)!important}
         }
       `}</style>
       <header style={{position:"sticky",top:0,zIndex:50,padding:"12px 14px"}}>
@@ -1329,7 +1331,7 @@ function Nav({page,nav,submitted,onMyPortfolio,myPortfolioActive,tint}){
 // Plain text link; only the page we're on gets the liquid-glass pill.
 function NavLink({label,active,onClick,locked}){
   return(
-    <button onClick={onClick}
+    <button onClick={onClick} className={active?"cdiNavSel":undefined}
       onMouseEnter={e=>{ if(!active) e.currentTarget.style.color="#e2e8f0"; }}
       onMouseLeave={e=>{ if(!active) e.currentTarget.style.color="#9aa4b2"; }}
       style={{cursor:"pointer",fontSize:14,fontWeight:active?600:500,padding:"8px 16px",borderRadius:999,
