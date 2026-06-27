@@ -457,7 +457,7 @@ function UpdateBanner(){
   },[]);
   if(!stale) return null;
   return(
-    <div role="status" style={{position:"fixed",left:"50%",bottom:24,transform:"translateX(-50%)",zIndex:9990,
+    <div role="status" className="cdiBottomFloat" style={{position:"fixed",left:"50%",bottom:24,transform:"translateX(-50%)",zIndex:9990,
       display:"flex",alignItems:"center",gap:12,maxWidth:"92vw",
       background:"rgba(15,30,52,0.96)",backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",
       border:"1px solid rgba(96,165,250,0.45)",borderRadius:999,padding:"10px 12px 10px 18px",
@@ -1211,14 +1211,14 @@ function Shell({children,page,detailRank,detailIsOwn,nav,submitted,toast,onMyPor
   // Premium (ouro/prata/bronze) SÓ no detalhe do Top 3. Tudo o resto — ranking, 4º+,
   // o próprio portefólio (quando fora do pódio), homepage, etc. — fica AZUL original.
   // Mesma lógica de degradê (brilho radial no topo + fade vertical).
-  const GOLD={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(250,204,21,0.32) 0%, rgba(245,158,11,0.13) 38%, transparent 72%), linear-gradient(180deg,#261c0a 0%,#1c150b 55%,#120d08 80%,#0c0905 100%)",color:"#0c0905"};
-  const SILVER={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(226,232,240,0.16) 0%, rgba(203,213,225,0.06) 38%, transparent 72%), linear-gradient(180deg,#1e222a 0%,#171b22 55%,#0f1216 80%,#0a0c0f 100%)",color:"#0a0c0f"};
-  const BRONZE={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(217,119,6,0.26) 0%, rgba(180,83,9,0.10) 38%, transparent 72%), linear-gradient(180deg,#241608 0%,#1b1109 55%,#120c07 80%,#0c0805 100%)",color:"#0c0805"};
-  const BLUE={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",color:"#070d1c"};
+  const GOLD={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(250,204,21,0.32) 0%, rgba(245,158,11,0.13) 38%, transparent 72%), linear-gradient(180deg,#261c0a 0%,#1c150b 55%,#120d08 80%,#0c0905 100%)",color:"#0c0905",tint:"rgba(250,204,21,0.16)"};
+  const SILVER={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(226,232,240,0.16) 0%, rgba(203,213,225,0.06) 38%, transparent 72%), linear-gradient(180deg,#1e222a 0%,#171b22 55%,#0f1216 80%,#0a0c0f 100%)",color:"#0a0c0f",tint:"rgba(203,213,225,0.15)"};
+  const BRONZE={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(217,119,6,0.26) 0%, rgba(180,83,9,0.10) 38%, transparent 72%), linear-gradient(180deg,#241608 0%,#1b1109 55%,#120c07 80%,#0c0805 100%)",color:"#0c0805",tint:"rgba(217,119,6,0.18)"};
+  const BLUE={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",color:"#070d1c",tint:"rgba(59,130,246,0.16)"};
   // TESTE: azul-petróleo/teal (referência) — só no ranking.
-  const BLUE_REF={bg:"radial-gradient(1600px 1000px at 50% -6%, rgba(64,170,205,0.20) 0%, rgba(44,130,170,0.07) 40%, transparent 72%), linear-gradient(180deg,#16526a 0%,#123f52 50%,#0d2d3c 78%,#091e29 100%)",color:"#091e29"};
+  const BLUE_REF={bg:"radial-gradient(1600px 1000px at 50% -6%, rgba(64,170,205,0.20) 0%, rgba(44,130,170,0.07) 40%, transparent 72%), linear-gradient(180deg,#16526a 0%,#123f52 50%,#0d2d3c 78%,#091e29 100%)",color:"#091e29",tint:"rgba(64,170,205,0.17)"};
   // ATH: brilho lavanda no canto superior direito + toque roxo à direita, azul-marinho a escurecer para quase preto.
-  const ATHBG={bg:"radial-gradient(1500px 1150px at 82% -2%, rgba(210,208,230,0.42) 0%, rgba(150,150,192,0.16) 30%, transparent 58%), radial-gradient(1200px 1000px at 104% 30%, rgba(120,96,152,0.26) 0%, transparent 56%), radial-gradient(1300px 1000px at 20% 14%, rgba(86,104,168,0.18) 0%, transparent 60%), linear-gradient(165deg,#1e2540 0%,#151b2f 44%,#0a0e1c 78%,#060810 100%)",color:"#060810"};
+  const ATHBG={bg:"radial-gradient(1500px 1150px at 82% -2%, rgba(210,208,230,0.42) 0%, rgba(150,150,192,0.16) 30%, transparent 58%), radial-gradient(1200px 1000px at 104% 30%, rgba(120,96,152,0.26) 0%, transparent 56%), radial-gradient(1300px 1000px at 20% 14%, rgba(86,104,168,0.18) 0%, transparent 60%), linear-gradient(165deg,#1e2540 0%,#151b2f 44%,#0a0e1c 78%,#060810 100%)",color:"#060810",tint:"rgba(170,158,214,0.18)"};
   // Pódio → ouro/prata/bronze. Ranking + detalhe de OUTROS (4º+/em espera) → azul
   // petróleo novo. O PRÓPRIO portefólio (fora do pódio) e a homepage → azul original.
   const medal=page==="detail"?(detailRank===1?GOLD:detailRank===2?SILVER:detailRank===3?BRONZE:null):null;
@@ -1237,21 +1237,32 @@ function Shell({children,page,detailRank,detailIsOwn,nav,submitted,toast,onMyPor
         .cdiNav{justify-content:center}
         .cdiClock{position:absolute;top:12px;right:14px}
         @media(max-width:640px){
-          /* mobile: relógio passa para uma linha própria centrada por baixo das abas,
-             para não tapar a aba "Meu"; abas centradas e um pouco mais compactas */
-          .cdiClock{position:static;display:flex;justify-content:center;margin-top:10px}
-          .cdiNav>button{padding-left:13px!important;padding-right:13px!important}
+          /* MOBILE: abas numa barra inferior flutuante (liquid glass) com blur forte,
+             para se lerem sobre qualquer conteúdo; relógio fica no topo, centrado. */
+          .cdiClock{position:static;display:flex;justify-content:center}
+          .cdiNav{
+            position:fixed;left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));
+            z-index:60;justify-content:space-around;gap:4px;padding:7px;border-radius:24px;flex-wrap:nowrap;
+            background-color:var(--nav-tint,rgba(255,255,255,0.06));
+            transition:background-color .6s ease;
+            backdrop-filter:blur(42px) saturate(180%);-webkit-backdrop-filter:blur(42px) saturate(180%);
+            border:1px solid rgba(255,255,255,0.14);
+            box-shadow:0 10px 34px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.16);
+          }
+          .cdiNav>button{flex:1 1 0;justify-content:center;padding:8px 6px!important;font-size:13px!important}
+          .cdiMain{padding-bottom:88px}
+          .cdiBottomFloat{bottom:96px!important}
         }
       `}</style>
       <header style={{position:"sticky",top:0,zIndex:50,padding:"12px 14px"}}>
-        <Nav page={page} nav={nav} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} />
+        <Nav page={page} nav={nav} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} tint={theme.tint} />
         <div className="cdiClock"><MarketStatus/></div>
       </header>
-      <main style={{position:"relative",zIndex:1}}>{children}</main>
+      <main className="cdiMain" style={{position:"relative",zIndex:1}}>{children}</main>
       <BackToTop maxWidth={page==="ranking"?900:page==="detail"?1320:null}/>
       <UpdateBanner/>
       {toast&&(
-        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:9999,
+        <div className="cdiBottomFloat" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:9999,
           width:"max-content",maxWidth:"min(92vw,440px)",
           background:toast.kind==="error"?"#1a0a0a":"#0a1a0f",border:`1px solid ${toast.kind==="error"?"#ef4444":"#22c55e"}`,
           borderRadius:12,padding:"12px 18px",fontSize:14,lineHeight:1.45,color:toast.kind==="error"?"#fca5a5":"#86efac",
@@ -1303,9 +1314,9 @@ function MarketStatus(){
 }
 
 /* ---- Nav ----------------------------------------------------------------- */
-function Nav({page,nav,submitted,onMyPortfolio,myPortfolioActive}){
+function Nav({page,nav,submitted,onMyPortfolio,myPortfolioActive,tint}){
   return(
-    <div className="cdiNav" style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+    <div className="cdiNav" style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap","--nav-tint":tint}}>
       <NavLink label="Início" active={page==="home"} onClick={()=>nav("home")}/>
       <NavLink label="Ranking" active={page==="ranking"} onClick={()=>nav("ranking")} locked={!submitted}/>
       <NavLink label="ATH" active={page==="ath"} onClick={()=>nav("ath")}/>
