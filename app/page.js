@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useId, useRef } from "react"
 import { BUILD_VERSION } from "./version";
 import { supabase } from "./supabase";
 import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } from "./lib/stocks";
+import { searchCryptos, isCrypto, cryptoNameFor } from "./lib/crypto";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 
 /* ============================================================================
@@ -609,8 +610,21 @@ function sinceLabelShort(ts){
   const months=Math.round(days/30.44); if(months<12) return `${months}m`;
   return `${Math.round(days/365.25)}a`;
 }
-function ATH(){
+const tkNorm=(s)=>String(s||"").toUpperCase().replace(/\./g,"-").trim(); // matching de tickers (BRK.B↔BRK-B)
+function ATH({myTickers,auth,showToast}){
+  const authed=!!(auth&&auth.name&&auth.pin);
   const [rows,setRows]=useState(null);
+  const [activeFilter,setActiveFilter]=useState(null); // null | "mine" | listId (watchlist)
+  const [lists,setLists]=useState([]);                  // watchlists do user: [{id,name,tickers[]}]
+  const [addFor,setAddFor]=useState(null);              // ticker a adicionar a listas (abre modal)
+  const [addSel,setAddSel]=useState(()=>new Set());     // listas selecionadas no modal "Adicionar"
+  const [menuFor,setMenuFor]=useState(null);            // lista com menu renomear/apagar aberto (hover/long-press)
+  const [draftName,setDraftName]=useState(null);        // criação inline: input no lugar da pill (null = sem rascunho)
+  const [globalRes,setGlobalRes]=useState([]);          // resultados globais (fora do S&P) p/ adicionar
+  const [gLoading,setGLoading]=useState(false);
+  const lpTimer=useRef(null), lpFired=useRef(false), canHover=useRef(false), draftCancel=useRef(false);
+  const [nameModal,setNameModal]=useState(null);        // criar/renomear: {mode,id?,ticker?,value}
+  const [liteQuotes,setLiteQuotes]=useState({});        // tickers fora do S&P: {tkNorm:{name,price}}
   const [q,setQ]=useState("");
   const [sortKey,setSortKey]=useState("marketcap"); // marketcap | down | since
   const [sortDir,setSortDir]=useState("desc"); // asc | desc — clicar na coluna alterna
@@ -638,10 +652,141 @@ function ATH(){
     } finally { if(mountedRef.current) setRefreshing(false); }
   },[]);
   useEffect(()=>{ load(); },[load]);
+  // ---- Watchlists (sincronizadas na conta) ----
+  useEffect(()=>{
+    if(!authed){ setLists([]); return; }
+    let cancel=false;
+    (async()=>{
+      try{
+        const r=await fetch("/api/watchlists/list",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:auth.name,pin:auth.pin})});
+        const d=await r.json(); if(cancel) return;
+        if(!d?.ok) return;
+        if((d.lists||[]).length===0){
+          // Garante uma lista por defeito "Watch list" (vazia) para o user.
+          try{
+            const cr=await fetch("/api/watchlists/save",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:auth.name,pin:auth.pin,listName:"Watch list",tickers:[]})});
+            const cd=await cr.json(); if(!cancel) setLists(cr.ok&&cd?.ok&&cd.list?[cd.list]:[]);
+          }catch{ if(!cancel) setLists([]); }
+        } else setLists(d.lists);
+      }catch{}
+    })();
+    return()=>{ cancel=true; };
+  },[authed,auth?.name,auth?.pin]);
+  const apiSave=useCallback(async(payload)=>{
+    const r=await fetch("/api/watchlists/save",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:auth.name,pin:auth.pin,...payload})});
+    const d=await r.json(); if(!r.ok||!d?.ok) throw new Error(d?.error||"Não foi possível guardar."); return d.list;
+  },[auth]);
+  const createList=useCallback(async(nm,ticker)=>{
+    try{ const saved=await apiSave({listName:nm,tickers:ticker?[String(ticker).toUpperCase()]:[]}); setLists(ls=>[...ls,saved]); return saved; }
+    catch(e){ showToast&&showToast(e.message,"error"); return null; }
+  },[apiSave,showToast]);
+  const renameList=useCallback(async(id,nm)=>{
+    const l=lists.find(x=>x.id===id); if(!l) return; const prev=l.name;
+    setLists(ls=>ls.map(x=>x.id===id?{...x,name:nm}:x));
+    try{ await apiSave({id,listName:nm,tickers:l.tickers}); }
+    catch(e){ setLists(ls=>ls.map(x=>x.id===id?{...x,name:prev}:x)); showToast&&showToast(e.message,"error"); }
+  },[lists,apiSave,showToast]);
+  const deleteList=useCallback(async(id)=>{
+    const prev=lists; setLists(ls=>ls.filter(x=>x.id!==id)); setActiveFilter(f=>f===id?null:f);
+    try{ const r=await fetch("/api/watchlists/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:auth.name,pin:auth.pin,id})}); const d=await r.json(); if(!r.ok||!d?.ok) throw new Error(d?.error||"Erro"); }
+    catch(e){ setLists(prev); showToast&&showToast(e.message,"error"); }
+  },[lists,auth,showToast]);
+  const toggleTicker=useCallback(async(id,ticker)=>{
+    const l=lists.find(x=>x.id===id); if(!l) return;
+    const t=tkNorm(ticker), has=l.tickers.some(x=>tkNorm(x)===t);
+    const next=has?l.tickers.filter(x=>tkNorm(x)!==t):[...l.tickers,String(ticker).toUpperCase()];
+    setLists(ls=>ls.map(x=>x.id===id?{...x,tickers:next}:x));
+    try{ await apiSave({id,listName:l.name,tickers:next}); }
+    catch(e){ setLists(ls=>ls.map(x=>x.id===id?{...x,tickers:l.tickers}:x)); showToast&&showToast(e.message,"error"); }
+  },[lists,apiSave,showToast]);
+  const confirmName=useCallback(async()=>{
+    const m=nameModal; if(!m) return; const nm=(m.value||"").trim(); if(!nm) return;
+    if(m.mode==="rename"){ await renameList(m.id,nm); }
+    else { await createList(nm, m.mode==="create-add"?m.ticker:null); }
+    setNameModal(null);
+  },[nameModal,renameList,createList]);
+  const openAdd=useCallback((ticker)=>{
+    const t=tkNorm(ticker);
+    setAddSel(new Set(lists.filter(l=>l.tickers.some(x=>tkNorm(x)===t)).map(l=>l.id)));
+    setAddFor(ticker);
+  },[lists]);
+  const applyAdd=useCallback(async()=>{
+    const t=addFor; if(!t) return;
+    const tasks=[];
+    lists.forEach(l=>{ const has=l.tickers.some(x=>tkNorm(x)===tkNorm(t)); const sel=addSel.has(l.id); if(sel!==has) tasks.push(toggleTicker(l.id,t)); });
+    setAddFor(null);
+    await Promise.all(tasks);
+  },[addFor,addSel,lists,toggleTicker]);
+  const activeList=useMemo(()=>activeFilter&&activeFilter!=="mine"?lists.find(l=>l.id===activeFilter)||null:null,[activeFilter,lists]);
+  const filterTickers=useMemo(()=>{
+    if(activeFilter==="mine") return myTickers||[];
+    if(activeList) return activeList.tickers||[];
+    return null; // null => mostrar a tabela toda (S&P 500)
+  },[activeFilter,myTickers,activeList]);
+  // Preço/nome ao vivo dos tickers da lista ativa que NÃO estão no S&P 500 (ex. ASML).
+  useEffect(()=>{
+    if(!filterTickers||!rows) return;
+    const have=new Set(rows.map(r=>tkNorm(r.symbol)));
+    // busca quem ainda não tem preço (não está em cache OU está sem 'fetched')
+    const missing=[...new Set(filterTickers.map(tkNorm))].filter(t=>t&&!have.has(t)&&(!(t in liteQuotes)||!liteQuotes[t].fetched));
+    if(!missing.length) return;
+    let cancel=false;
+    (async()=>{
+      const cryptos=missing.filter(isCrypto), stocks=missing.filter(t=>!isCrypto(t));
+      const out=[];
+      if(cryptos.length){
+        let cp={};
+        try{ const r=await fetch(`/api/crypto/price?tickers=${encodeURIComponent(cryptos.join(","))}`); const d=await r.json(); cp=d.prices||{}; }catch{}
+        for(const t of cryptos){ out.push([t,{name:cryptoNameFor(t)||t, price:(typeof cp[t]==="number"?cp[t]:null), fetched:true}]); }
+      }
+      const se=await Promise.all(stocks.slice(0,40).map(async t=>{
+        try{ const info=await fetchStockInfo(t); return [t, {name:(info&&info.name)||t, price:(info&&typeof info.price==="number")?info.price:null, fetched:true}]; }
+        catch{ return [t,{name:t,price:null,fetched:true}]; }
+      }));
+      out.push(...se);
+      if(cancel) return;
+      setLiteQuotes(prev=>{ const n={...prev}; out.forEach(([t,v])=>{ n[t]=v; }); return n; });
+    })();
+    return()=>{ cancel=true; };
+  },[filterTickers,rows,liteQuotes]);
+  useEffect(()=>{ try{ canHover.current=window.matchMedia("(hover:hover)").matches; }catch{} },[]);
+  // Procura GLOBAL (debounce) para adicionar tickers fora do S&P (ASML, BTC-USD, etc.) pela barra.
+  useEffect(()=>{
+    if(!authed){ setGlobalRes([]); return; }
+    const term=q.trim();
+    if(term.length<2){ setGlobalRes([]); setGLoading(false); return; }
+    setGLoading(true);
+    let cancel=false;
+    const id=setTimeout(async()=>{
+      const cg=searchCryptos(term); // local (fiável) — cripto primeiro
+      let stocks=[];
+      try{ const r=await searchTickers(term); const have=rows?new Set(rows.map(x=>tkNorm(x.symbol))):new Set(); stocks=(r||[]).filter(x=>x.ticker&&!have.has(tkNorm(x.ticker))); }catch{}
+      if(cancel) return;
+      setGlobalRes([...cg,...stocks].slice(0,8));
+      setGLoading(false);
+    },350);
+    return()=>{ cancel=true; clearTimeout(id); };
+  },[q,authed,rows]);
+  // Fecha o menu (renomear/apagar) ao tocar/clicar fora de uma pill.
+  useEffect(()=>{
+    if(!menuFor) return;
+    const onDown=(e)=>{ if(!e.target.closest||!e.target.closest(".athPillWrap")) setMenuFor(null); };
+    document.addEventListener("pointerdown",onDown);
+    return()=>document.removeEventListener("pointerdown",onDown);
+  },[menuFor]);
   const view=useMemo(()=>{
     if(!rows) return [];
+    let base;
+    if(filterTickers){
+      const bySym=new Map(rows.map(r=>[tkNorm(r.symbol),r]));
+      base=filterTickers.map(tk=>{
+        const r=bySym.get(tkNorm(tk)); if(r) return r;
+        const lq=liteQuotes[tkNorm(tk)];
+        return { symbol:String(tk).toUpperCase(), name:(lq&&lq.name)||String(tk).toUpperCase(), price:lq?lq.price:null, ath:null, marketcap:null, ath_ts:null, down:null, lite:true };
+      });
+    } else base=rows;
     const needle=norm(q);
-    let list=needle?rows.filter(r=>norm(r.symbol).includes(needle)||norm(r.name).includes(needle)):rows;
+    let list=needle?base.filter(r=>norm(r.symbol).includes(needle)||norm(r.name).includes(needle)):base;
     const val={
       marketcap:r=>r.marketcap??-Infinity,
       down:r=>r.down??-Infinity,
@@ -649,8 +794,12 @@ function ATH(){
     }[sortKey]||(()=>0);
     const sign=sortDir==="asc"?1:-1;
     return [...list].sort((a,b)=>sign*(val(a)-val(b)));
-  },[rows,q,sortKey,sortDir]);
+  },[rows,q,sortKey,sortDir,filterTickers,liteQuotes]);
   const GLASS={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
+  const pillStyle=(on)=>({cursor:"pointer",borderRadius:999,padding:"7px 14px",fontSize:13,fontWeight:on?700:600,transition:"all .15s",whiteSpace:"nowrap",
+    border:`1px solid ${on?"rgba(74,222,128,0.55)":"rgba(255,255,255,0.14)"}`,background:on?"rgba(34,197,94,0.20)":"rgba(255,255,255,0.05)",color:on?"#bbf7d0":"#cbd5e1"});
+  const miniBtn={cursor:"pointer",borderRadius:999,padding:"5px 12px",fontSize:12,fontWeight:600,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:"#cbd5e1"};
+  const menuItem={cursor:"pointer",textAlign:"left",borderRadius:8,padding:"8px 12px",fontSize:13,fontWeight:600,border:"none",background:"transparent",color:"#e2e8f0",whiteSpace:"nowrap"};
   const Hd=({k,children,align="center"})=>{
     const active=sortKey===k;
     const ai=align==="right"?"flex-end":align==="left"?"flex-start":"center";
@@ -671,6 +820,7 @@ function ATH(){
         .athSinceShort{display:none}
         @keyframes athSpin{to{transform:rotate(360deg)}}
         .athSpin{animation:athSpin .8s linear infinite}
+        @media(hover:hover){ .athClickable:hover{background:rgba(255,255,255,0.04)} }
 
         /* Colunas ordenáveis: par de setas (cinza = clicável; ativa acende a direção) */
         .athSortHd{cursor:pointer;user-select:none;color:#94a3b8;transition:color .15s}
@@ -718,14 +868,73 @@ function ATH(){
         }
       `}</style>
       <h1 style={{textAlign:"center",fontSize:28,fontWeight:800,letterSpacing:"-0.5px",margin:"0 0 4px"}}>Máximo histórico</h1>
-      <p style={{textAlign:"center",color:"#94a3b8",fontSize:14,margin:"0 0 24px"}}>S&P 500 · Preço atual vs. ATH</p>
+      <p style={{textAlign:"center",color:"#94a3b8",fontSize:14,margin:"0 0 24px"}}>Preço atual vs. ATH</p>
+
+      {authed&&(
+        <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",alignItems:"center",gap:8,marginBottom:12}}>
+          {myTickers&&myTickers.length>0&&(
+            <button onClick={()=>setActiveFilter(f=>f==="mine"?null:"mine")} title="Mostrar só as minhas ações"
+              style={pillStyle(activeFilter==="mine")}>{activeFilter==="mine"?"✓ ":""}Minhas {myTickers.length}</button>
+          )}
+          {lists.map(l=>(
+            <span key={l.id} className="athPillWrap" style={{position:"relative",display:"inline-flex"}}
+              onMouseEnter={()=>{ if(canHover.current&&activeFilter===l.id) setMenuFor(l.id); }}
+              onMouseLeave={()=>{ if(canHover.current) setMenuFor(f=>f===l.id?null:f); }}
+              onTouchStart={()=>{ lpFired.current=false; clearTimeout(lpTimer.current); lpTimer.current=setTimeout(()=>{ if(activeFilter!==l.id) return; lpFired.current=true; setMenuFor(l.id); },480); }}
+              onTouchEnd={()=>clearTimeout(lpTimer.current)} onTouchMove={()=>clearTimeout(lpTimer.current)}>
+              <button onClick={()=>{ if(lpFired.current){ lpFired.current=false; return; } setActiveFilter(f=>f===l.id?null:l.id); }} title={`Ver "${l.name}"`}
+                style={pillStyle(activeFilter===l.id)}>{activeFilter===l.id?"✓ ":""}{l.name}{l.tickers.length?` · ${l.tickers.length}`:""}</button>
+              {menuFor===l.id&&activeFilter===l.id&&(
+                <div style={{position:"absolute",top:"calc(100% + 6px)",left:"50%",transform:"translateX(-50%)",zIndex:40,
+                  background:"rgba(20,26,42,0.98)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:12,padding:6,
+                  display:"flex",flexDirection:"column",gap:2,minWidth:150,boxShadow:"0 10px 30px rgba(0,0,0,0.5)"}}>
+                  <button onClick={()=>{ setMenuFor(null); setNameModal({mode:"rename",id:l.id,value:l.name}); }} style={menuItem}>✎ Renomear</button>
+                  <button onClick={()=>{ setMenuFor(null); if(typeof window==="undefined"||window.confirm(`Apagar a lista "${l.name}"?`)) deleteList(l.id); }} style={menuItem}>🗑 Apagar</button>
+                </div>
+              )}
+            </span>
+          ))}
+          {draftName!==null?(
+            <input autoFocus value={draftName} onChange={e=>setDraftName(e.target.value)}
+              onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); e.currentTarget.blur(); } else if(e.key==="Escape"){ draftCancel.current=true; e.currentTarget.blur(); } }}
+              onBlur={()=>{ if(draftCancel.current){ draftCancel.current=false; setDraftName(null); return; } const nm=(draftName||"").trim(); if(nm) createList(nm); setDraftName(null); }}
+              placeholder="Nome da lista…"
+              style={{borderRadius:999,padding:"6px 14px",fontSize:13,fontWeight:600,width:130,
+                border:"1px solid rgba(96,165,250,0.55)",background:"rgba(0,0,0,0.25)",color:"#e2e8f0",outline:"none"}}/>
+          ):(
+            <button onClick={()=>setDraftName("")} title="Criar nova watchlist"
+              style={{cursor:"pointer",background:"none",border:"none",color:"#94a3b8",fontSize:22,lineHeight:1,padding:"2px 8px",fontWeight:400}}>+</button>
+          )}
+        </div>
+      )}
 
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,marginBottom:14}}>
         <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Procurar ticker ou empresa…"
           style={{width:"100%",maxWidth:300,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.12)",
             borderRadius:999,padding:"10px 16px",fontSize:14,color:"#e2e8f0",outline:"none",textAlign:"center"}}/>
+        {authed&&gLoading&&globalRes.length===0&&q.trim().length>=2&&(
+          <span style={{fontSize:11,color:"#64748b"}}>A procurar…</span>
+        )}
+        {authed&&globalRes.length>0&&(
+          <div style={{width:"100%",maxWidth:340,display:"flex",flexDirection:"column",gap:4}}>
+            <span style={{fontSize:11,color:"#64748b",textAlign:"center"}}>Adicionar à watchlist</span>
+            {globalRes.map((res,i)=>(
+              <button key={`${res.ticker}-${i}`}
+                onClick={()=>{ const tk=String(res.ticker||"").toUpperCase(); setLiteQuotes(qq=>({...qq,[tkNorm(tk)]:{...(qq[tkNorm(tk)]||{}),name:res.name||tk}})); openAdd(tk); }}
+                style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",textAlign:"left",borderRadius:10,padding:"8px 10px",
+                  border:"1px solid rgba(255,255,255,0.10)",background:"rgba(255,255,255,0.04)",color:"#e2e8f0"}}>
+                <StockLogo ticker={res.ticker} size={24}/>
+                <span style={{minWidth:0,flex:1,display:"flex",flexDirection:"column",lineHeight:1.2}}>
+                  <span style={{fontWeight:700,fontSize:13}}>{res.ticker}</span>
+                  <span style={{fontSize:11.5,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{res.name}{res.exchange?` · ${res.exchange}`:""}</span>
+                </span>
+                <span style={{color:"#4ade80",fontWeight:800,fontSize:16,flexShrink:0}}>+</span>
+              </button>
+            ))}
+          </div>
+        )}
         <span style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12.5,color:"#94a3b8",whiteSpace:"nowrap"}}>
-          {rows?`${updatedAt?`Atualizado ${new Date(updatedAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})} · `:""}${rows.length} ações`:"A carregar…"}
+          {rows?(updatedAt?`Atualizado ${new Date(updatedAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}`:""):"A carregar…"}
           <button onClick={load} disabled={refreshing} title="Atualizar dados" aria-label="Atualizar dados"
             style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:30,height:30,borderRadius:999,
               background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",color:"#cbd5e1",padding:0,
@@ -779,12 +988,12 @@ function ATH(){
           const bg=r.down==null?"transparent":up?"rgba(34,197,94,0.10)":"rgba(248,113,113,0.10)";
           const bd=r.down==null?"rgba(255,255,255,0.12)":up?"rgba(34,197,94,0.35)":"rgba(248,113,113,0.35)";
           return(
-            <div key={r.symbol} className="athRow" style={{padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+            <div key={r.symbol} className={"athRow"+(authed?" athClickable":"")} onClick={authed?()=>openAdd(r.symbol):undefined} title={authed?"Adicionar a uma watchlist":undefined} style={{padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,0.07)",cursor:authed?"pointer":"default"}}>
               <span className="athNum" style={{textAlign:"center",fontSize:13,color:"#64748b",fontWeight:700}}>{i+1}</span>
               <span className="athEmp" style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
                 <StockLogo ticker={r.symbol} size={30}/>
                 <span style={{minWidth:0,display:"flex",flexDirection:"column",lineHeight:1.15}}>
-                  <span className="athSym" style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.symbol}</span>
+                  <span className="athSym" style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.symbol}{r.lite&&<span title="Fora do S&P 500 — sem ATH" style={{marginLeft:6,fontSize:8.5,fontWeight:700,color:"#94a3b8",border:"1px solid rgba(255,255,255,0.2)",borderRadius:5,padding:"1px 4px",verticalAlign:"middle",textTransform:"uppercase",letterSpacing:"0.3px"}}>fora</span>}</span>
                   <span className="athName" style={{fontSize:12,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</span>
                 </span>
               </span>
@@ -817,6 +1026,50 @@ function ATH(){
         )}
         </>)}
       </div>
+
+      {addFor&&(
+        <div onClick={()=>setAddFor(null)} style={{position:"fixed",inset:0,zIndex:9000,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{...GLASS,borderRadius:18,padding:18,width:"100%",maxWidth:340,maxHeight:"80vh",overflow:"auto"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <h3 style={{margin:0,fontSize:16,fontWeight:800}}>Adicionar {addFor}</h3>
+              <button onClick={()=>setNameModal({mode:"create",value:"Watch list"})} title="Criar nova lista"
+                style={{...miniBtn,padding:"2px 12px",fontSize:18,lineHeight:1,fontWeight:400}}>+</button>
+            </div>
+            {lists.length===0&&<p style={{fontSize:13,color:"#94a3b8",margin:"0 0 10px"}}>Ainda não tens listas. Cria uma com "+".</p>}
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {lists.map(l=>{
+                const sel=addSel.has(l.id);
+                return(
+                  <button key={l.id} onClick={()=>setAddSel(s=>{ const n=new Set(s); n.has(l.id)?n.delete(l.id):n.add(l.id); return n; })}
+                    style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,cursor:"pointer",textAlign:"left",
+                      borderRadius:10,padding:"10px 12px",fontSize:14,fontWeight:600,
+                      border:`1px solid ${sel?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.12)"}`,
+                      background:sel?"rgba(59,130,246,0.16)":"rgba(255,255,255,0.04)",color:"#e2e8f0"}}>
+                    <span>{l.name}</span><span style={{color:sel?"#4ade80":"#64748b",fontWeight:800,fontSize:16}}>{sel?"✓":"+"}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button onClick={applyAdd} disabled={lists.length===0}
+              style={{marginTop:12,width:"100%",padding:"11px 12px",borderRadius:10,fontSize:14,fontWeight:700,cursor:lists.length===0?"default":"pointer",
+                background:"rgba(34,197,94,0.18)",border:"1px solid rgba(34,197,94,0.4)",color:"#86efac",opacity:lists.length===0?0.5:1}}>Adicionar</button>
+          </div>
+        </div>
+      )}
+      {nameModal&&(
+        <div onClick={()=>setNameModal(null)} style={{position:"fixed",inset:0,zIndex:9001,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{...GLASS,borderRadius:18,padding:18,width:"100%",maxWidth:320}}>
+            <h3 style={{margin:"0 0 12px",fontSize:16,fontWeight:800}}>{nameModal.mode==="rename"?"Renomear lista":"Nova lista"}</h3>
+            <input autoFocus value={nameModal.value} onChange={e=>setNameModal(m=>({...m,value:e.target.value}))}
+              onKeyDown={e=>{ if(e.key==="Enter") confirmName(); }}
+              style={{width:"100%",background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,padding:"10px 12px",fontSize:14,color:"#e2e8f0",outline:"none",boxSizing:"border-box"}}/>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+              <button onClick={()=>setNameModal(null)} style={miniBtn}>Cancelar</button>
+              <button onClick={confirmName} style={{...miniBtn,background:"rgba(34,197,94,0.18)",border:"1px solid rgba(34,197,94,0.4)",color:"#86efac"}}>Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1198,7 +1451,7 @@ export default function App(){
   if(page==="home")   return sh(<Home nav={nav} submitted={submitted} count={portfolios.length} settings={settings} ranking={ranking} livePrices={livePrices} onMyPortfolio={openMyPortfolio}/>);
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
-  if(page==="ath")    return sh(<ATH/>);
+  if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} showToast={showToast}/>);
   if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} preLaunch={isPreLaunch(settings)} settings={settings} onSelect={openDetail} onCompare={openDuel}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} myNorm={norm(myName)} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
