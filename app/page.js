@@ -651,13 +651,18 @@ function ATH(){
     return [...list].sort((a,b)=>sign*(val(a)-val(b)));
   },[rows,q,sortKey,sortDir]);
   const GLASS={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
-  const Hd=({k,children,align="right"})=>(
-    <span onClick={()=>onSort(k)} style={{textAlign:align,cursor:"pointer",userSelect:"none",
-      color:sortKey===k?"#e2e8f0":"#94a3b8",display:"flex",alignItems:"center",gap:4,
-      justifyContent:align==="right"?"flex-end":align==="center"?"center":"flex-start"}}>
-      {children}{sortKey===k&&<span style={{fontSize:9}}>{sortDir==="asc"?"▲":"▼"}</span>}
-    </span>
-  );
+  const Hd=({k,children,align="center"})=>{
+    const active=sortKey===k;
+    const ai=align==="right"?"flex-end":align==="left"?"flex-start":"center";
+    return(
+      <span onClick={()=>onSort(k)} className={"athSortHd"+(active?" on":"")}
+        style={{display:"flex",flexDirection:"column",alignItems:ai,gap:1,cursor:"pointer",userSelect:"none"}}>
+        <i className={"athArr"+(active&&sortDir==="asc"?" on":"")} aria-hidden="true">▲</i>
+        {children}
+        <i className={"athArr"+(active&&sortDir==="desc"?" on":"")} aria-hidden="true">▼</i>
+      </span>
+    );
+  };
   return(
     <div style={{maxWidth:940,margin:"0 auto",padding:"40px 20px 120px"}}>
       <style>{`
@@ -667,6 +672,17 @@ function ATH(){
         @keyframes athSpin{to{transform:rotate(360deg)}}
         .athSpin{animation:athSpin .8s linear infinite}
 
+        /* Colunas ordenáveis: par de setas (cinza = clicável; ativa acende a direção) */
+        .athSortHd{cursor:pointer;user-select:none;color:#94a3b8;transition:color .15s}
+        .athSortHd.on{color:#e2e8f0}
+        .athArr{font-style:normal;font-size:8px;line-height:1;color:#64748b;transition:color .15s}
+        .athArr.on{color:#e2e8f0}
+        @media(hover:hover){
+          .athSortHd:hover{color:#e2e8f0}
+          .athSortHd:hover .athArr{color:#94a3b8}
+          .athSortHd:hover .athArr.on{color:#e2e8f0}
+        }
+
         /* TABLET (<=760): mantém as 7 colunas, só aperta */
         @media(max-width:760px){
           .athRow{grid-template-columns:30px 1fr 90px 84px 84px 80px 64px;gap:8px;
@@ -675,7 +691,7 @@ function ATH(){
 
         /* TELEMÓVEL (<=480): 6 pistas — # | Empresa | Marketcap | %abaixo | Preço/ATH | Desde */
         @media(max-width:480px){
-          .athRow{grid-template-columns:16px minmax(0,1fr) 48px 64px 56px 38px;gap:6px;
+          .athRow{grid-template-columns:16px minmax(0,1fr) 56px 60px 52px 38px;gap:6px;
             padding-left:8px!important;padding-right:8px!important}
           .athNum{text-align:left!important;padding-left:0!important;font-size:12px!important}
           .athRow .stkLogo>*{width:22px!important;height:22px!important}
@@ -683,7 +699,7 @@ function ATH(){
           .athName{display:none!important}
           .athSym{font-size:13px!important}
           .athEmp{gap:6px!important}
-          .athPx{display:flex!important;flex-direction:column;align-items:flex-end;line-height:1.12;min-width:0}
+          .athPx{display:flex!important;flex-direction:column;align-items:center;line-height:1.12;min-width:0}
           .athPxPrice{font-size:12px!important}
           .athPxAth{font-size:10.5px!important}
           .athHeadAth{display:none!important}
@@ -692,6 +708,7 @@ function ATH(){
           .athSinceLong{display:none!important}
           .athSinceShort{display:inline!important;font-size:11px!important}
           .athHead{font-size:9px!important;letter-spacing:0!important}
+          .athArr{font-size:7px}
         }
 
         /* 320px: degrada com graça (sem scroll) — cai o logo */
@@ -725,13 +742,13 @@ function ATH(){
         <div className="athRow" style={{padding:"10px 18px",borderBottom:"1px solid rgba(255,255,255,0.10)",
           fontSize:11,textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,color:"#94a3b8"}}>
           <span aria-hidden="true"/><span className="athHead">Empresa</span>
-          <Hd k="marketcap" align="right"><span className="athHead">Marketcap</span></Hd>
-          <Hd k="down" align="right"><span className="athHead">% abaixo</span></Hd>
-          <span className="athPx athHead" style={{textAlign:"right"}}>
-            <span style={{textAlign:"right"}}>Preço</span>
-            <span className="athHeadAth" style={{textAlign:"right"}}>ATH</span>
+          <Hd k="marketcap" align="center"><span className="athHead">Marketcap</span></Hd>
+          <Hd k="down" align="center"><span className="athHead">% abaixo</span></Hd>
+          <span className="athPx athHead" style={{textAlign:"center"}}>
+            <span style={{textAlign:"center"}}>Preço</span>
+            <span className="athHeadAth" style={{textAlign:"center"}}>ATH</span>
           </span>
-          <Hd k="since" align="right"><span className="athHead">Desde</span></Hd>
+          <Hd k="since" align="center"><span className="athHead">Desde</span></Hd>
         </div>
         {rows===null?(
           Array.from({length:12},(_,i)=>(
@@ -743,13 +760,13 @@ function ATH(){
                   <Skeleton w={54} h={11}/><span className="athName"><Skeleton w={108} h={9}/></span>
                 </span>
               </span>
-              <span style={{textAlign:"right"}}><Skeleton w={70} h={13}/></span>
-              <span style={{textAlign:"right"}}><Skeleton w={58} h={20}/></span>
+              <span style={{textAlign:"center"}}><Skeleton w={70} h={13}/></span>
+              <span style={{textAlign:"center"}}><Skeleton w={58} h={20}/></span>
               <span className="athPx">
-                <span style={{textAlign:"right"}}><Skeleton w={56} h={12}/></span>
-                <span style={{textAlign:"right"}}><Skeleton w={48} h={11}/></span>
+                <span style={{textAlign:"center"}}><Skeleton w={56} h={12}/></span>
+                <span style={{textAlign:"center"}}><Skeleton w={48} h={11}/></span>
               </span>
-              <span style={{textAlign:"right"}}><Skeleton w={34} h={11}/></span>
+              <span style={{textAlign:"center"}}><Skeleton w={34} h={11}/></span>
             </div>
           ))
         ):view.length===0?(
@@ -771,18 +788,18 @@ function ATH(){
                   <span className="athName" style={{fontSize:12,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</span>
                 </span>
               </span>
-              <span className="athCap" style={{textAlign:"right",fontFamily:"monospace",fontSize:14,fontWeight:700}}>{fmtCap(r.marketcap)}</span>
-              <span style={{textAlign:"right"}}>
+              <span className="athCap" style={{textAlign:"center",fontFamily:"monospace",fontSize:14,fontWeight:700}}>{fmtCap(r.marketcap)}</span>
+              <span style={{textAlign:"center"}}>
                 <span className="athBadge" style={{display:"inline-block",fontFamily:"monospace",fontSize:13,fontWeight:800,color:col,
                   background:bg,border:`1px solid ${bd}`,borderRadius:8,padding:"4px 8px"}}>
                   {r.down==null?"—":`${up?"+":""}${(r.down*100).toFixed(1)}%`}
                 </span>
               </span>
               <span className="athPx">
-                <span className="athPxPrice" style={{textAlign:"right",fontFamily:"monospace",fontSize:14,fontWeight:700}}>{fmtMoneyC(r.price)}</span>
-                <span className="athPxAth" style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#94a3b8"}}>{fmtMoneyC(r.ath)}</span>
+                <span className="athPxPrice" style={{textAlign:"center",fontFamily:"monospace",fontSize:14,fontWeight:700}}>{fmtMoneyC(r.price)}</span>
+                <span className="athPxAth" style={{textAlign:"center",fontFamily:"monospace",fontSize:13,color:"#94a3b8"}}>{fmtMoneyC(r.ath)}</span>
               </span>
-              <span style={{textAlign:"right",fontSize:12.5,color:"#94a3b8"}}>
+              <span style={{textAlign:"center",fontSize:12.5,color:"#94a3b8"}}>
                 <span className="athSinceLong">{sinceLabel(r.ath_ts)}</span>
                 <span className="athSinceShort">{sinceLabelShort(r.ath_ts)}</span>
               </span>
@@ -1215,10 +1232,20 @@ function Shell({children,page,detailRank,detailIsOwn,nav,submitted,toast,onMyPor
       color:"#e2e8f0",fontFamily:"var(--font-app), system-ui, -apple-system, sans-serif",overflowX:"hidden"}}>
       <BackgroundFade bg={theme.bg}/>
       <Aurora page={page}/>
-      <style>{`@media(max-width:640px){.navWide{display:none}}.cdiNav{justify-content:flex-start}@media(min-width:641px){.cdiNav{justify-content:center}}`}</style>
+      <style>{`
+        @media(max-width:640px){.navWide{display:none}}
+        .cdiNav{justify-content:center}
+        .cdiClock{position:absolute;top:12px;right:14px}
+        @media(max-width:640px){
+          /* mobile: relógio passa para uma linha própria centrada por baixo das abas,
+             para não tapar a aba "Meu"; abas centradas e um pouco mais compactas */
+          .cdiClock{position:static;display:flex;justify-content:center;margin-top:10px}
+          .cdiNav>button{padding-left:13px!important;padding-right:13px!important}
+        }
+      `}</style>
       <header style={{position:"sticky",top:0,zIndex:50,padding:"12px 14px"}}>
         <Nav page={page} nav={nav} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} />
-        <div style={{position:"absolute",top:12,right:14}}><MarketStatus/></div>
+        <div className="cdiClock"><MarketStatus/></div>
       </header>
       <main style={{position:"relative",zIndex:1}}>{children}</main>
       <BackToTop maxWidth={page==="ranking"?900:page==="detail"?1320:null}/>
