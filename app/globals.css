@@ -69,6 +69,16 @@ body {
 .rankBreathe { animation: cdiRankBreathe 3.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .rankBreathe { animation: none; } }
 
+/* Skeletons (placeholders de carregamento) — shimmer subtil; só durante o load */
+@keyframes cdiShimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.cdiSkeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.10) 37%, rgba(255,255,255,0.04) 63%);
+  background-size: 200% 100%;
+  animation: cdiShimmer 1.4s ease-in-out infinite;
+  border-radius: 8px;
+}
+@media (prefers-reduced-motion: reduce) { .cdiSkeleton { animation: none; } }
+
 /* Gráficos (Recharts): sem caixa de foco/realce ao clicar ou tocar */
 .recharts-wrapper,
 .recharts-wrapper *,

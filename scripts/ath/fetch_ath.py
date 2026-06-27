@@ -179,14 +179,17 @@ def fetch_prices():
                 continue
         time.sleep(1)
 
+    have_shares = bool(shares)
     rows = []
     for sym, p in prices.items():
         if not p:
             continue
-        sh = shares.get(sym)
-        mcap = round(sh * p) if sh else None
-        rows.append({"symbol": sym, "price": round(p, 2), "marketcap": mcap})
-    print(f"[ath] prices: {len(rows)} linhas")
+        row = {"symbol": sym, "price": round(p, 2)}
+        if have_shares:  # só atualiza marketcap se soubermos as shares (senão não lhe toca)
+            sh = shares.get(sym)
+            row["marketcap"] = round(sh * p) if sh else None
+        rows.append(row)
+    print(f"[ath] prices: {len(rows)} linhas (marketcap atualizado: {have_shares})")
     post_rows(rows)
 
 

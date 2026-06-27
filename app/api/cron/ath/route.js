@@ -18,17 +18,20 @@ export async function POST(request) {
   if (!rows || !rows.length) return Response.json({ error: "Sem linhas." }, { status: 400 });
 
   const now = new Date().toISOString();
+  const num = (v) => (v == null || v === "" ? null : (Number.isFinite(+v) ? +v : null));
+  // Escreve só as colunas que vêm no payload (uniformes por lote) — assim o modo "prices"
+  // não toca em marketcap/name/ath. null fica null (nunca 0).
   const clean = [];
   for (const r of rows) {
     const symbol = String(r?.symbol || "").toUpperCase().trim();
     if (!symbol) continue;
     const row = { symbol, updated_at: now };
-    if (r.name != null) row.name = String(r.name).slice(0, 120);
-    if (Number.isFinite(+r.price)) row.price = +r.price;
-    if (Number.isFinite(+r.marketcap)) row.marketcap = +r.marketcap;
-    if (Number.isFinite(+r.shares)) row.shares = +r.shares;
-    if (Number.isFinite(+r.ath)) row.ath = +r.ath;
-    if (r.ath_ts != null && r.ath_ts !== "") row.ath_ts = r.ath_ts; // ISO string
+    if ("name" in r) row.name = r.name == null ? null : String(r.name).slice(0, 120);
+    if ("price" in r) row.price = num(r.price);
+    if ("marketcap" in r) row.marketcap = num(r.marketcap);
+    if ("shares" in r) row.shares = num(r.shares);
+    if ("ath" in r) row.ath = num(r.ath);
+    if ("ath_ts" in r) row.ath_ts = r.ath_ts || null;
     clean.push(row);
   }
   if (!clean.length) return Response.json({ error: "Linhas inválidas." }, { status: 400 });

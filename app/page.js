@@ -477,11 +477,11 @@ function BreatheGlow({color="rgba(64,170,205,0.5)",mid="rgba(56,189,248,0.16)",i
   useEffect(()=>{
     let reduce=false; try{ reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches; }catch{}
     const el=ref.current; if(!el||reduce||!el.animate) return;
+    // Translação + opacidade (sem scale — evita re-rasterizar a desfocagem da própria camada).
     const anim=el.animate([
-      {transform:"translate3d(-5%,-4%,0) scale(1)",opacity:base*0.9},
-      {transform:"translate3d(6%,4%,0) scale(1.14)",opacity:base*1.32},
-      {transform:"translate3d(-2%,6%,0) scale(1.05)",opacity:base*1.02},
-      {transform:"translate3d(-5%,-4%,0) scale(1)",opacity:base*0.9},
+      {transform:"translate3d(-4%,-3%,0)",opacity:base*0.9},
+      {transform:"translate3d(5%,4%,0)",opacity:base*1.25},
+      {transform:"translate3d(-4%,-3%,0)",opacity:base*0.9},
     ],{duration,easing:"ease-in-out",iterations:Infinity});
     return()=>{ try{anim.cancel();}catch{} };
   },[]);
@@ -522,25 +522,23 @@ function Aurora(){
     if(reduce) return;
     const mk=(el,frames,dur)=>el&&el.animate?el.animate(frames,{duration:dur,easing:"ease-in-out",iterations:Infinity}):null;
     const a1=mk(r1.current,[
-      {transform:"translate3d(-8%,-6%,0) scale(1)"},
-      {transform:"translate3d(10%,8%,0) scale(1.25)"},
-      {transform:"translate3d(-4%,10%,0) scale(1.1)"},
-      {transform:"translate3d(-8%,-6%,0) scale(1)"},
-    ],38000);
+      {transform:"translate3d(-7%,-5%,0)"},
+      {transform:"translate3d(9%,7%,0)"},
+      {transform:"translate3d(-7%,-5%,0)"},
+    ],42000);
     const a2=mk(r2.current,[
-      {transform:"translate3d(8%,6%,0) scale(1.1)"},
-      {transform:"translate3d(-10%,-8%,0) scale(1)"},
-      {transform:"translate3d(6%,-10%,0) scale(1.2)"},
-      {transform:"translate3d(8%,6%,0) scale(1.1)"},
-    ],46000);
+      {transform:"translate3d(7%,5%,0)"},
+      {transform:"translate3d(-9%,-7%,0)"},
+      {transform:"translate3d(7%,5%,0)"},
+    ],50000);
     return()=>{ try{ a1&&a1.cancel(); a2&&a2.cancel(); }catch{} };
   },[]);
   return(
     <div aria-hidden="true" style={{position:"fixed",inset:0,zIndex:0,pointerEvents:"none",overflow:"hidden"}}>
-      <div ref={r1} style={{position:"absolute",top:"-12%",left:"-6%",width:"62vw",height:"62vw",borderRadius:"50%",
-        background:"radial-gradient(closest-side, rgba(56,189,248,0.10), transparent 70%)",filter:"blur(64px)",willChange:"transform"}}/>
-      <div ref={r2} style={{position:"absolute",bottom:"-16%",right:"-8%",width:"56vw",height:"56vw",borderRadius:"50%",
-        background:"radial-gradient(closest-side, rgba(45,212,191,0.09), transparent 70%)",filter:"blur(64px)",willChange:"transform"}}/>
+      <div ref={r1} style={{position:"absolute",top:"-10%",left:"-6%",width:"48vw",height:"48vw",borderRadius:"50%",
+        background:"radial-gradient(closest-side, rgba(56,189,248,0.10), transparent 70%)",filter:"blur(40px)",willChange:"transform"}}/>
+      <div ref={r2} style={{position:"absolute",bottom:"-14%",right:"-8%",width:"44vw",height:"44vw",borderRadius:"50%",
+        background:"radial-gradient(closest-side, rgba(45,212,191,0.09), transparent 70%)",filter:"blur(40px)",willChange:"transform"}}/>
     </div>
   );
 }
@@ -574,6 +572,9 @@ function StockLogo({ticker,size=28}){
 }
 
 /* ---- Aba ATH: distância ao máximo histórico (S&P 500) -------------------- */
+function Skeleton({w="100%",h=12,r=8,style}){
+  return <span className="cdiSkeleton" style={{display:"inline-block",width:w,height:h,borderRadius:r,...style}}/>;
+}
 function fmtCap(v){
   if(!Number.isFinite(v)||v<=0) return "—";
   if(v>=1e12) return `$${(v/1e12).toFixed(2)}T`;
@@ -594,17 +595,34 @@ function sinceLabel(ts){
   const years=days/365.25;
   return years<1.95?`${years.toFixed(1)} anos`:`${years.toFixed(years<10?1:0)} anos`;
 }
+function fmtMoneyC(v){ if(!Number.isFinite(v)) return "—"; return v>=1000?`$${Math.round(v).toLocaleString("en-US")}`:`$${v.toFixed(2)}`; }
+function sinceLabelShort(ts){
+  if(!ts) return "—";
+  const t=new Date(ts).getTime(); if(!Number.isFinite(t)) return "—";
+  const days=Math.floor((Date.now()-t)/86400000);
+  if(days<=0) return "hoje"; if(days<31) return `${days}d`;
+  const months=Math.round(days/30.44); if(months<12) return `${months}m`;
+  return `${Math.round(days/365.25)}a`;
+}
 function ATH(){
   const [rows,setRows]=useState(null);
   const [q,setQ]=useState("");
   const [sortKey,setSortKey]=useState("marketcap"); // marketcap | down | since
+  const [sortDir,setSortDir]=useState("desc"); // asc | desc — clicar na coluna alterna
+  const onSort=(k)=>{ if(k===sortKey) setSortDir(d=>d==="asc"?"desc":"asc"); else { setSortKey(k); setSortDir(k==="down"?"asc":"desc"); } };
   const [updatedAt,setUpdatedAt]=useState(null);
-  useEffect(()=>{
-    let cancel=false;
-    (async()=>{
+  const [limit,setLimit]=useState(100); // render só N de cada vez (perf); a procura vê as 500
+  const [refreshing,setRefreshing]=useState(false);
+  const mountedRef=useRef(true);
+  useEffect(()=>()=>{ mountedRef.current=false; },[]);
+  // Re-lê a tabela sp500_ath (o que o cron já escreveu). É uma leitura barata ao Supabase —
+  // NÃO mexe na API de cotações dos portefólios. Mantém os dados visíveis e só roda o ícone.
+  const load=useCallback(async()=>{
+    setRefreshing(true);
+    try{
       const { data }=await supabase.from("sp500_ath")
         .select("symbol,name,price,marketcap,ath,ath_ts,updated_at");
-      if(cancel) return;
+      if(!mountedRef.current) return;
       const list=(data||[]).map(r=>{
         const price=Number(r.price), ath=Number(r.ath);
         return { symbol:r.symbol, name:r.name||r.symbol, price, ath, marketcap:Number(r.marketcap),
@@ -612,93 +630,170 @@ function ATH(){
       });
       setRows(list);
       setUpdatedAt((data||[]).reduce((m,r)=>{ const t=new Date(r.updated_at||0).getTime(); return t>m?t:m; },0)||null);
-    })();
-    return()=>{ cancel=true; };
+    } finally { if(mountedRef.current) setRefreshing(false); }
   },[]);
+  useEffect(()=>{ load(); },[load]);
   const view=useMemo(()=>{
     if(!rows) return [];
     const needle=norm(q);
     let list=needle?rows.filter(r=>norm(r.symbol).includes(needle)||norm(r.name).includes(needle)):rows;
-    const cmp={
-      marketcap:(a,b)=>(b.marketcap||0)-(a.marketcap||0),
-      down:(a,b)=>(a.down??0)-(b.down??0),                                   // mais abaixo do ATH primeiro
-      since:(a,b)=>new Date(b.ath_ts||0).getTime()-new Date(a.ath_ts||0).getTime(), // ATH mais recente primeiro
+    const val={
+      marketcap:r=>r.marketcap??-Infinity,
+      down:r=>r.down??-Infinity,
+      since:r=>new Date(r.ath_ts||0).getTime(),
     }[sortKey]||(()=>0);
-    return [...list].sort(cmp);
-  },[rows,q,sortKey]);
+    const sign=sortDir==="asc"?1:-1;
+    return [...list].sort((a,b)=>sign*(val(a)-val(b)));
+  },[rows,q,sortKey,sortDir]);
   const GLASS={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
   const Hd=({k,children,align="right"})=>(
-    <span onClick={()=>setSortKey(k)} style={{textAlign:align,cursor:"pointer",userSelect:"none",
+    <span onClick={()=>onSort(k)} style={{textAlign:align,cursor:"pointer",userSelect:"none",
       color:sortKey===k?"#e2e8f0":"#94a3b8",display:"flex",alignItems:"center",gap:4,
       justifyContent:align==="right"?"flex-end":align==="center"?"center":"flex-start"}}>
-      {children}{sortKey===k&&<span style={{fontSize:9}}>▾</span>}
+      {children}{sortKey===k&&<span style={{fontSize:9}}>{sortDir==="asc"?"▲":"▼"}</span>}
     </span>
   );
   return(
     <div style={{maxWidth:1040,margin:"0 auto",padding:"40px 20px 120px"}}>
       <style>{`
         .athRow{display:grid;grid-template-columns:44px 1fr 116px 96px 110px 110px 92px;gap:10px;align-items:center}
+        .athPx{display:contents}            /* desktop: Preço e ATH ocupam 2 pistas reais */
+        .athSinceShort{display:none}
+        @keyframes athSpin{to{transform:rotate(360deg)}}
+        .athSpin{animation:athSpin .8s linear infinite}
+
+        /* TABLET (<=760): mantém as 7 colunas, só aperta */
         @media(max-width:760px){
-          .athRow{grid-template-columns:28px 1fr 80px 92px;gap:8px}
-          .athHideSm{display:none}
+          .athRow{grid-template-columns:30px 1fr 90px 84px 84px 80px 64px;gap:8px;
+            padding-left:14px!important;padding-right:14px!important}
+        }
+
+        /* TELEMÓVEL (<=480): 6 pistas — # | Empresa | Marketcap | %abaixo | Preço/ATH | Desde */
+        @media(max-width:480px){
+          .athRow{grid-template-columns:16px minmax(0,1fr) 48px 64px 56px 38px;gap:6px;
+            padding-left:8px!important;padding-right:8px!important}
+          .athNum{text-align:left!important;padding-left:0!important;font-size:12px!important}
+          .athRow .stkLogo>*{width:22px!important;height:22px!important}
+          .athRow .stkLogo img{width:22px!important;height:22px!important}
+          .athName{display:none!important}
+          .athSym{font-size:13px!important}
+          .athEmp{gap:6px!important}
+          .athPx{display:flex!important;flex-direction:column;align-items:flex-end;line-height:1.12;min-width:0}
+          .athPxPrice{font-size:12px!important}
+          .athPxAth{font-size:10.5px!important}
+          .athHeadAth{display:none!important}
+          .athCap{font-size:12px!important}
+          .athBadge{font-size:11px!important;padding:3px 5px!important;border-radius:7px!important}
+          .athSinceLong{display:none!important}
+          .athSinceShort{display:inline!important;font-size:11px!important}
+          .athHead{font-size:9px!important;letter-spacing:0!important}
+        }
+
+        /* 320px: degrada com graça (sem scroll) — cai o logo */
+        @media(max-width:359px){
+          .athRow{gap:5px;padding-left:6px!important;padding-right:6px!important}
+          .athRow .stkLogo{display:none!important}
         }
       `}</style>
-      <h1 style={{textAlign:"center",fontSize:28,fontWeight:800,letterSpacing:"-0.5px",margin:"0 0 4px"}}>Distância ao máximo histórico</h1>
-      <p style={{textAlign:"center",color:"#94a3b8",fontSize:14,margin:"0 0 24px"}}>S&P 500 · preço atual vs. máximo de sempre (ATH)</p>
+      <h1 style={{textAlign:"center",fontSize:28,fontWeight:800,letterSpacing:"-0.5px",margin:"0 0 4px"}}>Máximo histórico</h1>
+      <p style={{textAlign:"center",color:"#94a3b8",fontSize:14,margin:"0 0 24px"}}>S&P 500 · Preço atual vs. ATH</p>
 
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:14}}>
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,marginBottom:14}}>
         <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Procurar ticker ou empresa…"
-          style={{flex:"1 1 260px",maxWidth:420,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.12)",
-            borderRadius:999,padding:"11px 18px",fontSize:14,color:"#e2e8f0",outline:"none"}}/>
-        <span style={{fontSize:12.5,color:"#94a3b8",whiteSpace:"nowrap"}}>
+          style={{width:"100%",maxWidth:300,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.12)",
+            borderRadius:999,padding:"10px 16px",fontSize:14,color:"#e2e8f0",outline:"none",textAlign:"center"}}/>
+        <span style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12.5,color:"#94a3b8",whiteSpace:"nowrap"}}>
           {rows?`${updatedAt?`Atualizado ${new Date(updatedAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})} · `:""}${rows.length} ações`:"A carregar…"}
+          <button onClick={load} disabled={refreshing} title="Atualizar dados" aria-label="Atualizar dados"
+            style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:30,height:30,borderRadius:999,
+              background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",color:"#cbd5e1",padding:0,
+              cursor:refreshing?"default":"pointer",opacity:refreshing?0.6:1,flexShrink:0}}>
+            <svg className={refreshing?"athSpin":""} width="15" height="15" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>
+            </svg>
+          </button>
         </span>
       </div>
 
       <div style={{...GLASS,borderRadius:16,overflow:"hidden"}}>
         <div className="athRow" style={{padding:"10px 18px",borderBottom:"1px solid rgba(255,255,255,0.10)",
           fontSize:11,textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,color:"#94a3b8"}}>
-          <span style={{textAlign:"center"}}>#</span><span>Empresa</span>
-          <Hd k="marketcap" align="right">Marketcap</Hd>
-          <Hd k="down" align="right">% abaixo</Hd>
-          <span style={{textAlign:"right"}} className="athHideSm">Preço</span>
-          <span style={{textAlign:"right"}} className="athHideSm">ATH</span>
-          <Hd k="since" align="right"><span className="athHideSm">Desde</span></Hd>
+          <span aria-hidden="true"/><span className="athHead">Empresa</span>
+          <Hd k="marketcap" align="right"><span className="athHead">Marketcap</span></Hd>
+          <Hd k="down" align="right"><span className="athHead">% abaixo</span></Hd>
+          <span className="athPx athHead" style={{textAlign:"right"}}>
+            <span style={{textAlign:"right"}}>Preço</span>
+            <span className="athHeadAth" style={{textAlign:"right"}}>ATH</span>
+          </span>
+          <Hd k="since" align="right"><span className="athHead">Desde</span></Hd>
         </div>
         {rows===null?(
-          <div style={{padding:50,textAlign:"center",color:"#64748b",fontSize:14}}>A carregar dados…</div>
+          Array.from({length:12},(_,i)=>(
+            <div key={i} className="athRow" style={{padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+              <span className="athNum" style={{textAlign:"center"}}><Skeleton w={16} h={12}/></span>
+              <span className="athEmp" style={{display:"flex",alignItems:"center",gap:10}}>
+                <Skeleton w={30} h={30} r={6}/>
+                <span style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <Skeleton w={54} h={11}/><span className="athName"><Skeleton w={108} h={9}/></span>
+                </span>
+              </span>
+              <span style={{textAlign:"right"}}><Skeleton w={70} h={13}/></span>
+              <span style={{textAlign:"right"}}><Skeleton w={58} h={20}/></span>
+              <span className="athPx">
+                <span style={{textAlign:"right"}}><Skeleton w={56} h={12}/></span>
+                <span style={{textAlign:"right"}}><Skeleton w={48} h={11}/></span>
+              </span>
+              <span style={{textAlign:"right"}}><Skeleton w={34} h={11}/></span>
+            </div>
+          ))
         ):view.length===0?(
           <div style={{padding:50,textAlign:"center",color:"#64748b",fontSize:14}}>
             {rows.length===0?"Ainda sem dados — a tabela vai ser preenchida em breve.":"Sem resultados."}
           </div>
-        ):view.slice(0,520).map((r,i)=>{
+        ):(<>{view.slice(0,limit).map((r,i)=>{
           const up=r.down!=null&&r.down>=0;
           const col=r.down==null?"#94a3b8":up?"#4ade80":"#f87171";
           const bg=r.down==null?"transparent":up?"rgba(34,197,94,0.10)":"rgba(248,113,113,0.10)";
           const bd=r.down==null?"rgba(255,255,255,0.12)":up?"rgba(34,197,94,0.35)":"rgba(248,113,113,0.35)";
           return(
             <div key={r.symbol} className="athRow" style={{padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
-              <span style={{textAlign:"center",fontSize:13,color:"#64748b",fontWeight:700}}>{i+1}</span>
-              <span style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+              <span className="athNum" style={{textAlign:"center",fontSize:13,color:"#64748b",fontWeight:700}}>{i+1}</span>
+              <span className="athEmp" style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
                 <StockLogo ticker={r.symbol} size={30}/>
                 <span style={{minWidth:0,display:"flex",flexDirection:"column",lineHeight:1.15}}>
-                  <span style={{fontWeight:700,fontSize:14}}>{r.symbol}</span>
-                  <span style={{fontSize:12,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</span>
+                  <span className="athSym" style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.symbol}</span>
+                  <span className="athName" style={{fontSize:12,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</span>
                 </span>
               </span>
-              <span style={{textAlign:"right",fontFamily:"monospace",fontSize:14,fontWeight:700}}>{fmtCap(r.marketcap)}</span>
+              <span className="athCap" style={{textAlign:"right",fontFamily:"monospace",fontSize:14,fontWeight:700}}>{fmtCap(r.marketcap)}</span>
               <span style={{textAlign:"right"}}>
-                <span style={{display:"inline-block",fontFamily:"monospace",fontSize:13,fontWeight:800,color:col,
+                <span className="athBadge" style={{display:"inline-block",fontFamily:"monospace",fontSize:13,fontWeight:800,color:col,
                   background:bg,border:`1px solid ${bd}`,borderRadius:8,padding:"4px 8px"}}>
                   {r.down==null?"—":`${up?"+":""}${(r.down*100).toFixed(1)}%`}
                 </span>
               </span>
-              <span className="athHideSm" style={{textAlign:"right",fontFamily:"monospace",fontSize:14,fontWeight:700}}>{fmtMoney(r.price)}</span>
-              <span className="athHideSm" style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#94a3b8"}}>{fmtMoney(r.ath)}</span>
-              <span className="athHideSm" style={{textAlign:"right",fontSize:12.5,color:"#94a3b8"}}>{sinceLabel(r.ath_ts)}</span>
+              <span className="athPx">
+                <span className="athPxPrice" style={{textAlign:"right",fontFamily:"monospace",fontSize:14,fontWeight:700}}>{fmtMoneyC(r.price)}</span>
+                <span className="athPxAth" style={{textAlign:"right",fontFamily:"monospace",fontSize:13,color:"#94a3b8"}}>{fmtMoneyC(r.ath)}</span>
+              </span>
+              <span style={{textAlign:"right",fontSize:12.5,color:"#94a3b8"}}>
+                <span className="athSinceLong">{sinceLabel(r.ath_ts)}</span>
+                <span className="athSinceShort">{sinceLabelShort(r.ath_ts)}</span>
+              </span>
             </div>
           );
         })}
+        {view.length>limit&&(
+          <div style={{padding:"14px",textAlign:"center"}}>
+            <button onClick={()=>setLimit(l=>l+150)}
+              style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:999,
+                padding:"9px 18px",fontSize:13,fontWeight:600,color:"#cbd5e1",cursor:"pointer"}}>
+              Mostrar mais ({view.length-limit})
+            </button>
+          </div>
+        )}
+        </>)}
       </div>
     </div>
   );
@@ -2349,7 +2444,7 @@ function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarte
     return()=>{ cancel=true; };
   },[portfolioId]);
 
-  if(snaps===null) return <p style={{fontSize:13,color:"#4b5563",margin:0}}>A carregar evolução…</p>;
+  if(snaps===null) return <Skeleton w="100%" h={200} r={10} style={{display:"block"}}/>;
 
   const now=new Date().toISOString();
   // Arranque: pré-1jul → data de submissão; depois do arranque → 1 jul (reset).
@@ -2746,7 +2841,7 @@ function DuelChart({a,b,curA,curB}){
     })();
     return()=>{ cancel=true; };
   },[a.id,b.id]);
-  if(snaps===null) return <p style={{fontSize:13,color:"#4b5563",margin:0}}>A carregar evolução…</p>;
+  if(snaps===null) return <Skeleton w="100%" h={200} r={10} style={{display:"block"}}/>;
   const today=new Date().toISOString().slice(0,10);
   const build=(id,cur)=>{
     const s=snaps.filter(x=>x.portfolio_id===id).map(x=>({date:x.date,r:Number(x.total_return)}));
