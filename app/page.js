@@ -515,7 +515,7 @@ function Float({children,style,cx=false,amp=6,duration=4200}){
 
 // Aurora de fundo: 2 manchas de luz MUITO subtis a derivar devagar atrás de toda a app.
 // Fixa, por trás do conteúdo. Respeita prefers-reduced-motion.
-function Aurora(){
+function Aurora({page}){
   const r1=useRef(null), r2=useRef(null);
   useEffect(()=>{
     let reduce=false; try{ reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches; }catch{}
@@ -533,12 +533,17 @@ function Aurora(){
     ],50000);
     return()=>{ try{ a1&&a1.cancel(); a2&&a2.cancel(); }catch{} };
   },[]);
+  const ath=page==="ath"; // ATH: lavanda no canto sup. direito + violeta à direita (combina com o tema)
+  const b1=ath
+    ? {top:"-12%",right:"-4%",width:"52vw",height:"52vw",background:"radial-gradient(closest-side, rgba(208,206,232,0.16), transparent 70%)"}
+    : {top:"-10%",left:"-6%",width:"48vw",height:"48vw",background:"radial-gradient(closest-side, rgba(56,189,248,0.10), transparent 70%)"};
+  const b2=ath
+    ? {top:"16%",right:"-12%",width:"40vw",height:"40vw",background:"radial-gradient(closest-side, rgba(134,104,166,0.16), transparent 70%)"}
+    : {bottom:"-14%",right:"-8%",width:"44vw",height:"44vw",background:"radial-gradient(closest-side, rgba(45,212,191,0.09), transparent 70%)"};
   return(
     <div aria-hidden="true" style={{position:"fixed",inset:0,zIndex:0,pointerEvents:"none",overflow:"hidden"}}>
-      <div ref={r1} style={{position:"absolute",top:"-10%",left:"-6%",width:"48vw",height:"48vw",borderRadius:"50%",
-        background:"radial-gradient(closest-side, rgba(56,189,248,0.10), transparent 70%)",filter:"blur(40px)",willChange:"transform"}}/>
-      <div ref={r2} style={{position:"absolute",bottom:"-14%",right:"-8%",width:"44vw",height:"44vw",borderRadius:"50%",
-        background:"radial-gradient(closest-side, rgba(45,212,191,0.09), transparent 70%)",filter:"blur(40px)",willChange:"transform"}}/>
+      <div ref={r1} style={{position:"absolute",borderRadius:"50%",filter:"blur(40px)",willChange:"transform",...b1}}/>
+      <div ref={r2} style={{position:"absolute",borderRadius:"50%",filter:"blur(40px)",willChange:"transform",...b2}}/>
     </div>
   );
 }
@@ -614,7 +619,7 @@ function ATH(){
   const [limit,setLimit]=useState(100); // render só N de cada vez (perf); a procura vê as 500
   const [refreshing,setRefreshing]=useState(false);
   const mountedRef=useRef(true);
-  useEffect(()=>()=>{ mountedRef.current=false; },[]);
+  useEffect(()=>{ mountedRef.current=true; return ()=>{ mountedRef.current=false; }; },[]);
   // Re-lê a tabela sp500_ath (o que o cron já escreveu). É uma leitura barata ao Supabase —
   // NÃO mexe na API de cotações dos portefólios. Mantém os dados visíveis e só roda o ícone.
   const load=useCallback(async()=>{
@@ -654,7 +659,7 @@ function ATH(){
     </span>
   );
   return(
-    <div style={{maxWidth:1040,margin:"0 auto",padding:"40px 20px 120px"}}>
+    <div style={{maxWidth:940,margin:"0 auto",padding:"40px 20px 120px"}}>
       <style>{`
         .athRow{display:grid;grid-template-columns:44px 1fr 116px 96px 110px 110px 92px;gap:10px;align-items:center}
         .athPx{display:contents}            /* desktop: Preço e ATH ocupam 2 pistas reais */
@@ -883,26 +888,31 @@ const K={MYNAME:"ci_myname",MYPIN:"ci_mypin"};
 const keyToId=(k)=>k?String(k).replace(/^pf_/,""):"";
 const slugify=(s)=>norm(s).replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
 function findBySlug(list,slug){ return slug?(list||[]).find(p=>slugify(p.name)===slug||keyToId(p.key)===slug)||null:null; }
-function routeToHash(r){
-  if(r.page==="detail"&&r.detailSlug) return `#p/${r.detailSlug}`;
-  if(r.page==="duel"&&r.duelSlugs?.[0]&&r.duelSlugs?.[1]) return `#duel/${r.duelSlugs[0]}~${r.duelSlugs[1]}`;
-  if(r.page==="ranking") return "#ranking";
-  if(r.page==="ath")     return "#ath";
-  if(r.page==="create")  return "#criar";
-  if(r.page==="confirm") return "#confirmar";
-  if(r.page==="admin")   return "#admin";
-  return "#"; // home
+function routeToPath(r){
+  if(r.page==="detail"&&r.detailSlug) return `/p/${r.detailSlug}`;
+  if(r.page==="duel"&&r.duelSlugs?.[0]&&r.duelSlugs?.[1]) return `/duel/${r.duelSlugs[0]}~${r.duelSlugs[1]}`;
+  if(r.page==="ranking") return "/ranking";
+  if(r.page==="ath")     return "/ath";
+  if(r.page==="create")  return "/criar";
+  if(r.page==="confirm") return "/confirmar";
+  if(r.page==="admin")   return "/admin";
+  return "/"; // home
 }
-function parseHash(){
-  const h=(typeof window!=="undefined"?window.location.hash:"").replace(/^#/,"");
-  if(!h) return {page:"home"};
-  if(h==="ranking")  return {page:"ranking"};
-  if(h==="ath")      return {page:"ath"};
-  if(h==="criar")    return {page:"create"};
-  if(h==="confirmar")return {page:"confirm"};
-  if(h==="admin")    return {page:"admin"};
-  const mp=h.match(/^p\/(.+)$/);          if(mp) return {page:"detail",detailSlug:decodeURIComponent(mp[1])};
-  const md=h.match(/^duel\/(.+)~(.+)$/);  if(md) return {page:"duel",duelSlugs:[decodeURIComponent(md[1]),decodeURIComponent(md[2])]};
+function parseRoute(){
+  if(typeof window==="undefined") return {page:"home"};
+  let p=window.location.pathname.replace(/\/+$/,"")||"/";
+  if(p==="/"){ // migração de links antigos com hash (#p/..., #ath, #ranking, ...)
+    const legacy=window.location.hash.replace(/^#/,"");
+    if(legacy) p="/"+legacy;
+  }
+  if(p==="/"||p==="")  return {page:"home"};
+  if(p==="/ranking")   return {page:"ranking"};
+  if(p==="/ath")       return {page:"ath"};
+  if(p==="/criar")     return {page:"create"};
+  if(p==="/confirmar") return {page:"confirm"};
+  if(p==="/admin")     return {page:"admin"};
+  const mp=p.match(/^\/p\/(.+)$/);          if(mp) return {page:"detail",detailSlug:decodeURIComponent(mp[1])};
+  const md=p.match(/^\/duel\/(.+)~(.+)$/);  if(md) return {page:"duel",duelSlugs:[decodeURIComponent(md[1]),decodeURIComponent(md[2])]};
   return {page:"home"};
 }
 
@@ -923,19 +933,15 @@ export default function App(){
 
   const showToast=useCallback((msg,kind="ok")=>{ setToast({msg,kind}); setTimeout(()=>setToast(null),3500); },[]);
 
-  // Routing: aplica o hash ao estado; navegar empurra o hash (back/forward funciona).
+  // Routing por caminho (URLs limpos, sem #); navegar empurra o caminho (back/forward funciona).
   const applyRoute=useCallback(()=>{
-    const r=parseHash();
+    const r=parseRoute();
     setPage(r.page);
     setDetailSlug(r.detailSlug??null);
     setDuelSlugs(r.duelSlugs??null);
   },[]);
   const goRoute=useCallback((r)=>{
-    if(typeof window!=="undefined"){
-      const hash=routeToHash(r);
-      const url=(hash&&hash!=="#")?hash:(window.location.pathname+window.location.search);
-      window.history.pushState(null,"",url);
-    }
+    if(typeof window!=="undefined") window.history.pushState(null,"",routeToPath(r));
     applyRoute();
   },[applyRoute]);
   const slugForKey=useCallback((key)=>{ const pf=portfolios.find(p=>p.key===key); return pf?(slugify(pf.name)||keyToId(key)):keyToId(key); },[portfolios]);
@@ -1042,13 +1048,16 @@ export default function App(){
   // Ao mudar de ecrã (ou de portefólio aberto), começa no topo do scroll.
   useEffect(()=>{ if(typeof window!=="undefined") window.scrollTo(0,0); },[page,detailSlug,duelSlugs]);
 
-  // Routing por hash: aplica a rota no arranque e em back/forward (e edição manual do hash).
-  // Inclui a entrada de admin (#admin) e os links partilháveis (#p/<id>, #duel/<a>~<b>).
+  // Routing por caminho: aplica a rota no arranque e em back/forward.
+  // Inclui a entrada de admin (/admin) e os links partilháveis (/p/<slug>, /duel/<a>~<b>).
   useEffect(()=>{
+    // Migra links antigos com hash (/#p/...) para caminho limpo, sem recarregar.
+    if(typeof window!=="undefined" && window.location.hash){
+      window.history.replaceState(null,"",routeToPath(parseRoute()));
+    }
     applyRoute();
     window.addEventListener("popstate",applyRoute);
-    window.addEventListener("hashchange",applyRoute);
-    return()=>{ window.removeEventListener("popstate",applyRoute); window.removeEventListener("hashchange",applyRoute); };
+    return()=>{ window.removeEventListener("popstate",applyRoute); };
   },[applyRoute]);
 
   const myPf=useMemo(()=>{
@@ -1191,18 +1200,21 @@ function Shell({children,page,detailRank,detailIsOwn,nav,submitted,toast,onMyPor
   const BLUE={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",color:"#070d1c"};
   // TESTE: azul-petróleo/teal (referência) — só no ranking.
   const BLUE_REF={bg:"radial-gradient(1600px 1000px at 50% -6%, rgba(64,170,205,0.20) 0%, rgba(44,130,170,0.07) 40%, transparent 72%), linear-gradient(180deg,#16526a 0%,#123f52 50%,#0d2d3c 78%,#091e29 100%)",color:"#091e29"};
+  // ATH: brilho lavanda no canto superior direito + toque roxo à direita, azul-marinho a escurecer para quase preto.
+  const ATHBG={bg:"radial-gradient(1500px 1150px at 82% -2%, rgba(210,208,230,0.42) 0%, rgba(150,150,192,0.16) 30%, transparent 58%), radial-gradient(1200px 1000px at 104% 30%, rgba(120,96,152,0.26) 0%, transparent 56%), radial-gradient(1300px 1000px at 20% 14%, rgba(86,104,168,0.18) 0%, transparent 60%), linear-gradient(165deg,#1e2540 0%,#151b2f 44%,#0a0e1c 78%,#060810 100%)",color:"#060810"};
   // Pódio → ouro/prata/bronze. Ranking + detalhe de OUTROS (4º+/em espera) → azul
   // petróleo novo. O PRÓPRIO portefólio (fora do pódio) e a homepage → azul original.
   const medal=page==="detail"?(detailRank===1?GOLD:detailRank===2?SILVER:detailRank===3?BRONZE:null):null;
   const theme=medal
-    ||((page==="ranking"||page==="duel"||page==="ath")?BLUE_REF
+    ||(page==="ath"?ATHBG
+      :(page==="ranking"||page==="duel")?BLUE_REF
       :(page==="detail"&&!detailIsOwn?BLUE_REF:BLUE));
   return(
     <div style={{minHeight:"100vh",position:"relative",
       backgroundColor:theme.color,transition:"background-color .6s ease",
       color:"#e2e8f0",fontFamily:"var(--font-app), system-ui, -apple-system, sans-serif",overflowX:"hidden"}}>
       <BackgroundFade bg={theme.bg}/>
-      <Aurora/>
+      <Aurora page={page}/>
       <style>{`@media(max-width:640px){.navWide{display:none}}.cdiNav{justify-content:flex-start}@media(min-width:641px){.cdiNav{justify-content:center}}`}</style>
       <header style={{position:"sticky",top:0,zIndex:50,padding:"12px 14px"}}>
         <Nav page={page} nav={nav} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} />

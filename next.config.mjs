@@ -33,6 +33,19 @@ const nextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  // URLs limpos (sem #): estes caminhos servem a SPA (app/page.js) e o cliente lê o pathname.
+  // /api, /_next e ficheiros estáticos não são afetados.
+  async rewrites() {
+    return [
+      { source: "/ranking", destination: "/" },
+      { source: "/ath", destination: "/" },
+      { source: "/criar", destination: "/" },
+      { source: "/confirmar", destination: "/" },
+      { source: "/admin", destination: "/" },
+      { source: "/p/:slug", destination: "/" },
+      { source: "/duel/:slugs", destination: "/" },
+    ];
+  },
 };
 
 export default nextConfig;
