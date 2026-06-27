@@ -581,13 +581,17 @@ function StockLogo({ticker,size=28}){
 function Skeleton({w="100%",h=12,r=8,style}){
   return <span className="cdiSkeleton" style={{display:"inline-block",width:w,height:h,borderRadius:r,...style}}/>;
 }
-function fmtCap(v){
+function fmtCap(v,s="$"){
   if(!Number.isFinite(v)||v<=0) return "—";
-  if(v>=1e12) return `$${(v/1e12).toFixed(2)}T`;
-  if(v>=1e9)  return `$${(v/1e9).toFixed(0)}B`;
-  if(v>=1e6)  return `$${(v/1e6).toFixed(0)}M`;
-  return `$${v.toFixed(0)}`;
+  if(v>=1e12) return `${s}${(v/1e12).toFixed(2)}T`;
+  if(v>=1e9)  return `${s}${(v/1e9).toFixed(0)}B`;
+  if(v>=1e6)  return `${s}${(v/1e6).toFixed(0)}M`;
+  return `${s}${v.toFixed(0)}`;
 }
+const curSym=(c)=>({USD:"$",EUR:"€",GBP:"£",JPY:"¥",CHF:"CHF ",CAD:"C$",AUD:"A$",HKD:"HK$",BRL:"R$"}[c]||"$");
+// Moeda inferida pelo sufixo do ticker (sem precisar de coluna na BD). Ex.: .PA/.AS/.DE → EUR.
+const SUFFIX_CUR={PA:"EUR",AS:"EUR",BR:"EUR",LS:"EUR",MC:"EUR",MI:"EUR",DE:"EUR",F:"EUR",VI:"EUR",IR:"EUR",HE:"EUR",AT:"EUR",L:"GBP",SW:"CHF",TO:"CAD",V:"CAD",AX:"AUD",HK:"HKD",T:"JPY",SA:"BRL"};
+const curForTicker=(sym)=>{ const p=String(sym||"").toUpperCase().split(/[.\-]/); return p.length>1?(SUFFIX_CUR[p[p.length-1]]||"USD"):"USD"; };
 function fmtMoney(v){ return Number.isFinite(v)?`$${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—"; }
 function sinceLabel(ts){
   if(!ts) return "—";
@@ -601,7 +605,7 @@ function sinceLabel(ts){
   const years=days/365.25;
   return years<1.95?`${years.toFixed(1)} anos`:`${years.toFixed(years<10?1:0)} anos`;
 }
-function fmtMoneyC(v){ if(!Number.isFinite(v)) return "—"; return v>=1000?`$${Math.round(v).toLocaleString("en-US")}`:`$${v.toFixed(2)}`; }
+function fmtMoneyC(v,s="$"){ if(!Number.isFinite(v)) return "—"; return v>=1000?`${s}${Math.round(v).toLocaleString("en-US")}`:`${s}${v.toFixed(2)}`; }
 function sinceLabelShort(ts){
   if(!ts) return "—";
   const t=new Date(ts).getTime(); if(!Number.isFinite(t)) return "—";
@@ -1000,7 +1004,7 @@ function ATH({myTickers,auth,showToast}){
                   <span className="athName" style={{fontSize:12,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</span>
                 </span>
               </span>
-              <span className="athCap" style={{textAlign:"center",fontFamily:"monospace",fontSize:14,fontWeight:700}}>{fmtCap(r.marketcap)}</span>
+              <span className="athCap" style={{textAlign:"center",fontFamily:"monospace",fontSize:14,fontWeight:700}}>{fmtCap(r.marketcap,curSym(curForTicker(r.symbol)))}</span>
               <span style={{textAlign:"center"}}>
                 <span className="athBadge" style={{display:"inline-block",fontFamily:"monospace",fontSize:13,fontWeight:800,color:col,
                   background:bg,border:`1px solid ${bd}`,borderRadius:8,padding:"4px 8px"}}>
@@ -1008,8 +1012,8 @@ function ATH({myTickers,auth,showToast}){
                 </span>
               </span>
               <span className="athPx">
-                <span className="athPxPrice" style={{textAlign:"center",fontFamily:"monospace",fontSize:14,fontWeight:700}}>{fmtMoneyC(r.price)}</span>
-                <span className="athPxAth" style={{textAlign:"center",fontFamily:"monospace",fontSize:13,color:"#94a3b8"}}>{fmtMoneyC(r.ath)}</span>
+                <span className="athPxPrice" style={{textAlign:"center",fontFamily:"monospace",fontSize:14,fontWeight:700}}>{fmtMoneyC(r.price,curSym(curForTicker(r.symbol)))}</span>
+                <span className="athPxAth" style={{textAlign:"center",fontFamily:"monospace",fontSize:13,color:"#94a3b8"}}>{fmtMoneyC(r.ath,curSym(curForTicker(r.symbol)))}</span>
               </span>
               <span style={{textAlign:"center",fontSize:12.5,color:"#94a3b8"}}>
                 <span className="athSinceLong">{sinceLabel(r.ath_ts)}</span>
