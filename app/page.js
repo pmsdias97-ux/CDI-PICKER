@@ -3444,6 +3444,8 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
   const [editPin,setEditPin]=useState("");
   const [pins,setPins]=useState({}); // { user_id: pin } — códigos dos membros
   const [fullPfs,setFullPfs]=useState(null); // portefólios completos (com ações dos oficiais) via service_role
+  const [readiness,setReadiness]=useState(null); // relatório de prontidão para o lançamento
+  const [checkingRd,setCheckingRd]=useState(false);
   useEffect(()=>{
     let cancel=false;
     (async()=>{
@@ -3475,8 +3477,7 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
       const data=await res.json();
       if(!res.ok||!data?.ok){ showToast(data?.error||"Não foi possível trancar os preços.","error"); return; }
       if(dryRun){
-        const sample=(data.sample||[]).map(s=>`${s.ticker} ${s.close??"—"}`).join(", ");
-        showToast(`Pré-visualização: ${data.tickers} tickers (fecho ${data.usedClose}, vivo ${data.usedLive}, sem ${data.missing}). ${sample}`);
+        showToast(`Pré-visualização: ${data.tickers} tickers — pipeline ${data.usedAth??0}, fecho ${data.usedClose}, vivo ${data.usedLive}, SEM ${data.missing}.`);
         return;
       }
       setSettings(s=>({...(s||{}),baselinesLockedAt:data.lockedAt}));
@@ -3495,6 +3496,17 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
       await reload();
       showToast("Competição a decorrer.");
     }catch{ showToast("Falha de ligação.","error"); }
+  }
+  // Verificação de prontidão para o lançamento (diagnóstico, só leitura).
+  async function checkReadiness(){
+    setCheckingRd(true);
+    try{
+      const res=await fetch("/api/admin/readiness",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
+      const data=await res.json();
+      if(!res.ok||!data?.ok){ showToast(data?.error||"Não foi possível verificar.","error"); return; }
+      setReadiness(data);
+    }catch{ showToast("Falha de ligação.","error"); }
+    finally{ setCheckingRd(false); }
   }
   async function savePin(p){
     const code=editPin.trim();
@@ -3722,6 +3734,53 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
                   padding:"11px 20px",fontSize:14,fontWeight:700,cursor:(settings.competitionStarted||!settings.baselinesLockedAt)?"not-allowed":"pointer"}}>
                 🚀 Arrancar competição
               </button>
+            </div>
+
+            {/* Verificação de prontidão para o lançamento */}
+            <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:16,marginTop:16}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0"}}>Verificação de prontidão</div>
+                <button onClick={checkReadiness} disabled={checkingRd}
+                  style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:10,
+                    padding:"8px 14px",fontSize:13,fontWeight:600,color:"#cbd5e1",cursor:checkingRd?"default":"pointer"}}>
+                  {checkingRd?"A verificar…":"🩺 Verificar"}</button>
+              </div>
+              {readiness&&(()=>{
+                const ok=(b)=>({c:b?"#4ade80":"#f87171",t:b?"✅":"❌"});
+                const warn=(b)=>({c:b?"#fbbf24":"#4ade80",t:b?"⚠️":"✅"});
+                const info={c:"#94a3b8",t:"•"};
+                const fmt=(d)=>d?new Date(d).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"}):"—";
+                const stale=(d,h)=>!d||(Date.now()-new Date(d).getTime())>h*3600*1000;
+                const e=readiness.env||{}, s=readiness.settings||{};
+                const row=(label,st,value)=>(
+                  <div key={label} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                    <span style={{color:"#94a3b8"}}>{label}</span>
+                    <span style={{color:st.c,fontWeight:600,whiteSpace:"nowrap",textAlign:"right"}}>{st.t} {value}</span>
+                  </div>
+                );
+                return(
+                  <div style={{marginTop:12,fontSize:12.5}}>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
+                      {Object.entries(e).map(([k,v])=>(
+                        <span key={k} style={{fontSize:11,fontWeight:600,padding:"3px 8px",borderRadius:999,
+                          background:v?"rgba(34,197,94,0.15)":"rgba(248,113,113,0.15)",color:v?"#86efac":"#fca5a5",
+                          border:`1px solid ${v?"rgba(34,197,94,0.4)":"rgba(248,113,113,0.4)"}`}}>{v?"✅":"❌"} {k}</span>
+                      ))}
+                    </div>
+                    {row("Ações sem preço de partida",ok(readiness.stocksWithoutBaseline===0),readiness.stocksWithoutBaseline)}
+                    {row("Oficiais sem ações",ok(readiness.officialEmpty===0),readiness.officialEmpty)}
+                    {row("Demos sem PIN",ok(readiness.demosWithoutPin===0),readiness.demosWithoutPin)}
+                    {row("ATH atualizado",warn(stale(readiness.athLatest,30)),fmt(readiness.athLatest))}
+                    {row("Último snapshot",warn(stale(readiness.snapshotLatest,30)),fmt(readiness.snapshotLatest))}
+                    {row("Tickers distintos",info,readiness.distinctTickers)}
+                    {row("Preços trancados",s.baselines_locked_at?ok(true):warn(true),s.baselines_locked_at?fmt(s.baselines_locked_at):"não")}
+                    {row("Competição a decorrer",s.competition_started?ok(true):info,s.competition_started?"sim":"não")}
+                    {row("Submissões",info,s.submissions_open?"abertas":"fechadas")}
+                    {row("Início → Fim",info,`${fmt(s.game_start_date)} → ${fmt(s.game_end_date)}`)}
+                    <p style={{fontSize:11,color:"#64748b",marginTop:8}}>Nota: os GitHub Secrets (workflows) não se veem aqui — confirma-os no GitHub.</p>
+                  </div>
+                );
+              })()}
             </div>
           </div>
           <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,gridColumn:"1/-1"}}>
