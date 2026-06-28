@@ -3047,11 +3047,11 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,myNorm,
             <h1 style={{fontSize:"clamp(22px,5vw,26px)",fontWeight:800,letterSpacing:"-0.5px",margin:0,minWidth:0,lineHeight:1.2,overflowWrap:"anywhere"}}>{pf.name}</h1>
           </div>
           <div style={{fontSize:"clamp(34px,9vw,42px)",fontWeight:800,fontFamily:"monospace",lineHeight:1,
-            color:st.total>=0?"#4ade80":"#f87171"}}>{st.total>=0?"▲":"▼"} <Rolling text={pct(Math.abs(st.total)).replace(/[+-]/,"")}/></div>
+            color:st.total>=0?"#4ade80":"#f87171"}}><Tri up={st.total>=0} size="0.78em"/> <Rolling text={pct(Math.abs(st.total)).replace(/[+-]/,"")}/></div>
           <div style={{fontSize:11,color:"#94a3b8",marginTop:6,textTransform:"uppercase",letterSpacing:"0.5px"}}>Rentabilidade média</div>
           <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"10px 24px",marginTop:18,fontSize:13,color:"#94a3b8"}}>
-            <span style={{color:"#4ade80"}}>▲ {st.pos} positivas</span>
-            <span style={{color:"#f87171"}}>▼ {st.neg} negativas</span>
+            <span style={{color:"#4ade80"}}><Tri size={11}/> {st.pos} positivas</span>
+            <span style={{color:"#f87171"}}><Tri up={false} size={11}/> {st.neg} negativas</span>
             {alpha!=null&&(
               <span title="A tua rentabilidade menos a do S&P 500 no mesmo período">
                 Alpha: <strong style={{color:alpha>=0?"#4ade80":"#f87171"}}><Rolling text={`${alpha>=0?"+":""}${(alpha*100).toFixed(2)}%`}/></strong>
@@ -3107,7 +3107,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,myNorm,
               return(
                 <span onClick={toggle} title="Alternar Desde submissão / Diário"
                   style={{...base,color:v>=0?"#4ade80":"#f87171"}}>
-                  {v>=0?"▲":"▼"} {pct(Math.abs(v)).replace(/[+-]/,"")}
+                  <Tri up={v>=0} size={13}/> {pct(Math.abs(v)).replace(/[+-]/,"")}
                 </span>
               );
             })()}
@@ -3159,6 +3159,16 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,myNorm,
 }
 
 // Seta que distingue a box "melhor" (▲) da "pior" (▼).
+// Triângulo ▲/▼ com cantos arredondados (substitui os caracteres Unicode, que não dobram cantos).
+function Tri({up=true,size=12,color="currentColor",style}){
+  return(
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke={color}
+      strokeWidth="3.2" strokeLinejoin="round" strokeLinecap="round" aria-hidden="true"
+      style={{display:"inline-block",verticalAlign:"middle",...style}}>
+      {up?<path d="M12 6 L20.5 18.5 L3.5 18.5 Z"/>:<path d="M12 18 L3.5 5.5 L20.5 5.5 Z"/>}
+    </svg>
+  );
+}
 function DayChip({up}){
   const c=up?"#4ade80":"#f87171";
   const bg=up?"rgba(34,197,94,0.15)":"rgba(239,68,68,0.15)";
@@ -3167,7 +3177,7 @@ function DayChip({up}){
     <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",
       width:26,height:26,borderRadius:"50%",fontSize:12,fontWeight:800,
       color:c,background:bg,border:`1px solid ${bd}`}}>
-      {up?"▲":"▼"}
+      <Tri up={up} size={11}/>
     </span>
   );
 }
@@ -3285,7 +3295,7 @@ function PickCell({s,kind}){
   const bd=up?"rgba(34,197,94,0.20)":"rgba(239,68,68,0.20)";
   return(
     <div title={s.companyName||s.ticker} style={{display:"flex",alignItems:"center",gap:5,background:bg,border:`1px solid ${bd}`,borderRadius:9,padding:"5px 8px",minWidth:0,overflow:"hidden"}}>
-      <span style={{color:col,fontSize:9,fontWeight:800,width:9,textAlign:"center",flexShrink:0}}>{up?"▲":"▼"}</span>
+      <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:9,flexShrink:0,color:col}}><Tri up={up} size={8}/></span>
       <span style={{flexShrink:0,display:"inline-flex"}}><StockLogo ticker={s.ticker} size={16}/></span>
       <span style={{flex:1,minWidth:0,fontSize:"clamp(9.5px,2.4vw,12px)",fontWeight:800,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.ticker}</span>
       {s.side==="short"&&<span style={{flexShrink:0}}><SideBadge side="short"/></span>}
