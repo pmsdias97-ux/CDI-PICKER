@@ -27,6 +27,7 @@ CRON_SECRET = os.environ.get("CRON_SECRET", "")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 BATCH = 100  # yf.download é mais feliz em lotes ~100
+ENRICH_BUDGET_S = 420  # teto p/ a fase de marketcap/nome (fast_info/.info) — evita pendurar se o Yahoo limitar
 
 
 def yf_symbol(s):
@@ -119,23 +120,31 @@ def compute_rows(symbols, names, in_sp500):
         time.sleep(1)
 
     # marketcap + shares via fast_info (best-effort). Nome: S&P vem da Wikipédia; extras via .info.
+    # Orçamento de tempo: se o Yahoo limitar e isto arrastar, paramos de enriquecer e enviamos o
+    # que temos (ATH/preço já estão garantidos pela fase 1) — evita o run pendurar horas.
     rows = []
+    deadline = time.time() + ENRICH_BUDGET_S
+    enrich = True
     for sym, d in info.items():
         mcap = shares = None
         nm = names.get(sym)
-        try:
-            tk = yf.Ticker(sym)
-            fi = tk.fast_info
-            mcap = fi_get(fi, "market_cap", "marketCap")
-            shares = fi_get(fi, "shares", "sharesOutstanding", "implied_shares_outstanding")
-            if not nm:
-                try:
-                    inf = tk.info
-                    nm = inf.get("shortName") or inf.get("longName")
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        if enrich and time.time() > deadline:
+            enrich = False
+            print(f"[ath] orçamento de enriquecimento esgotado ({ENRICH_BUDGET_S}s) — resto sem marketcap/nome")
+        if enrich:
+            try:
+                tk = yf.Ticker(sym)
+                fi = tk.fast_info
+                mcap = fi_get(fi, "market_cap", "marketCap")
+                shares = fi_get(fi, "shares", "sharesOutstanding", "implied_shares_outstanding")
+                if not nm:
+                    try:
+                        inf = tk.info
+                        nm = inf.get("shortName") or inf.get("longName")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         rows.append({
             "symbol": sym, "name": nm or sym, "price": d["price"],
             "marketcap": float(mcap) if mcap else None,

@@ -30,6 +30,11 @@ export const COMMODITIES = RAW.map(([ticker, name, nameEn]) => ({ ticker, name, 
 
 const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "").trim();
 
+const BY_TICKER = Object.fromEntries(COMMODITIES.map((c) => [c.ticker.toUpperCase(), c.name]));
+export function commodityNameFor(ticker) {
+  return BY_TICKER[String(ticker || "").toUpperCase()] || null;
+}
+
 export function searchCommodities(query) {
   const q = norm(query);
   if (!q) return [];

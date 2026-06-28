@@ -60,9 +60,14 @@ async function yahooJson(url, revalidate) {
   return res.json();
 }
 
+// "=" e "^" são válidos no path e o Yahoo exige-os crus (futuros CC=F, índices ^GSPC).
+function yfPath(symbol) {
+  return encodeURIComponent(symbol).replace(/%3D/g, "=").replace(/%5E/g, "^");
+}
+
 async function yahooQuote(symbol) {
   const url = new URL(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
+    `https://query1.finance.yahoo.com/v8/finance/chart/${yfPath(symbol)}`
   );
   url.searchParams.set("range", "1d");
   url.searchParams.set("interval", "1d");
@@ -236,7 +241,7 @@ async function yahooHistory(symbol) {
   if (!yahooAvailable()) return null;
   try {
     const url = new URL(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`
+      `https://query1.finance.yahoo.com/v8/finance/chart/${yfPath(symbol)}`
     );
     url.searchParams.set("range", "1y");
     url.searchParams.set("interval", "1d");

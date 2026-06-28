@@ -6,7 +6,7 @@ import { supabase } from "./supabase";
 import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } from "./lib/stocks";
 import { searchCryptos, isCrypto, cryptoNameFor } from "./lib/crypto";
 import { searchPopular } from "./lib/popular";
-import { searchCommodities } from "./lib/commodities";
+import { searchCommodities, commodityNameFor } from "./lib/commodities";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 
 /* ============================================================================
@@ -720,15 +720,6 @@ function ATH({myTickers,auth,showToast}){
     setAddSel(new Set(lists.filter(l=>l.tickers.some(x=>tkNorm(x)===t)).map(l=>l.id)));
     setAddFor(ticker);
   },[lists]);
-  const addDirect=useCallback(async(term)=>{
-    const tk=String(term||"").toUpperCase().trim(); if(!tk) return;
-    try{
-      const info=await fetchStockInfo(tk);
-      if(!info||typeof info.price!=="number"){ showToast&&showToast(`Não encontrei "${tk}".`,"error"); return; }
-      setLiteQuotes(qq=>({...qq,[tkNorm(tk)]:{...(qq[tkNorm(tk)]||{}),name:info.name||tk}}));
-      openAdd(tk);
-    }catch{ showToast&&showToast(`Não encontrei "${tk}".`,"error"); }
-  },[openAdd,showToast]);
   const applyAdd=useCallback(async()=>{
     const t=addFor; if(!t) return;
     const tasks=[];
@@ -762,8 +753,9 @@ function ATH({myTickers,auth,showToast}){
         for(const t of cryptos){ const c=cd[String(t).toUpperCase()]; out.push([tkNorm(t),{name:cryptoNameFor(t)||t, price:c?c.price:null, marketcap:c?c.marketcap:null, ath:c?c.ath:null, down:c?c.down:null, ath_ts:c?c.ath_ts:null, fetched:true}]); }
       }
       const se=await Promise.all(stocks.slice(0,40).map(async t=>{
-        try{ const info=await fetchStockInfo(t); return [tkNorm(t), {name:(info&&info.name)||t, price:(info&&typeof info.price==="number")?info.price:null, fetched:true}]; }
-        catch{ return [tkNorm(t),{name:t,price:null,fetched:true}]; }
+        const cn=commodityNameFor(t); // nome PT da commodity (ex. "Cacau"), se aplicável
+        try{ const info=await fetchStockInfo(t); return [tkNorm(t), {name:cn||(info&&info.name)||t, price:(info&&typeof info.price==="number")?info.price:null, fetched:true}]; }
+        catch{ return [tkNorm(t),{name:cn||t,price:null,fetched:true}]; }
       }));
       out.push(...se);
       if(cancel) return;
@@ -947,9 +939,7 @@ function ATH({myTickers,auth,showToast}){
               borderRadius:16,padding:"12px 16px 12px 44px",fontSize:14,color:"#e2e8f0",outline:"none"}}/>
         </div>
         {authed&&q.trim().length>=2&&(()=>{
-          const term=q.trim().toUpperCase();
-          const showDirect=/^[A-Z0-9.\-=]{1,12}$/.test(term)&&!globalRes.some(x=>tkNorm(x.ticker)===tkNorm(term));
-          if(!globalRes.length&&!showDirect&&!gLoading) return null;
+          if(!globalRes.length&&!gLoading) return null;
           return(
             <div style={{width:"100%",maxWidth:560,display:"flex",flexDirection:"column",gap:4}}>
               <span style={{fontSize:11,color:"#64748b",textAlign:"center"}}>Adicionar à watchlist</span>
@@ -966,13 +956,6 @@ function ATH({myTickers,auth,showToast}){
                   <span style={{color:"#4ade80",fontWeight:800,fontSize:16,flexShrink:0}}>+</span>
                 </button>
               ))}
-              {showDirect&&(
-                <button onClick={()=>addDirect(term)}
-                  style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,cursor:"pointer",borderRadius:10,padding:"8px 10px",
-                    border:"1px dashed rgba(255,255,255,0.20)",background:"rgba(255,255,255,0.03)",color:"#cbd5e1",fontSize:12.5,fontWeight:600}}>
-                  + Adicionar “{term}” diretamente
-                </button>
-              )}
               {gLoading&&!globalRes.length&&<span style={{fontSize:11,color:"#64748b",textAlign:"center"}}>A procurar…</span>}
             </div>
           );
