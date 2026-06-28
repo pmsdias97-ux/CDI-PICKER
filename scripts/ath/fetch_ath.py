@@ -14,6 +14,8 @@ Env: CRON_SECRET (obrigatório), ATH_INGEST_URL (default = produção),
 import argparse
 import io
 import os
+import signal
+import socket
 import sys
 import time
 
@@ -21,13 +23,17 @@ import pandas as pd
 import requests
 import yfinance as yf
 
+# Rede: nenhuma chamada (download/fast_info/.info) pode pendurar para sempre — o Yahoo às vezes
+# limita o IP e deixa a ligação aberta. Um timeout global garante que cada chamada desiste.
+socket.setdefaulttimeout(45)
+
 INGEST_URL = os.environ.get("ATH_INGEST_URL", "https://cdi-picker.vercel.app/api/cron/ath")
 EXTRA_URL = INGEST_URL.replace("/api/cron/ath", "/api/cron/extra-tickers")
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 BATCH = 100  # yf.download é mais feliz em lotes ~100
-ENRICH_BUDGET_S = 420  # teto p/ a fase de marketcap/nome (fast_info/.info) — evita pendurar se o Yahoo limitar
+ENRICH_BUDGET_S = 300  # teto DURO (SIGALRM) p/ a fase de marketcap/nome — evita pendurar se o Yahoo limitar
 
 
 def yf_symbol(s):
@@ -120,18 +126,19 @@ def compute_rows(symbols, names, in_sp500):
         time.sleep(1)
 
     # marketcap + shares via fast_info (best-effort). Nome: S&P vem da Wikipédia; extras via .info.
-    # Orçamento de tempo: se o Yahoo limitar e isto arrastar, paramos de enriquecer e enviamos o
-    # que temos (ATH/preço já estão garantidos pela fase 1) — evita o run pendurar horas.
-    rows = []
-    deadline = time.time() + ENRICH_BUDGET_S
-    enrich = True
-    for sym, d in info.items():
-        mcap = shares = None
-        nm = names.get(sym)
-        if enrich and time.time() > deadline:
-            enrich = False
-            print(f"[ath] orçamento de enriquecimento esgotado ({ENRICH_BUDGET_S}s) — resto sem marketcap/nome")
-        if enrich:
+    # Teto DURO via SIGALRM: mesmo que UMA chamada do yfinance fique pendurada (Yahoo a limitar),
+    # o alarme interrompe-a e seguimos com o que já temos (ATH/preço já garantidos pela fase 1).
+    enriched = {}
+
+    def _on_alarm(signum, frame):
+        raise TimeoutError("enrich budget")
+
+    prev = signal.signal(signal.SIGALRM, _on_alarm)
+    signal.alarm(ENRICH_BUDGET_S)
+    try:
+        for sym in info:
+            mcap = shares = None
+            nm = names.get(sym)
             try:
                 tk = yf.Ticker(sym)
                 fi = tk.fast_info
@@ -141,10 +148,23 @@ def compute_rows(symbols, names, in_sp500):
                     try:
                         inf = tk.info
                         nm = inf.get("shortName") or inf.get("longName")
+                    except TimeoutError:
+                        raise
                     except Exception:
                         pass
+            except TimeoutError:
+                print(f"[ath] enriquecimento estourou o teto ({ENRICH_BUDGET_S}s) — resto sem marketcap/nome")
+                break
             except Exception:
                 pass
+            enriched[sym] = (nm, mcap, shares)
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, prev)
+
+    rows = []
+    for sym, d in info.items():
+        nm, mcap, shares = enriched.get(sym, (names.get(sym), None, None))
         rows.append({
             "symbol": sym, "name": nm or sym, "price": d["price"],
             "marketcap": float(mcap) if mcap else None,
