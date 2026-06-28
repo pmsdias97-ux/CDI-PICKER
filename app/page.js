@@ -6,13 +6,14 @@ import { supabase } from "./supabase";
 import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } from "./lib/stocks";
 import { searchCryptos, isCrypto, cryptoNameFor } from "./lib/crypto";
 import { searchPopular } from "./lib/popular";
+import { searchCommodities } from "./lib/commodities";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 
 /* ============================================================================
    CONVERSAS DE INVESTIDORES
    ============================================================================ */
 
-const TICKER_RE = /^[A-Z0-9.\-]{1,12}$/;
+const TICKER_RE = /^[A-Z0-9.\-=]{1,12}$/; // "=" p/ futuros de commodities (CC=F)
 const PORTFOLIO_SIZE = 8;
 const MAX_SHORTS = 2;
 const STARTING_VALUE = 10000;
@@ -620,7 +621,8 @@ function ATH({myTickers,auth,showToast}){
   const authed=!!(auth&&auth.name&&auth.pin);
   const [rows,setRows]=useState(null);
   const [activeFilter,setActiveFilter]=useState(null); // null | "mine" | listId (watchlist)
-  const [lists,setLists]=useState([]);                  // watchlists do user: [{id,name,tickers[]}]
+  const wlKey=auth?.name?("ci_wl:"+String(auth.name).toLowerCase()):null; // cache local das watchlists
+  const [lists,setLists]=useState(()=>{ try{ const c=wlKey?sget(wlKey):null; return Array.isArray(c)?c:[]; }catch{ return []; } }); // watchlists do user: [{id,name,tickers[]}] — arranca do cache p/ aparecer logo
   const [addFor,setAddFor]=useState(null);              // ticker a adicionar a listas (abre modal)
   const [addSel,setAddSel]=useState(()=>new Set());     // listas selecionadas no modal "Adicionar"
   const [menuFor,setMenuFor]=useState(null);            // lista com menu renomear/apagar aberto (hover/long-press)
@@ -661,6 +663,7 @@ function ATH({myTickers,auth,showToast}){
   // ---- Watchlists (sincronizadas na conta) ----
   useEffect(()=>{
     if(!authed){ setLists([]); return; }
+    try{ const c=wlKey?sget(wlKey):null; if(Array.isArray(c)&&c.length) setLists(c); }catch{} // mostra o cache já, sem esperar pelo servidor
     let cancel=false;
     (async()=>{
       try{
@@ -678,6 +681,7 @@ function ATH({myTickers,auth,showToast}){
     })();
     return()=>{ cancel=true; };
   },[authed,auth?.name,auth?.pin]);
+  useEffect(()=>{ if(wlKey) sset(wlKey,lists); },[lists,wlKey]); // cache local sempre atualizado
   const apiSave=useCallback(async(payload)=>{
     const r=await fetch("/api/watchlists/save",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:auth.name,pin:auth.pin,...payload})});
     const d=await r.json(); if(!r.ok||!d?.ok) throw new Error(d?.error||"Não foi possível guardar."); return d.list;
@@ -778,11 +782,12 @@ function ATH({myTickers,auth,showToast}){
     const id=setTimeout(async()=>{
       const cg=searchCryptos(term);        // cripto (local, fiável)
       const pop=searchPopular(term);        // populares europeias/internacionais (local)
+      const com=searchCommodities(term);    // commodities/futuros (local) — cacau, ouro, petróleo…
       let stocks=[];
       try{ const r=await searchTickers(term); const have=rows?new Set(rows.filter(x=>x.in_sp500!==false).map(x=>tkNorm(x.symbol))):new Set(); stocks=(r||[]).filter(x=>x.ticker&&!have.has(tkNorm(x.ticker))); }catch{}
       if(cancel) return;
       const seen=new Set(); const merged=[];
-      for(const x of [...cg,...pop,...stocks]){ const k=tkNorm(x.ticker); if(k&&!seen.has(k)){ seen.add(k); merged.push(x); } }
+      for(const x of [...cg,...pop,...com,...stocks]){ const k=tkNorm(x.ticker); if(k&&!seen.has(k)){ seen.add(k); merged.push(x); } }
       setGlobalRes(merged.slice(0,8));
       setGLoading(false);
     },350);
@@ -943,7 +948,7 @@ function ATH({myTickers,auth,showToast}){
         </div>
         {authed&&q.trim().length>=2&&(()=>{
           const term=q.trim().toUpperCase();
-          const showDirect=/^[A-Z0-9.\-]{1,12}$/.test(term)&&!globalRes.some(x=>tkNorm(x.ticker)===tkNorm(term));
+          const showDirect=/^[A-Z0-9.\-=]{1,12}$/.test(term)&&!globalRes.some(x=>tkNorm(x.ticker)===tkNorm(term));
           if(!globalRes.length&&!showDirect&&!gLoading) return null;
           return(
             <div style={{width:"100%",maxWidth:560,display:"flex",flexDirection:"column",gap:4}}>

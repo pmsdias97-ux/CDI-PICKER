@@ -3,7 +3,8 @@
 // between cold starts and isn't shared across instances, so it's basic abuse
 // protection — not a hard global quota. Good enough for ~40 players/day.
 
-export const TICKER_RE = /^[A-Z0-9.\-]{1,12}$/;
+// Inclui "=" para futuros de commodities (ex. CC=F cacau, GC=F ouro).
+export const TICKER_RE = /^[A-Z0-9.\-=]{1,12}$/;
 
 export function isValidTicker(t) {
   return TICKER_RE.test(String(t || "").trim().toUpperCase());
