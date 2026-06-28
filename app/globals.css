@@ -35,7 +35,7 @@ html, body {
   .stkLogo:hover { transform: scale(1.12); }
   .backLink:hover .backArrow { transform: translateX(-3px); }
   .winCard:hover .winSpark { opacity: 1; transform: scaleY(1.06); }
-  .stockRow:hover { background: #0a1120; transform: scale(1.01); }
+  .stockRow:hover { transform: scale(1.01); }
   .stockRow:hover .stkLogo { transform: scale(1.12); }
 }
 body {
