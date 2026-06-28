@@ -770,13 +770,17 @@ function ATH({myTickers,auth,showToast}){
     setGLoading(true);
     let cancel=false;
     const id=setTimeout(async()=>{
-      const cg=searchCryptos(term);        // cripto (local, fiável)
+      const nq=norm(term);
+      // locais (S&P + extras já na tabela, com dados) — assim a pesquisa é a lista ÚNICA de adicionar
+      const local=rows?rows.filter(r=>norm(r.symbol).includes(nq)||norm(r.name).includes(nq))
+        .map(r=>({ticker:r.symbol,name:r.name,exchange:r.in_sp500!==false?"S&P 500":"",type:"EQUITY"})):[];
       const pop=searchPopular(term);        // populares europeias/internacionais (local)
+      const cg=searchCryptos(term);         // cripto (local, fiável)
       let stocks=[];
-      try{ const r=await searchTickers(term); const have=rows?new Set(rows.filter(x=>x.in_sp500!==false).map(x=>tkNorm(x.symbol))):new Set(); stocks=(r||[]).filter(x=>x.ticker&&!have.has(tkNorm(x.ticker))); }catch{}
+      try{ const r=await searchTickers(term); stocks=(r||[]).filter(x=>x.ticker); }catch{} // estrangeiras (SEC); dedup trata as repetidas
       if(cancel) return;
       const seen=new Set(); const merged=[];
-      for(const x of [...cg,...pop,...stocks]){ const k=tkNorm(x.ticker); if(k&&!seen.has(k)){ seen.add(k); merged.push(x); } }
+      for(const x of [...local,...pop,...cg,...stocks]){ const k=tkNorm(x.ticker); if(k&&!seen.has(k)){ seen.add(k); merged.push(x); } }
       setGlobalRes(merged.slice(0,8));
       setGLoading(false);
     },350);
@@ -813,6 +817,7 @@ function ATH({myTickers,auth,showToast}){
     return [...list].sort((a,b)=>sign*(val(a)-val(b)));
   },[rows,q,sortKey,sortDir,filterTickers,liteQuotes]);
   const GLASS={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
+  const GREEN="#4ade80"; // verde partilhado: bolinha de seleção + botão Guardar
   const pillStyle=(on)=>({cursor:"pointer",borderRadius:999,padding:"7px 14px",fontSize:13,fontWeight:on?700:600,transition:"all .15s",whiteSpace:"nowrap",
     border:`1px solid ${on?"rgba(74,222,128,0.55)":"rgba(255,255,255,0.14)"}`,background:on?"rgba(34,197,94,0.20)":"rgba(255,255,255,0.05)",color:on?"#bbf7d0":"#cbd5e1"});
   const miniBtn={cursor:"pointer",borderRadius:999,padding:"5px 12px",fontSize:12,fontWeight:600,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:"#cbd5e1"};
@@ -837,7 +842,9 @@ function ATH({myTickers,auth,showToast}){
         .athSinceShort{display:none}
         @keyframes athSpin{to{transform:rotate(360deg)}}
         .athSpin{animation:athSpin .8s linear infinite}
-        @media(hover:hover){ .athClickable:hover{background:rgba(255,255,255,0.04)} }
+        @media(hover:hover){ .athClickable:hover{background:rgba(255,255,255,0.04)} .athPill:hover{filter:brightness(1.18);transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,0.25)} }
+        .athSearchBox{max-width:560px}
+        @media(min-width:768px){ .athSearchBox{max-width:280px} }
 
         /* Colunas ordenáveis: par de setas (cinza = clicável; ativa acende a direção) */
         .athSortHd{cursor:pointer;user-select:none;color:#94a3b8;transition:color .15s}
@@ -890,7 +897,7 @@ function ATH({myTickers,auth,showToast}){
       {authed&&(
         <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",alignItems:"center",gap:8,marginBottom:12}}>
           {myTickers&&myTickers.length>0&&(
-            <button onClick={()=>setActiveFilter(f=>f==="mine"?null:"mine")} title="Mostrar só as minhas ações"
+            <button className="athPill" onClick={()=>setActiveFilter(f=>f==="mine"?null:"mine")} title="Mostrar só as minhas ações"
               style={pillStyle(activeFilter==="mine")}>{activeFilter==="mine"?"✓ ":""}Minhas {myTickers.length}</button>
           )}
           {lists.map(l=>(
@@ -899,7 +906,7 @@ function ATH({myTickers,auth,showToast}){
               onMouseLeave={()=>{ if(canHover.current) setMenuFor(f=>f===l.id?null:f); }}
               onTouchStart={()=>{ lpFired.current=false; clearTimeout(lpTimer.current); lpTimer.current=setTimeout(()=>{ if(activeFilter!==l.id) return; lpFired.current=true; setMenuFor(l.id); },480); }}
               onTouchEnd={()=>clearTimeout(lpTimer.current)} onTouchMove={()=>clearTimeout(lpTimer.current)}>
-              <button onClick={()=>{ if(lpFired.current){ lpFired.current=false; return; } setActiveFilter(f=>f===l.id?null:l.id); }} title={`Ver "${l.name}"`}
+              <button className="athPill" onClick={()=>{ if(lpFired.current){ lpFired.current=false; return; } setActiveFilter(f=>f===l.id?null:l.id); }} title={`Ver "${l.name}"`}
                 style={pillStyle(activeFilter===l.id)}>{activeFilter===l.id?"✓ ":""}{l.name}{l.tickers.length?` · ${l.tickers.length}`:""}</button>
               {menuFor===l.id&&activeFilter===l.id&&(
                 <div style={{position:"absolute",top:"100%",left:"50%",transform:"translateX(-50%)",zIndex:40,paddingTop:6}}>
@@ -928,19 +935,26 @@ function ATH({myTickers,auth,showToast}){
       )}
 
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10,marginBottom:14}}>
-        <div style={{position:"relative",width:"100%",maxWidth:560}}>
+        <div className="athSearchBox" style={{position:"relative",width:"100%"}}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
-            style={{position:"absolute",left:16,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}>
+            style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}>
             <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
           </svg>
           <input value={q} onChange={e=>{ const v=e.target.value; setQ(v); if(v.trim()) setActiveFilter(null); }} placeholder="Procurar ticker ou empresa…"
             style={{width:"100%",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.12)",boxSizing:"border-box",
-              borderRadius:16,padding:"12px 16px 12px 44px",fontSize:14,color:"#e2e8f0",outline:"none"}}/>
+              borderRadius:16,padding:"12px 36px",fontSize:14,color:"#e2e8f0",outline:"none",textAlign:"center"}}/>
+          {q&&(
+            <button onClick={()=>{ setQ(""); setGlobalRes([]); }} title="Limpar" aria-label="Limpar pesquisa"
+              style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",display:"flex",alignItems:"center",justifyContent:"center",
+                width:24,height:24,borderRadius:"50%",background:"rgba(255,255,255,0.10)",border:"none",color:"#cbd5e1",cursor:"pointer",padding:0}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          )}
         </div>
         {authed&&q.trim().length>=2&&(()=>{
           if(!globalRes.length&&!gLoading) return null;
           return(
-            <div style={{width:"100%",maxWidth:560,display:"flex",flexDirection:"column",gap:4}}>
+            <div className="athSearchBox" style={{width:"100%",display:"flex",flexDirection:"column",gap:4}}>
               <span style={{fontSize:11,color:"#64748b",textAlign:"center"}}>Adicionar à watchlist</span>
               {globalRes.map((res,i)=>(
                 <button key={`${res.ticker}-${i}`}
@@ -976,6 +990,7 @@ function ATH({myTickers,auth,showToast}){
         </div>
       </div>
 
+      {!q.trim() && (
       <div style={{...GLASS,borderRadius:16,overflow:"hidden"}}>
         <div className="athRow" style={{padding:"10px 18px",borderBottom:"1px solid rgba(255,255,255,0.10)",
           fontSize:11,textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,color:"#94a3b8"}}>
@@ -1055,6 +1070,7 @@ function ATH({myTickers,auth,showToast}){
         )}
         </>)}
       </div>
+      )}
 
       {addFor&&(
         <div onClick={()=>setAddFor(null)} style={{position:"fixed",inset:0,zIndex:9000,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
@@ -1071,17 +1087,26 @@ function ATH({myTickers,auth,showToast}){
                 return(
                   <button key={l.id} onClick={()=>setAddSel(s=>{ const n=new Set(s); n.has(l.id)?n.delete(l.id):n.add(l.id); return n; })}
                     style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,cursor:"pointer",textAlign:"left",
-                      borderRadius:10,padding:"10px 12px",fontSize:14,fontWeight:600,
-                      border:`1px solid ${sel?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.12)"}`,
-                      background:sel?"rgba(59,130,246,0.16)":"rgba(255,255,255,0.04)",color:"#e2e8f0"}}>
-                    <span>{l.name}</span><span style={{color:sel?"#4ade80":"#64748b",fontWeight:800,fontSize:16}}>{sel?"✓":"+"}</span>
+                      borderRadius:10,padding:"10px 12px",fontSize:14,fontWeight:600,transition:"all .15s",
+                      border:`1px solid ${sel?"rgba(74,222,128,0.5)":"rgba(255,255,255,0.12)"}`,
+                      background:sel?"rgba(34,197,94,0.14)":"rgba(255,255,255,0.04)",color:"#e2e8f0"}}>
+                    <span>{l.name}</span>
+                    <span aria-hidden="true" style={{flexShrink:0,width:20,height:20,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",
+                      border:`2px solid ${sel?GREEN:"rgba(255,255,255,0.28)"}`,transition:"all .15s"}}>
+                      {sel&&<span style={{width:10,height:10,borderRadius:"50%",background:GREEN}}/>}
+                    </span>
                   </button>
                 );
               })}
             </div>
-            <button onClick={applyAdd} disabled={lists.length===0}
-              style={{marginTop:12,width:"100%",padding:"11px 12px",borderRadius:10,fontSize:14,fontWeight:700,cursor:lists.length===0?"default":"pointer",
-                background:"rgba(34,197,94,0.18)",border:"1px solid rgba(34,197,94,0.4)",color:"#86efac",opacity:lists.length===0?0.5:1}}>Guardar</button>
+            <div style={{display:"flex",gap:10,marginTop:14}}>
+              <button onClick={()=>setAddFor(null)}
+                style={{flex:1,padding:"12px",borderRadius:14,fontSize:14,fontWeight:700,cursor:"pointer",
+                  background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.14)",color:"#cbd5e1"}}>Cancelar</button>
+              <button onClick={applyAdd} disabled={lists.length===0}
+                style={{flex:1,padding:"12px",borderRadius:14,fontSize:14,fontWeight:800,cursor:lists.length===0?"default":"pointer",
+                  background:GREEN,border:`1px solid ${GREEN}`,color:"#06281a",opacity:lists.length===0?0.5:1}}>Guardar</button>
+            </div>
           </div>
         </div>
       )}
