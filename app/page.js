@@ -1623,7 +1623,7 @@ function Nav({page,nav,submitted,onMyPortfolio,myPortfolioActive,tint}){
       <NavLink label="Ranking" active={page==="ranking"} onClick={()=>nav("ranking")} locked={!submitted}/>
       <NavLink label="ATH" active={page==="ath"} onClick={()=>nav("ath")}/>
       {submitted
-        ? <NavLink label={<>Meu<span className="navWide"> Portefólio</span></>} active={myPortfolioActive} onClick={onMyPortfolio}/>
+        ? <NavLink label="Minhas 8" active={myPortfolioActive} onClick={onMyPortfolio}/>
         : <NavLink label={<>Criar<span className="navWide"> Portefólio</span></>} active={page==="create"} onClick={()=>nav("create")}/>}
     </div>
   );
