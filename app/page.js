@@ -5,6 +5,7 @@ import { BUILD_VERSION } from "./version";
 import { supabase } from "./supabase";
 import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } from "./lib/stocks";
 import { searchCryptos, isCrypto, cryptoNameFor } from "./lib/crypto";
+import { searchPopular } from "./lib/popular";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 
 /* ============================================================================
@@ -715,11 +716,22 @@ function ATH({myTickers,auth,showToast}){
     setAddSel(new Set(lists.filter(l=>l.tickers.some(x=>tkNorm(x)===t)).map(l=>l.id)));
     setAddFor(ticker);
   },[lists]);
+  const addDirect=useCallback(async(term)=>{
+    const tk=String(term||"").toUpperCase().trim(); if(!tk) return;
+    try{
+      const info=await fetchStockInfo(tk);
+      if(!info||typeof info.price!=="number"){ showToast&&showToast(`Não encontrei "${tk}".`,"error"); return; }
+      setLiteQuotes(qq=>({...qq,[tkNorm(tk)]:{...(qq[tkNorm(tk)]||{}),name:info.name||tk}}));
+      openAdd(tk);
+    }catch{ showToast&&showToast(`Não encontrei "${tk}".`,"error"); }
+  },[openAdd,showToast]);
   const applyAdd=useCallback(async()=>{
     const t=addFor; if(!t) return;
     const tasks=[];
     lists.forEach(l=>{ const has=l.tickers.some(x=>tkNorm(x)===tkNorm(t)); const sel=addSel.has(l.id); if(sel!==has) tasks.push(toggleTicker(l.id,t)); });
-    setAddFor(null);
+    const firstSel=[...addSel][0];
+    setAddFor(null); setQ(""); setGlobalRes([]); // limpa a pesquisa depois de guardar
+    if(firstSel) setActiveFilter(firstSel); // passa para a playlist onde guardou (fica selecionada)
     await Promise.all(tasks);
   },[addFor,addSel,lists,toggleTicker]);
   const activeList=useMemo(()=>activeFilter&&activeFilter!=="mine"?lists.find(l=>l.id===activeFilter)||null:null,[activeFilter,lists]);
@@ -732,8 +744,9 @@ function ATH({myTickers,auth,showToast}){
   useEffect(()=>{
     if(!filterTickers||!rows) return;
     const have=new Set(rows.map(r=>tkNorm(r.symbol)));
-    // busca quem ainda não tem preço (não está em cache OU está sem 'fetched')
-    const missing=[...new Set(filterTickers.map(tkNorm))].filter(t=>t&&!have.has(t)&&(!(t in liteQuotes)||!liteQuotes[t].fetched));
+    // tickers ORIGINAIS (preserva o ponto, ex. RMS.PA) que ainda não têm preço; indexa por tkNorm.
+    const seen=new Set(); const missing=[];
+    for(const tk of filterTickers){ const k=tkNorm(tk); if(!k||have.has(k)||seen.has(k)) continue; if((k in liteQuotes)&&liteQuotes[k].fetched) continue; seen.add(k); missing.push(tk); }
     if(!missing.length) return;
     let cancel=false;
     (async()=>{
@@ -742,15 +755,15 @@ function ATH({myTickers,auth,showToast}){
       if(cryptos.length){
         let cd={};
         try{ const r=await fetch(`/api/crypto/price?tickers=${encodeURIComponent(cryptos.join(","))}`); const d=await r.json(); cd=d.data||{}; }catch{}
-        for(const t of cryptos){ const c=cd[t]; out.push([t,{name:cryptoNameFor(t)||t, price:c?c.price:null, marketcap:c?c.marketcap:null, ath:c?c.ath:null, down:c?c.down:null, ath_ts:c?c.ath_ts:null, fetched:true}]); }
+        for(const t of cryptos){ const c=cd[String(t).toUpperCase()]; out.push([tkNorm(t),{name:cryptoNameFor(t)||t, price:c?c.price:null, marketcap:c?c.marketcap:null, ath:c?c.ath:null, down:c?c.down:null, ath_ts:c?c.ath_ts:null, fetched:true}]); }
       }
       const se=await Promise.all(stocks.slice(0,40).map(async t=>{
-        try{ const info=await fetchStockInfo(t); return [t, {name:(info&&info.name)||t, price:(info&&typeof info.price==="number")?info.price:null, fetched:true}]; }
-        catch{ return [t,{name:t,price:null,fetched:true}]; }
+        try{ const info=await fetchStockInfo(t); return [tkNorm(t), {name:(info&&info.name)||t, price:(info&&typeof info.price==="number")?info.price:null, fetched:true}]; }
+        catch{ return [tkNorm(t),{name:t,price:null,fetched:true}]; }
       }));
       out.push(...se);
       if(cancel) return;
-      setLiteQuotes(prev=>{ const n={...prev}; out.forEach(([t,v])=>{ n[t]=v; }); return n; });
+      setLiteQuotes(prev=>{ const n={...prev}; out.forEach(([k,v])=>{ n[k]=v; }); return n; });
     })();
     return()=>{ cancel=true; };
   },[filterTickers,rows,liteQuotes]);
@@ -763,11 +776,14 @@ function ATH({myTickers,auth,showToast}){
     setGLoading(true);
     let cancel=false;
     const id=setTimeout(async()=>{
-      const cg=searchCryptos(term); // local (fiável) — cripto primeiro
+      const cg=searchCryptos(term);        // cripto (local, fiável)
+      const pop=searchPopular(term);        // populares europeias/internacionais (local)
       let stocks=[];
-      try{ const r=await searchTickers(term); const have=rows?new Set(rows.map(x=>tkNorm(x.symbol))):new Set(); stocks=(r||[]).filter(x=>x.ticker&&!have.has(tkNorm(x.ticker))); }catch{}
+      try{ const r=await searchTickers(term); const have=rows?new Set(rows.filter(x=>x.in_sp500!==false).map(x=>tkNorm(x.symbol))):new Set(); stocks=(r||[]).filter(x=>x.ticker&&!have.has(tkNorm(x.ticker))); }catch{}
       if(cancel) return;
-      setGlobalRes([...cg,...stocks].slice(0,8));
+      const seen=new Set(); const merged=[];
+      for(const x of [...cg,...pop,...stocks]){ const k=tkNorm(x.ticker); if(k&&!seen.has(k)){ seen.add(k); merged.push(x); } }
+      setGlobalRes(merged.slice(0,8));
       setGLoading(false);
     },350);
     return()=>{ cancel=true; clearTimeout(id); };
@@ -915,43 +931,62 @@ function ATH({myTickers,auth,showToast}){
         </div>
       )}
 
-      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,marginBottom:14}}>
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Procurar ticker ou empresa…"
-          style={{width:"100%",maxWidth:300,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.12)",
-            borderRadius:999,padding:"10px 16px",fontSize:14,color:"#e2e8f0",outline:"none",textAlign:"center"}}/>
-        {authed&&gLoading&&globalRes.length===0&&q.trim().length>=2&&(
-          <span style={{fontSize:11,color:"#64748b"}}>A procurar…</span>
-        )}
-        {authed&&globalRes.length>0&&(
-          <div style={{width:"100%",maxWidth:340,display:"flex",flexDirection:"column",gap:4}}>
-            <span style={{fontSize:11,color:"#64748b",textAlign:"center"}}>Adicionar à watchlist</span>
-            {globalRes.map((res,i)=>(
-              <button key={`${res.ticker}-${i}`}
-                onClick={()=>{ const tk=String(res.ticker||"").toUpperCase(); setLiteQuotes(qq=>({...qq,[tkNorm(tk)]:{...(qq[tkNorm(tk)]||{}),name:res.name||tk}})); openAdd(tk); }}
-                style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",textAlign:"left",borderRadius:10,padding:"8px 10px",
-                  border:"1px solid rgba(255,255,255,0.10)",background:"rgba(255,255,255,0.04)",color:"#e2e8f0"}}>
-                <StockLogo ticker={res.ticker} size={24}/>
-                <span style={{minWidth:0,flex:1,display:"flex",flexDirection:"column",lineHeight:1.2}}>
-                  <span style={{fontWeight:700,fontSize:13}}>{res.ticker}</span>
-                  <span style={{fontSize:11.5,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{res.name}{res.exchange?` · ${res.exchange}`:""}</span>
-                </span>
-                <span style={{color:"#4ade80",fontWeight:800,fontSize:16,flexShrink:0}}>+</span>
-              </button>
-            ))}
-          </div>
-        )}
-        <span style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12.5,color:"#94a3b8",whiteSpace:"nowrap"}}>
-          {rows?(updatedAt?`Atualizado ${new Date(updatedAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}`:""):"A carregar…"}
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10,marginBottom:14}}>
+        <div style={{position:"relative",width:"100%",maxWidth:560}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+            style={{position:"absolute",left:16,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}>
+            <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+          </svg>
+          <input value={q} onChange={e=>{ const v=e.target.value; setQ(v); if(v.trim()) setActiveFilter(null); }} placeholder="Procurar ticker ou empresa…"
+            style={{width:"100%",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.12)",boxSizing:"border-box",
+              borderRadius:16,padding:"12px 16px 12px 44px",fontSize:14,color:"#e2e8f0",outline:"none"}}/>
+        </div>
+        {authed&&q.trim().length>=2&&(()=>{
+          const term=q.trim().toUpperCase();
+          const showDirect=/^[A-Z0-9.\-]{1,12}$/.test(term)&&!globalRes.some(x=>tkNorm(x.ticker)===tkNorm(term));
+          if(!globalRes.length&&!showDirect&&!gLoading) return null;
+          return(
+            <div style={{width:"100%",maxWidth:560,display:"flex",flexDirection:"column",gap:4}}>
+              <span style={{fontSize:11,color:"#64748b",textAlign:"center"}}>Adicionar à watchlist</span>
+              {globalRes.map((res,i)=>(
+                <button key={`${res.ticker}-${i}`}
+                  onClick={()=>{ const tk=String(res.ticker||"").toUpperCase(); setLiteQuotes(qq=>({...qq,[tkNorm(tk)]:{...(qq[tkNorm(tk)]||{}),name:res.name||tk}})); openAdd(tk); }}
+                  style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",textAlign:"left",borderRadius:10,padding:"8px 10px",
+                    border:"1px solid rgba(255,255,255,0.10)",background:"rgba(255,255,255,0.04)",color:"#e2e8f0"}}>
+                  <StockLogo ticker={res.ticker} size={24}/>
+                  <span style={{minWidth:0,flex:1,display:"flex",flexDirection:"column",lineHeight:1.2}}>
+                    <span style={{fontWeight:700,fontSize:13}}>{res.ticker}</span>
+                    <span style={{fontSize:11.5,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{res.name}{res.exchange?` · ${res.exchange}`:""}</span>
+                  </span>
+                  <span style={{color:"#4ade80",fontWeight:800,fontSize:16,flexShrink:0}}>+</span>
+                </button>
+              ))}
+              {showDirect&&(
+                <button onClick={()=>addDirect(term)}
+                  style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,cursor:"pointer",borderRadius:10,padding:"8px 10px",
+                    border:"1px dashed rgba(255,255,255,0.20)",background:"rgba(255,255,255,0.03)",color:"#cbd5e1",fontSize:12.5,fontWeight:600}}>
+                  + Adicionar “{term}” diretamente
+                </button>
+              )}
+              {gLoading&&!globalRes.length&&<span style={{fontSize:11,color:"#64748b",textAlign:"center"}}>A procurar…</span>}
+            </div>
+          );
+        })()}
+        <div style={{width:"100%",maxWidth:560,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+          <span style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12.5,color:"#94a3b8",whiteSpace:"nowrap"}}>
+            <span style={{width:8,height:8,borderRadius:"50%",background:"#34d399",flexShrink:0,boxShadow:"0 0 8px rgba(52,211,153,0.6)"}}/>
+            {rows?(updatedAt?`Atualizado ${new Date(updatedAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}`:""):"A carregar…"}
+          </span>
           <button onClick={load} disabled={refreshing} title="Atualizar dados" aria-label="Atualizar dados"
-            style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:30,height:30,borderRadius:999,
+            style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:38,height:38,borderRadius:14,flexShrink:0,
               background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",color:"#cbd5e1",padding:0,
-              cursor:refreshing?"default":"pointer",opacity:refreshing?0.6:1,flexShrink:0}}>
-            <svg className={refreshing?"athSpin":""} width="15" height="15" viewBox="0 0 24 24" fill="none"
+              cursor:refreshing?"default":"pointer",opacity:refreshing?0.6:1}}>
+            <svg className={refreshing?"athSpin":""} width="17" height="17" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>
             </svg>
           </button>
-        </span>
+        </div>
       </div>
 
       <div style={{...GLASS,borderRadius:16,overflow:"hidden"}}>
@@ -1059,7 +1094,7 @@ function ATH({myTickers,auth,showToast}){
             </div>
             <button onClick={applyAdd} disabled={lists.length===0}
               style={{marginTop:12,width:"100%",padding:"11px 12px",borderRadius:10,fontSize:14,fontWeight:700,cursor:lists.length===0?"default":"pointer",
-                background:"rgba(34,197,94,0.18)",border:"1px solid rgba(34,197,94,0.4)",color:"#86efac",opacity:lists.length===0?0.5:1}}>Adicionar</button>
+                background:"rgba(34,197,94,0.18)",border:"1px solid rgba(34,197,94,0.4)",color:"#86efac",opacity:lists.length===0?0.5:1}}>Guardar</button>
           </div>
         </div>
       )}

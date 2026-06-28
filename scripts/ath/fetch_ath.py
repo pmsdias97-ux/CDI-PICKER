@@ -154,11 +154,20 @@ def extra_tickers(sp_set):
     except Exception as e:
         print(f"[ath] extra-tickers erro: {e}")
         return []
+    # Mantém o ORIGINAL (ponto p/ europeias, ex. RMS.PA — o yfinance precisa do ponto);
+    # deduplica vs S&P comparando na forma normalizada (ponto→traço).
+    sp_norm = {s.replace(".", "-") for s in sp_set}
     out = []
+    seen = set()
     for t in raw:
-        s = yf_symbol(t)
-        if s and s not in sp_set and s not in out:
-            out.append(s)
+        s = str(t).upper().strip()
+        if not s:
+            continue
+        n = s.replace(".", "-")
+        if n in sp_norm or n in seen:
+            continue
+        seen.add(n)
+        out.append(s)
     return out
 
 
