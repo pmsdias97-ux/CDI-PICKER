@@ -16,7 +16,8 @@ export async function GET(request) {
   catch (e) { return Response.json({ error: e.message }, { status: 500 }); }
 
   const set = new Set();
-  const add = (t) => { const s = String(t || "").toUpperCase().trim(); if (s && !isCrypto(s)) set.add(s); };
+  // Exclui cripto (CoinGecko) e futuros/commodities (têm "=", ex. CC=F — o Yahoo limita-os e penduram o pipeline).
+  const add = (t) => { const s = String(t || "").toUpperCase().trim(); if (s && !s.includes("=") && !isCrypto(s)) set.add(s); };
 
   try {
     const { data } = await supabase.from("portfolio_stocks").select("ticker");

@@ -6,14 +6,13 @@ import { supabase } from "./supabase";
 import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } from "./lib/stocks";
 import { searchCryptos, isCrypto, cryptoNameFor } from "./lib/crypto";
 import { searchPopular } from "./lib/popular";
-import { searchCommodities, commodityNameFor } from "./lib/commodities";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 
 /* ============================================================================
    CONVERSAS DE INVESTIDORES
    ============================================================================ */
 
-const TICKER_RE = /^[A-Z0-9.\-=]{1,12}$/; // "=" p/ futuros de commodities (CC=F)
+const TICKER_RE = /^[A-Z0-9.\-]{1,12}$/;
 const PORTFOLIO_SIZE = 8;
 const MAX_SHORTS = 2;
 const STARTING_VALUE = 10000;
@@ -732,7 +731,7 @@ function ATH({myTickers,auth,showToast}){
   const activeList=useMemo(()=>activeFilter&&activeFilter!=="mine"?lists.find(l=>l.id===activeFilter)||null:null,[activeFilter,lists]);
   const filterTickers=useMemo(()=>{
     if(activeFilter==="mine") return myTickers||[];
-    if(activeList) return activeList.tickers||[];
+    if(activeList) return (activeList.tickers||[]).filter(t=>!String(t).includes("=")); // esconde futuros/commodities (ex. CC=F)
     return null; // null => mostrar a tabela toda (S&P 500)
   },[activeFilter,myTickers,activeList]);
   // Preço/nome ao vivo dos tickers da lista ativa que NÃO estão no S&P 500 (ex. ASML).
@@ -753,9 +752,8 @@ function ATH({myTickers,auth,showToast}){
         for(const t of cryptos){ const c=cd[String(t).toUpperCase()]; out.push([tkNorm(t),{name:cryptoNameFor(t)||t, price:c?c.price:null, marketcap:c?c.marketcap:null, ath:c?c.ath:null, down:c?c.down:null, ath_ts:c?c.ath_ts:null, fetched:true}]); }
       }
       const se=await Promise.all(stocks.slice(0,40).map(async t=>{
-        const cn=commodityNameFor(t); // nome PT da commodity (ex. "Cacau"), se aplicável
-        try{ const info=await fetchStockInfo(t); return [tkNorm(t), {name:cn||(info&&info.name)||t, price:(info&&typeof info.price==="number")?info.price:null, fetched:true}]; }
-        catch{ return [tkNorm(t),{name:cn||t,price:null,fetched:true}]; }
+        try{ const info=await fetchStockInfo(t); return [tkNorm(t), {name:(info&&info.name)||t, price:(info&&typeof info.price==="number")?info.price:null, fetched:true}]; }
+        catch{ return [tkNorm(t),{name:t,price:null,fetched:true}]; }
       }));
       out.push(...se);
       if(cancel) return;
@@ -774,12 +772,11 @@ function ATH({myTickers,auth,showToast}){
     const id=setTimeout(async()=>{
       const cg=searchCryptos(term);        // cripto (local, fiável)
       const pop=searchPopular(term);        // populares europeias/internacionais (local)
-      const com=searchCommodities(term);    // commodities/futuros (local) — cacau, ouro, petróleo…
       let stocks=[];
       try{ const r=await searchTickers(term); const have=rows?new Set(rows.filter(x=>x.in_sp500!==false).map(x=>tkNorm(x.symbol))):new Set(); stocks=(r||[]).filter(x=>x.ticker&&!have.has(tkNorm(x.ticker))); }catch{}
       if(cancel) return;
       const seen=new Set(); const merged=[];
-      for(const x of [...cg,...pop,...com,...stocks]){ const k=tkNorm(x.ticker); if(k&&!seen.has(k)){ seen.add(k); merged.push(x); } }
+      for(const x of [...cg,...pop,...stocks]){ const k=tkNorm(x.ticker); if(k&&!seen.has(k)){ seen.add(k); merged.push(x); } }
       setGlobalRes(merged.slice(0,8));
       setGLoading(false);
     },350);
