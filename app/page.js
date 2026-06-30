@@ -1195,6 +1195,41 @@ function CompetitionTimer({settings}){
     </div>
   );
 }
+// Contador ao segundo até ao FECHO das submissões (22h PT de 30 jun).
+// Só na homepage, e só enquanto a competição ainda não arrancou (pré-lançamento).
+// 22:00 PT (WEST, UTC+1) de 30 jun 2026 = 21:00 UTC — instante absoluto, à prova do fuso do visitante.
+const SUBMISSIONS_CLOSE_MS=Date.UTC(2026,5,30,21,0,0);
+function SubmissionCountdown({settings}){
+  const [now,setNow]=useState(null);
+  useEffect(()=>{
+    setNow(Date.now());
+    const id=setInterval(()=>setNow(Date.now()),1000); // a cada segundo — relógio HH:MM:SS
+    return()=>clearInterval(id);
+  },[]);
+  // Depois de a competição arrancar, este contador já não faz sentido.
+  if(!isPreLaunch(settings)||now==null) return null;
+  const diff=SUBMISSIONS_CLOSE_MS-now;
+  if(diff<=0) return null;
+  const totalSec=Math.floor(diff/1000);
+  const h=Math.floor(totalSec/3600);
+  const m=Math.floor((totalSec%3600)/60);
+  const s=totalSec%60;
+  const hh=String(h).padStart(2,"0"), mm=String(m).padStart(2,"0"), ss=String(s).padStart(2,"0");
+  return(
+    <div style={{display:"flex",justifyContent:"center"}}>
+      <style>{`@keyframes cdtPulse{0%,100%{transform:scale(1);opacity:0.92}50%{transform:scale(1.04);opacity:1}}
+        @media(max-width:760px){.scPill{flex-wrap:nowrap!important;gap:5px!important;padding:6px 10px!important}.scTxt{font-size:11px!important}.scClock{font-size:13px!important}}`}</style>
+      <div className="scPill" style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:10,flexWrap:"wrap",
+        maxWidth:"100%",padding:"8px 16px",borderRadius:999,textAlign:"center",animation:"cdtPulse 2.4s ease-in-out infinite",
+        background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",
+        border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 6px 22px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"}}>
+        <span className="scTxt" style={{fontSize:13,color:"#cbd5e1",fontWeight:600,whiteSpace:"nowrap"}}>Falta</span>
+        <span className="scClock" style={{fontSize:15,fontWeight:800,fontFamily:"monospace",color:"#fcd34d",whiteSpace:"nowrap"}}>{hh}:{mm}:{ss}</span>
+        <span className="scTxt" style={{fontSize:13,color:"#cbd5e1",fontWeight:600,whiteSpace:"nowrap"}}>para fechar as submissões de portefólio</span>
+      </div>
+    </div>
+  );
+}
 
 // Settings are written through the admin API route (service_role key); the
 // browser only reads them via loadGameSettings above.
@@ -1504,7 +1539,7 @@ export default function App(){
     onMyPortfolio={openMyPortfolio}
     myPortfolioActive={page==="detail" && !!detailPf && !!myPf && detailPf.key===myPf.key}>{children}</Shell>;
 
-  if(page==="home")   return sh(<Home nav={nav} submitted={submitted} count={portfolios.length} settings={settings} ranking={ranking} livePrices={livePrices} onMyPortfolio={openMyPortfolio}/>);
+  if(page==="home")   return sh(<Home nav={nav} submitted={submitted} settings={settings} ranking={ranking} livePrices={livePrices} onMyPortfolio={openMyPortfolio}/>);
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} showToast={showToast}/>);
@@ -1804,7 +1839,8 @@ function MiniSparkline({series,current,height=48}){
   );
 }
 
-function Home({nav,submitted,count,settings,ranking,livePrices,onMyPortfolio}){
+function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio}){
+  const officialCount=(ranking||[]).filter(p=>p.official).length;
   return(
     <div>
       {/* Hero */}
@@ -1821,19 +1857,20 @@ function Home({nav,submitted,count,settings,ranking,livePrices,onMyPortfolio}){
           Conversas de{" "}
           <span style={{color:"#22c55e"}}>Investidores</span>
         </h1>
+        <div style={{marginBottom:12}}><SubmissionCountdown settings={settings}/></div>
         <div style={{display:"inline-flex",alignItems:"center",gap:10,maxWidth:"min(92vw,460px)",
           background:"rgba(34,197,94,0.10)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:16,
           padding:"11px 18px",marginBottom:24,boxShadow:"0 4px 18px rgba(0,0,0,0.18)"}}>
           <span style={{fontSize:"clamp(12px,3.4vw,14px)",lineHeight:1.45,color:"#4ade80",fontWeight:600,textAlign:"center"}}>
-            {isPreLaunch(settings)?<>Submissões abertas até 30 de junho<br/>começa 1 de julho</>:`Jogo ativo — Submissões ${settings?.submissionsOpen?"abertas":"fechadas"}`}
+            {isPreLaunch(settings)?<>Submissões fecham às 22:00<br/>Competição começa: 1 de julho</>:`Jogo ativo — Submissões ${settings?.submissionsOpen?"abertas":"fechadas"}`}
           </span>
         </div>
-        <div style={{marginBottom:28}}><CompetitionTimer settings={settings}/></div>
         <p style={{fontSize:18,color:"#6b7280",lineHeight:1.6,maxWidth:560,margin:"0 auto 40px"}}>
-          O jogo de portefólios da nossa comunidade. Escolhe as tuas 8 ações,
-          submete o teu portefólio e compete com os outros membros pelo melhor retorno.
+          O jogo de portefólios da nossa comunidade.{" "}<br className="heroBrk"/>
+          Escolhe as tuas 8 ações, submete o teu portefólio{" "}<br className="heroBrk"/>
+          e compete com os outros membros pelo melhor retorno.
         </p>
-        <style>{`@media(max-width:520px){.heroBtns{flex-wrap:nowrap;gap:8px;align-items:stretch}.heroBtns>button{flex:1;min-width:0;padding:9px 8px;font-size:12.5px;line-height:1.2;white-space:normal}}`}</style>
+        <style>{`@media(max-width:520px){.heroBtns{flex-wrap:nowrap;gap:8px;align-items:stretch}.heroBtns>button{flex:1;min-width:0;padding:9px 8px;font-size:12.5px;line-height:1.2;white-space:normal}.heroBrk{display:none}} `}</style>
         <div className="heroBtns" style={{display:"flex",justifyContent:"center",gap:12,flexWrap:"wrap"}}>
           {submitted?(
             <>
@@ -1847,7 +1884,7 @@ function Home({nav,submitted,count,settings,ranking,livePrices,onMyPortfolio}){
             </>
           )}
         </div>
-        {count>0&&<p style={{marginTop:20,fontSize:13,color:"#374151"}}>{count} {count===1?"portefólio":"portefólios"} já submetidos</p>}
+        {officialCount>0&&<p style={{marginTop:20,fontSize:13,color:"#6b7280"}}>{officialCount} {officialCount===1?"portefólio":"portefólios"} já submetidos</p>}
       </section>
 
       {/* Liga ao vivo — vencedores */}
