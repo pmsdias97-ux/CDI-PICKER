@@ -1151,6 +1151,7 @@ async function loadGameSettings(){
 function isPreLaunch(s){ return !!s && s.competitionStarted!==true; }
 // Submissões fechadas se desligadas, já arrancou, ou passou o prazo (game_start_date).
 function submissionsClosed(s){
+  if(Date.now()>=SUBMISSIONS_CLOSE_MS) return true; // prazo (22:00 PT, 30 jun) — não reabre
   if(!s) return false;
   if(s.competitionStarted) return true;
   if(!s.submissionsOpen) return true;
@@ -1666,9 +1667,7 @@ function Nav({page,nav,submitted,onMyPortfolio,myPortfolioActive,tint}){
       <NavLink label="Início" active={page==="home"} onClick={()=>nav("home")}/>
       <NavLink label="Ranking" active={page==="ranking"} onClick={()=>nav("ranking")} locked={!submitted}/>
       <NavLink label="ATH" active={page==="ath"} onClick={()=>nav("ath")}/>
-      {submitted
-        ? <NavLink label="Minhas 8" active={myPortfolioActive} onClick={onMyPortfolio}/>
-        : <NavLink label={<>Criar<span className="navWide"> Portefólio</span></>} active={page==="create"} onClick={()=>nav("create")}/>}
+      <NavLink label="Minhas 8" active={submitted?myPortfolioActive:page==="detail"} onClick={onMyPortfolio} locked={!submitted}/>
     </div>
   );
 }
@@ -1862,24 +1861,24 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio}){
           background:"rgba(34,197,94,0.10)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:16,
           padding:"11px 18px",marginBottom:24,boxShadow:"0 4px 18px rgba(0,0,0,0.18)"}}>
           <span style={{fontSize:"clamp(12px,3.4vw,14px)",lineHeight:1.45,color:"#4ade80",fontWeight:600,textAlign:"center"}}>
-            {isPreLaunch(settings)?<>Submissões fecham às 22:00<br/>Competição começa: 1 de julho</>:`Jogo ativo — Submissões ${settings?.submissionsOpen?"abertas":"fechadas"}`}
+            {isPreLaunch(settings)?<>Submissões encerradas<br/>Competição começa: 1 de julho</>:"Competição a decorrer"}
           </span>
         </div>
         <p style={{fontSize:18,color:"#6b7280",lineHeight:1.6,maxWidth:560,margin:"0 auto 40px"}}>
           O jogo de portefólios da nossa comunidade.{" "}<br className="heroBrk"/>
-          Escolhe as tuas 8 ações, submete o teu portefólio{" "}<br className="heroBrk"/>
-          e compete com os outros membros pelo melhor retorno.
+          As submissões estão encerradas — acompanha ao vivo{" "}<br className="heroBrk"/>
+          o ranking e a evolução dos portefólios ao longo da época.
         </p>
         <style>{`@media(max-width:520px){.heroBtns{flex-wrap:nowrap;gap:8px;align-items:stretch}.heroBtns>button{flex:1;min-width:0;padding:9px 8px;font-size:12.5px;line-height:1.2;white-space:normal}.heroBrk{display:none}} `}</style>
         <div className="heroBtns" style={{display:"flex",justifyContent:"center",gap:12,flexWrap:"wrap"}}>
           {submitted?(
             <>
               <Btn onClick={()=>nav("ranking")} primary>Ver Ranking</Btn>
-              <Btn onClick={onMyPortfolio}>O meu portefólio</Btn>
+              <Btn onClick={onMyPortfolio}>Minhas 8</Btn>
             </>
           ):(
             <>
-              <Btn onClick={()=>nav("create")} primary>Criar o Meu Portefólio</Btn>
+              <Btn onClick={onMyPortfolio} primary>Minhas 8 🔒</Btn>
               <Btn onClick={()=>nav("ranking")}>Ver Ranking 🔒</Btn>
             </>
           )}
@@ -1905,9 +1904,9 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio}){
         <h2 style={{textAlign:"center",fontSize:28,fontWeight:700,letterSpacing:"-0.5px",marginBottom:40}}>Como funciona</h2>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16}}>
           {[
-            {n:"01",icon:"✏️",t:"Insere o teu nome",d:"Usa exatamente o mesmo nome que tens no grupo de Telegram da comunidade."},
-            {n:"02",icon:"🔍",t:"Escolhe 8 ações",d:"Pesquisa por ticker ou nome da empresa. Tens de selecionar exatamente 8 ações."},
-            {n:"03",icon:"🚀",t:"Submete o portefólio",d:"Depois da submissão ficas inscrito; os portefólios dos outros só ficam visíveis quando a competição arranca."},
+            {n:"01",icon:"✏️",t:"Inscreveram-se",d:"Cada membro entrou com o mesmo nome que tem no grupo de Telegram da comunidade."},
+            {n:"02",icon:"🔍",t:"Escolheram 8 ações",d:"Cada participante selecionou exatamente 8 ações do S&P 500 (peso igual)."},
+            {n:"03",icon:"🚀",t:"Em competição",d:"As submissões estão encerradas e os portefólios bloqueados; a competição arranca a 1 de julho."},
           ].map(c=>(
             <div key={c.n} style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,position:"relative",overflow:"hidden"}}>
               <div style={{position:"absolute",top:16,right:20,fontSize:36,fontWeight:800,color:"#1f2937",lineHeight:1}}>{c.n}</div>
@@ -1925,11 +1924,11 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio}){
           <h2 style={{fontSize:22,fontWeight:700,marginBottom:28,letterSpacing:"-0.3px",textAlign:"center"}}>Regras do Jogo</h2>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:"12px 40px"}}>
             {[
-              "Cada participante cria exatamente 1 portefólio com 8 ações",
+              "Cada participante criou 1 portefólio com 8 ações",
               "Cada ação representa 12,5% do portefólio (peso igual)",
-              "Podes abrir até 2 posições short",
-              "Não vês os portefólios dos outros até a competição começar, a 1 de julho de 2026",
-              "Depois de submetido, o portefólio fica bloqueado",
+              "Cada um podia abrir até 2 posições short",
+              "Os portefólios dos outros só ficam visíveis quando a competição começar, a 1 de julho de 2026",
+              "Depois de submetidos, os portefólios ficaram bloqueados",
               "As posições arrancam ao preço de abertura do mercado de 1 de julho",
               "A rentabilidade é calculada como a média das 8 ações",
               "O ranking usa os preços de mercado mais recentes",
@@ -1949,10 +1948,10 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio}){
         <section style={{maxWidth:700,margin:"0 auto",padding:"0 24px 100px"}}>
           <div style={{background:"linear-gradient(135deg,#0d1f12,#0a1520)",border:"1px solid rgba(34,197,94,0.2)",
             borderRadius:20,padding:"48px 40px",textAlign:"center"}}>
-            <h2 style={{fontSize:26,fontWeight:700,marginBottom:8,letterSpacing:"-0.5px"}}>Pronto para competir?</h2>
-            <p style={{fontSize:15,color:"#6b7280",marginBottom:28}}>Junta-te à comunidade e mostra quem escolhe as melhores ações.</p>
+            <h2 style={{fontSize:26,fontWeight:700,marginBottom:8,letterSpacing:"-0.5px"}}>A competição arranca a 1 de julho</h2>
+            <p style={{fontSize:15,color:"#6b7280",marginBottom:28}}>As submissões estão encerradas. Entra com o teu nome e código para veres o teu portefólio, ou acompanha o ranking ao vivo.</p>
             <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap"}}>
-              <Btn onClick={()=>nav("create")} primary large>Criar Portefólio Agora</Btn>
+              <Btn onClick={onMyPortfolio} primary large>Minhas 8 🔒</Btn>
               <a href="https://www.patreon.com/cw/Conversasdeinvestidores" target="_blank" rel="noopener noreferrer"
                 onMouseEnter={e=>{e.currentTarget.style.filter="brightness(1.08)";e.currentTarget.style.transform="translateY(-1px)";}}
                 onMouseLeave={e=>{e.currentTarget.style.filter="none";e.currentTarget.style.transform="none";}}
@@ -2086,6 +2085,14 @@ function Create({settings,doSubmit,onDone,showToast}){
     onDone();
   }
 
+  if(submClosed) return(
+    <div style={{maxWidth:680,margin:"0 auto",padding:"60px 20px 100px",textAlign:"center"}}>
+      <div style={{fontSize:40,marginBottom:16}}>🔒</div>
+      <h1 style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px",marginBottom:10}}>Submissões encerradas</h1>
+      <p style={{fontSize:15,color:"#94a3b8",lineHeight:1.6,marginBottom:28}}>O prazo de submissões já terminou — a competição arranca a 1 de julho. Acompanha tudo no ranking.</p>
+      <Btn onClick={onDone} primary>Ver Ranking</Btn>
+    </div>
+  );
   return(
     <div style={{maxWidth:680,margin:"0 auto",padding:"40px 20px 80px"}}>
       <h1 style={{textAlign:"center",fontSize:32,fontWeight:800,letterSpacing:"-1px",marginBottom:8}}>Criar Portefólio</h1>
@@ -2383,12 +2390,11 @@ function LockedGate({nav,recoverByName,showToast}){
       <div style={{textAlign:"center",background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:20,padding:48}}>
         <div style={{fontSize:40,marginBottom:16}}>🔒</div>
         <h1 style={{fontSize:22,fontWeight:700,marginBottom:12}}>Área bloqueada</h1>
-        <p style={{fontSize:14,color:"#94a3b8",marginBottom:28,lineHeight:1.6}}>
-          Submete o teu portefólio de 8 ações para entrares no jogo.<br/>
+        <p style={{fontSize:14,color:"#94a3b8",marginBottom:0,lineHeight:1.6}}>
+          As submissões estão encerradas.<br/>
           Os portefólios dos outros membros só ficam visíveis quando a competição começar,<br/>
           a 1 de julho de 2026.
         </p>
-        <Btn onClick={()=>nav("create")} primary>Criar o meu portefólio</Btn>
 
         <div style={{marginTop:32,paddingTop:24,borderTop:"1px solid #1f2937"}}>
           <p style={{fontSize:13,color:"#94a3b8",marginBottom:12,lineHeight:1.6}}>
