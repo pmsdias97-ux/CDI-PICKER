@@ -9,6 +9,11 @@ on:
     - cron: "0 3 * * *"   # ~03:00 UTC
   workflow_dispatch:
 
+# Um trigger novo não empilha com um a meio (só interessa o mais recente).
+concurrency:
+  group: ath-full
+  cancel-in-progress: true
+
 jobs:
   full:
     runs-on: ubuntu-latest
