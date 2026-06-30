@@ -2711,7 +2711,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
         )}
       </div>
       <p style={{color:"#94a3b8",fontSize:14,marginBottom:28}}>
-        Classificação por rentabilidade total, em tempo real · {ranking.length} {ranking.length===1?"participante":"participantes"}.
+        Classificação por rentabilidade total, em tempo real · {officials.length} {officials.length===1?"participante":"participantes"}.
         {pricesLoading?" · A atualizar preços…":""}
       </p>
 
@@ -2732,7 +2732,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
             <div style={{margin:"0 0 12px"}}>
               <h2 style={{fontSize:18,fontWeight:800,letterSpacing:"-0.3px",margin:"0 0 8px",textAlign:"center"}}>Oficial</h2>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-                <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,lineHeight:1.4,color:preLaunch?"#fbbf24":"#4ade80"}}>{preLaunch?"em espera · começa 1 de julho":"a decorrer"}</span>
+                <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,lineHeight:1.4,color:preLaunch?"#fbbf24":"#4ade80"}}>{preLaunch?`${officials.length} ${officials.length===1?"participante":"participantes"} em espera · começa 1 de julho`:"a decorrer"}</span>
                 <div style={{flexShrink:0}}><CompetitionTimer settings={settings}/></div>
               </div>
             </div>
