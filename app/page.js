@@ -2765,11 +2765,15 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
         </div>
       ):(
         <>
-          {demos.length>0&&(
+          {/* Season Race — independente da secção Demo: pré = preview demos; pós = Top 10 oficial */}
+          <div style={{marginBottom:32}}>
+            <GlowBehind><SeasonRace ranking={ranking} preLaunch={preLaunch} myNorm={myNorm} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""}/></GlowBehind>
+          </div>
+          {/* Tabela Demo — só antes do arranque (some sozinha ao arrancar) */}
+          {preLaunch&&demos.length>0&&(
             <div style={{marginBottom:32}}>
               {sectionTitle("Demo")}
               <GlowBehind>{tableFor(demos)}</GlowBehind>
-              <GlowBehind><SeasonRace ranking={ranking} preLaunch={preLaunch} myNorm={myNorm} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""}/></GlowBehind>
             </div>
           )}
           <div>
