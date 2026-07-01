@@ -28,6 +28,7 @@ export async function POST(request) {
     const row = { symbol, updated_at: now };
     if ("name" in r) row.name = r.name == null ? null : String(r.name).slice(0, 120);
     if ("price" in r) row.price = num(r.price);
+    if ("prev_close" in r) row.prev_close = num(r.prev_close);
     if ("marketcap" in r) row.marketcap = num(r.marketcap);
     if ("shares" in r) row.shares = num(r.shares);
     if ("ath" in r) row.ath = num(r.ath);

@@ -3170,9 +3170,9 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,myNorm,
           <span style={{textAlign:"center"}}>Preço inicial</span>
           <span style={{textAlign:"center"}}>Preço atual</span>
           <span onClick={()=>setRetMode(m=>m==="total"?"day":"total")}
-            title="Clica para alternar entre 'Desde submissão' e 'Diário'"
+            title="Clica para alternar entre 'Desde o início' e 'Diário'"
             style={{textAlign:"center",cursor:"pointer",userSelect:"none",lineHeight:1.2,display:"block"}}>
-            {retMode==="day"?"Diário":"Desde submissão"}
+            {retMode==="day"?"Diário":"Desde o início"}
             <span style={{fontSize:9,opacity:0.85,marginLeft:4}}>▾</span>
           </span>
         </div>
@@ -3202,9 +3202,9 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,myNorm,
               const base={fontFamily:"monospace",fontSize:"clamp(11px,2.9vw,15px)",fontWeight:700,
                 whiteSpace:"nowrap",cursor:"pointer",userSelect:"none",
                 alignSelf:"stretch",margin:"-14px 0",display:"flex",alignItems:"center",justifyContent:"center"};
-              if(v==null) return <span onClick={toggle} title="Alternar Desde submissão / Diário" style={{...base,color:"#4b5563"}}>—</span>;
+              if(v==null) return <span onClick={toggle} title="Alternar Desde o início / Diário" style={{...base,color:"#4b5563"}}>—</span>;
               return(
-                <span onClick={toggle} title="Alternar Desde submissão / Diário"
+                <span onClick={toggle} title="Alternar Desde o início / Diário"
                   style={{...base,color:v>=0?"#4ade80":"#f87171"}}>
                   <Tri up={v>=0} size={13}/> {pct(Math.abs(v)).replace(/[+-]/,"")}
                 </span>

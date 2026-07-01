@@ -119,7 +119,9 @@ def compute_rows(symbols, names, in_sp500):
                     continue
                 info[sym] = {"ath": round(float(high.max()), 2),
                              "ath_ts": _iso_utc(high.idxmax()),
-                             "price": round(float(close.iloc[-1]), 2)}
+                             "price": round(float(close.iloc[-1]), 2),
+                             # fecho ANTERIOR (para a variação do dia = price/prev_close - 1)
+                             "prev_close": round(float(close.iloc[-2]), 2) if len(close) >= 2 else None}
             except Exception:
                 continue
         print(f"[ath] download {min(i + BATCH, len(symbols))}/{len(symbols)} (acumulado {len(info)})")
@@ -167,6 +169,7 @@ def compute_rows(symbols, names, in_sp500):
         nm, mcap, shares = enriched.get(sym, (names.get(sym), None, None))
         rows.append({
             "symbol": sym, "name": nm or sym, "price": d["price"],
+            "prev_close": d.get("prev_close"),
             "marketcap": float(mcap) if mcap else None,
             "shares": float(shares) if shares else None,
             "ath": d["ath"], "ath_ts": d["ath_ts"], "in_sp500": in_sp500,
@@ -236,13 +239,15 @@ def fetch_prices():
     print(f"[ath] prices: {len(symbols)} símbolos")
 
     prices = {}
+    prevs = {}  # fecho anterior por símbolo (para a variação do dia)
     for i in range(0, len(symbols), BATCH):
         batch = symbols[i:i + BATCH]
         try:
-            df = yf.download(batch, period="1d", interval="1d", auto_adjust=False,
+            # period="2d": [fecho anterior, dia atual] → dá-nos o preço E o prev_close.
+            df = yf.download(batch, period="2d", interval="1d", auto_adjust=False,
                              threads=True, progress=False, group_by="ticker")
         except Exception as e:
-            print(f"[ath] download(1d) erro {i}: {e}")
+            print(f"[ath] download(2d) erro {i}: {e}")
             continue
         for sym in batch:
             try:
@@ -250,6 +255,8 @@ def fetch_prices():
                 c = sub["Close"].dropna()
                 if not c.empty:
                     prices[sym] = float(c.iloc[-1])
+                    if len(c) >= 2:
+                        prevs[sym] = float(c.iloc[-2])
             except Exception:
                 continue
         time.sleep(1)
@@ -260,6 +267,9 @@ def fetch_prices():
         if not p:
             continue
         row = {"symbol": sym, "price": round(p, 2)}
+        pc = prevs.get(sym)
+        if pc:  # só envia prev_close quando o temos (senão não mexe no valor guardado)
+            row["prev_close"] = round(pc, 2)
         if have_shares:  # só atualiza marketcap se soubermos as shares (senão não lhe toca)
             sh = shares.get(sym)
             row["marketcap"] = round(sh * p) if sh else None
