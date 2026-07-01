@@ -1791,7 +1791,7 @@ function WinnerCard({p,rank,livePrices,series,onClick}){
   );
 }
 
-function MiniSparkline({series,current,height=48}){
+function MiniSparkline({series,current,height=48,fill=true}){
   const uid=useId();
   const today=new Date().toISOString().slice(0,10);
   const pts=(series||[]).map(s=>({date:s.date,r:s.r}));
@@ -1823,13 +1823,15 @@ function MiniSparkline({series,current,height=48}){
   const gid=`spk-${uid}`;
   return(
     <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className={isEx?undefined:"winSpark"} style={{width:"100%",height,display:"block",opacity:isEx?0.55:undefined}}>
-      <defs>
-        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={col} stopOpacity={isEx?0.16:0.32}/>
-          <stop offset="100%" stopColor={col} stopOpacity="0"/>
-        </linearGradient>
-      </defs>
-      <path d={area} fill={`url(#${gid})`}/>
+      {fill&&<>
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={col} stopOpacity={isEx?0.16:0.32}/>
+            <stop offset="100%" stopColor={col} stopOpacity="0"/>
+          </linearGradient>
+        </defs>
+        <path d={area} fill={`url(#${gid})`}/>
+      </>}
       <path d={line} fill="none" stroke={col} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round"
         strokeDasharray={isEx?"5 4":undefined} vectorEffect="non-scaling-stroke"/>
     </svg>
@@ -2583,7 +2585,7 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
   const raceYMax=Math.ceil(yHi+Math.min(Math.max(ySpan*0.12,0.4),1.5));
 
   return(
-    <div style={{...{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"},borderRadius:16,padding:"20px 16px 12px",marginTop:24}}>
+    <div style={{background:"rgba(13,36,47,0.68)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px 16px 12px",marginTop:24}}>
       <p style={{fontSize:12,color:"#94a3b8",margin:"0 0 12px",textAlign:"center"}}>
         {preLaunch?"Pré-visualização com os portefólios demo. A partir de 1 de julho mostrará o Top 10 oficial":"Top 10 — rentabilidade ao longo da competição"}
       </p>
@@ -2695,7 +2697,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
   const demos=ranking.filter(p=>!p.official);
   const officials=ranking.filter(p=>p.official);
   const tableFor=(list)=>(
-    <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
+    // Sem backdrop-filter (o blur sobre a Aurora animada re-desenhava a cada frame → scroll lento).
+    // Painel opaco-fosco com o mesmo aspeto de vidro (borda + sombra + brilho no topo).
+    <div style={{background:"rgba(13,36,47,0.68)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
       <div className="rkRow" style={{padding:"10px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",
         fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>
         <span style={{textAlign:"center"}}>#</span><span>Membro</span>
@@ -2722,6 +2726,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
         return(
           <div key={p.key} className="rkRow" onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
             style={{padding:"14px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",cursor:"pointer",
+              contentVisibility:"auto",containIntrinsicSize:"auto 56px", // não desenha as linhas fora do ecrã → scroll fluido
               background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":rr?`inset 3px 0 0 ${rr.bar}`:"none",transition:"background 0.15s"}}
             onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=hoverBg; }}
             onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
@@ -2735,11 +2740,11 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
             </span>
             <span className="rkSpark">
-              <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24}/>
+              <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24} fill={false}/>
             </span>
-            <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}><Rolling text={pct(p.total)}/></span>
+            <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}>{pct(p.total)}</span>
             <span style={{textAlign:"right",alignSelf:"center",fontFamily:"monospace",fontSize:13,fontWeight:600,
-              color:alpha==null?"#4b5563":alpha>=0?"#4ade80":"#f87171"}}>{alpha==null?"—":<Rolling text={`${alpha>=0?"+":""}${(alpha*100).toFixed(2)}%`}/>}</span>
+              color:alpha==null?"#4b5563":alpha>=0?"#4ade80":"#f87171"}}>{alpha==null?"—":`${alpha>=0?"+":""}${(alpha*100).toFixed(2)}%`}</span>
             <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:14,fontWeight:700}}>
               <span style={{color:"#4ade80"}}>{p.pos}</span><span style={{color:"#94a3b8"}}>/</span><span style={{color:"#f87171"}}>{p.neg}</span>
             </span>
@@ -2751,7 +2756,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
   );
   // Lista de inscritos (em espera): sem classificação; só o próprio dono vê o seu.
   const pendingList=(list)=>(
-    <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
+    <div style={{background:"rgba(13,36,47,0.68)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
       {list.map(p=>{
         const me=p.normName===myNorm;
         return(
