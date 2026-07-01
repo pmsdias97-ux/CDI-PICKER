@@ -1567,7 +1567,8 @@ function Shell({children,page,detailRank,detailIsOwn,nav,submitted,toast,onMyPor
   const medal=page==="detail"?(detailRank===1?GOLD:detailRank===2?SILVER:detailRank===3?BRONZE:null):null;
   const theme=medal
     ||(page==="ath"?ATHBG
-      :(page==="ranking"||page==="duel")?BLUE_REF
+      :page==="ranking"?BLUE
+      :page==="duel"?BLUE_REF
       :(page==="detail"&&!detailIsOwn?BLUE_REF:BLUE));
   return(
     <div style={{minHeight:"100vh",position:"relative","--row-hover":theme.hover||"#0a1120",
@@ -2585,7 +2586,7 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
   const raceYMax=Math.ceil(yHi+Math.min(Math.max(ySpan*0.12,0.4),1.5));
 
   return(
-    <div style={{background:"rgba(13,36,47,0.68)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px 16px 12px",marginTop:24}}>
+    <div style={{background:"rgba(22,34,64,0.66)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px 16px 12px",marginTop:24}}>
       <p style={{fontSize:12,color:"#94a3b8",margin:"0 0 12px",textAlign:"center"}}>
         {preLaunch?"Pré-visualização com os portefólios demo. A partir de 1 de julho mostrará o Top 10 oficial":"Top 10 — rentabilidade ao longo da competição"}
       </p>
@@ -2699,7 +2700,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
   const tableFor=(list)=>(
     // Sem backdrop-filter (o blur sobre a Aurora animada re-desenhava a cada frame → scroll lento).
     // Painel opaco-fosco com o mesmo aspeto de vidro (borda + sombra + brilho no topo).
-    <div style={{background:"rgba(13,36,47,0.68)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
+    <div style={{background:"rgba(22,34,64,0.66)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
       <div className="rkRow" style={{padding:"10px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",
         fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>
         <span style={{textAlign:"center"}}>#</span><span>Membro</span>
@@ -2755,7 +2756,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
   );
   // Lista de inscritos (em espera): sem classificação; só o próprio dono vê o seu.
   const pendingList=(list)=>(
-    <div style={{background:"rgba(13,36,47,0.68)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
+    <div style={{background:"rgba(22,34,64,0.66)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
       {list.map(p=>{
         const me=p.normName===myNorm;
         return(
