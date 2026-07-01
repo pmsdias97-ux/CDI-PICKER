@@ -7,7 +7,7 @@ import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } fr
 import { searchCryptos, isCrypto, cryptoNameFor } from "./lib/crypto";
 import { searchPopular } from "./lib/popular";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
-import { toPng } from "html-to-image";
+import { toBlob } from "html-to-image";
 
 /* ============================================================================
    CONVERSAS DE INVESTIDORES
@@ -2565,18 +2565,26 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
   const [mounted,setMounted]=useState(false);
   const [hi,setHi]=useState(null); // portefólio em destaque (hover no nome ou na linha)
   const [snapOpen,setSnapOpen]=useState(false); // modal do snapshot (desktop)
-  const [snapUrl,setSnapUrl]=useState("");
+  const [snapUrl,setSnapUrl]=useState("");      // data-URL (pré-visualização + descarregar)
+  const [snapBlob,setSnapBlob]=useState(null);  // blob (copiar — sem fetch, seguro com o CSP)
   const [snapMsg,setSnapMsg]=useState("");
   const cardRef=useRef(null);
   useEffect(()=>{ setMounted(true); },[]);
   useEffect(()=>{
-    if(!snapOpen){ setSnapUrl(""); setSnapMsg(""); return; }
+    if(!snapOpen){ setSnapUrl(""); setSnapBlob(null); setSnapMsg(""); return; }
     let cancel=false;
     const t=setTimeout(async()=>{
       try{
         if(!cardRef.current) return;
-        const url=await toPng(cardRef.current,{pixelRatio:2,cacheBust:true,backgroundColor:"#0b1730"});
-        if(!cancel) setSnapUrl(url);
+        // toBlob → blob direto (para copiar, sem fetch a data: que o CSP bloqueia);
+        // FileReader → data-URL (para <img> e descarregar; img-src permite data:).
+        const blob=await toBlob(cardRef.current,{pixelRatio:2,cacheBust:true,backgroundColor:"#0b1730"});
+        if(cancel) return;
+        if(!blob){ setSnapMsg("Falha ao gerar a imagem."); return; }
+        setSnapBlob(blob);
+        const rd=new FileReader();
+        rd.onload=()=>{ if(!cancel) setSnapUrl(String(rd.result||"")); };
+        rd.readAsDataURL(blob);
       }catch{ if(!cancel) setSnapMsg("Falha ao gerar a imagem."); }
     },300); // dá tempo ao gráfico/logo renderizarem antes de capturar
     return()=>{ cancel=true; clearTimeout(t); };
@@ -2656,13 +2664,13 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
   const snapDay=(()=>{ const d=gameStartDate?new Date(gameStartDate):null; if(!d||isNaN(d)) return 1; return Math.max(1,Math.min(365,Math.floor((Date.now()-d.getTime())/86400000)+1)); })();
   const snapDownload=()=>{ if(!snapUrl) return; const a=document.createElement("a"); a.href=snapUrl; a.download=`cdi-picker-top10-${nowIso.slice(0,10)}.png`; a.click(); };
   const snapCopy=async()=>{
-    if(!snapUrl) return;
+    if(!snapBlob) return;
     try{
-      if(!navigator.clipboard||typeof window.ClipboardItem==="undefined") throw new Error("no clipboard");
-      const blob=await (await fetch(snapUrl)).blob();
-      await navigator.clipboard.write([new window.ClipboardItem({"image/png":blob})]);
+      if(!navigator.clipboard||typeof window.ClipboardItem==="undefined") throw new Error("no-api");
+      // blob JÁ pronto (dentro do gesto do clique, sem fetch) → funciona em Chrome/Edge/Safari.
+      await navigator.clipboard.write([new window.ClipboardItem({[snapBlob.type||"image/png"]:snapBlob})]);
       setSnapMsg("Imagem copiada ✓");
-    }catch{ setSnapMsg("Copiar não suportado — usa Descarregar."); }
+    }catch(e){ console.error("snapshot copy failed:",e); setSnapMsg("O browser não deixou copiar — descarrega em vez disso."); }
   };
   return(<>
     <style>{`@media(max-width:640px){.snapBtn{display:none}}`}</style>
