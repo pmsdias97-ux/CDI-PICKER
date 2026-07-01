@@ -1179,7 +1179,7 @@ function CompetitionTimer({settings}){
   const d=Math.ceil(diff/86400000);
   const cd=d===1?"1 dia":`${d} dias`;
   const accent=started?"#fbbf24":"#fcd34d";
-  const label=started?`🏆 Vencedor a ${fmtDateShort(settings.gameEndDate)}`:"";
+  const label=started?`Vencedor a ${fmtDateShort(settings.gameEndDate)}`:"";
   return(
     <div style={{display:"flex",justifyContent:"center"}}>
       <style>{`@keyframes cdtPulse{0%,100%{transform:scale(1);opacity:0.92}50%{transform:scale(1.04);opacity:1}}`}</style>
@@ -1532,7 +1532,7 @@ export default function App(){
   })();
   const detailIsOwn=detailPf?detailPf.normName===norm(myName):false;
   // Cor do hover das linhas de ação, a condizer com o tema da página (JS = ganha sempre).
-  const rowHover=detailRank===1?"#1d1407":detailRank===2?"#12151c":detailRank===3?"#1a0f06":detailIsOwn?"#0a1120":"#0a2230";
+  const rowHover=detailRank===1?"#1d1407":detailRank===2?"#12151c":detailRank===3?"#1a0f06":"#0a1120";
 
   const sh=(children)=><Shell page={page} detailRank={detailRank} detailIsOwn={detailIsOwn} nav={nav} submitted={submitted} toast={toast}
     onMyPortfolio={openMyPortfolio}
@@ -1565,11 +1565,9 @@ function Shell({children,page,detailRank,detailIsOwn,nav,submitted,toast,onMyPor
   // Pódio → ouro/prata/bronze. Ranking + detalhe de OUTROS (4º+/em espera) → azul
   // petróleo novo. O PRÓPRIO portefólio (fora do pódio) e a homepage → azul original.
   const medal=page==="detail"?(detailRank===1?GOLD:detailRank===2?SILVER:detailRank===3?BRONZE:null):null;
-  const theme=medal
-    ||(page==="ath"?ATHBG
-      :page==="ranking"?BLUE
-      :page==="duel"?BLUE_REF
-      :(page==="detail"&&!detailIsOwn?BLUE_REF:BLUE));
+  // ATH = tema roxo; pódio (top-3) = medal (ouro/prata/bronze) acima; TUDO o resto
+  // (homepage, ranking, duel, "Minhas 8" e os restantes portefólios) = o mesmo azul-marinho.
+  const theme=medal||(page==="ath"?ATHBG:BLUE);
   return(
     <div style={{minHeight:"100vh",position:"relative","--row-hover":theme.hover||"#0a1120",
       backgroundColor:theme.color,transition:"background-color .6s ease",
@@ -2517,7 +2515,8 @@ function SeasonRaceTooltip({active,payload,label}){
 }
 const raceColorOf=(p,i)=> p._me?"#ffffff":RACE_COLORS[i%RACE_COLORS.length];
 function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate}){
-  const [snaps,setSnaps]=useState(null);
+  const [snaps,setSnaps]=useState([]); // [] em vez de null → o gráfico desenha logo (baseline início→agora)
+  const nowIso=useMemo(()=>new Date().toISOString(),[]); // "agora" fixo → conteúdo do data estável (não re-anima)
   const [mounted,setMounted]=useState(false);
   const [hi,setHi]=useState(null); // portefólio em destaque (hover no nome ou na linha)
   useEffect(()=>{ setMounted(true); },[]);
@@ -2546,8 +2545,7 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
     return()=>{ cancel=true; };
   },[ids]);
 
-  const data=useMemo(()=>{
-    if(!snaps) return null;
+  const dataRaw=useMemo(()=>{
     const nameById={}; shown.forEach(p=>{ nameById[p.id]=p.name; });
     // Arranque real de cada linha: 1 jul (jogo oficial) ou a submissão (demos).
     // t0 = o mais antigo → todas começam JUNTAS a 0% (pedido do utilizador).
@@ -2555,18 +2553,17 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
     const bases=shown.map(p=>baseOf()||p.submittedAt).filter(Boolean).sort();
     const t0=bases[0]||null;
     const byT={};
-    for(const s of snaps){
+    for(const s of (snaps||[])){
       const nm=nameById[s.portfolio_id]; if(!nm) continue;
       const t=s.captured_at; if(!t||!isMktOpen(t)) continue;   // ignora mercado fechado
       if(t0&&t<t0) continue;                                    // ignora antes do arranque
       // VALOR REAL (rentabilidade desde a submissão) — igual ao ranking. SEM rebase.
       (byT[t]=byT[t]||{t})[nm]=Number(s.total_return)*100;
     }
-    // ponto de agora (ao vivo) — também igual ao ranking (p.total).
-    const now=new Date().toISOString();
-    const nowRow=byT[now]||{t:now};
+    // ponto de "agora" (ao vivo) — igual ao ranking (p.total). Timestamp FIXO (nowIso) → conteúdo estável.
+    const nowRow=byT[nowIso]||{t:nowIso};
     shown.forEach(p=>{ if(Number.isFinite(p.total)) nowRow[p.name]=p.total*100; });
-    byT[now]=nowRow;
+    byT[nowIso]=nowRow;
     // âncora a 0% no arranque comum (todas começam juntas).
     if(t0){
       const a=byT[t0]||{t:t0};
@@ -2574,7 +2571,16 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
       byT[t0]=a;
     }
     return Object.values(byT).sort((a,b)=>a.t<b.t?-1:1);
-  },[snaps,shown,competitionStarted,gameStartDate]);
+  },[snaps,shown,competitionStarted,gameStartDate,nowIso]);
+  // Referência estável: se o conteúdo não mudou (ex.: snapshots vazios a chegar no dia 1),
+  // devolve o array anterior → o Recharts não re-desenha/re-anima a linha.
+  const dataStable=useRef(null);
+  const data=useMemo(()=>{
+    const key=JSON.stringify(dataRaw);
+    if(dataStable.current&&dataStable.current.key===key) return dataStable.current.val;
+    dataStable.current={key,val:dataRaw};
+    return dataRaw;
+  },[dataRaw]);
 
   if(!shown.length) return null;
   const enoughData=data&&data.length>=2;
@@ -2586,9 +2592,17 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
   const raceYMax=Math.ceil(yHi+Math.min(Math.max(ySpan*0.12,0.4),1.5));
 
   return(
-    <div style={{background:"rgba(22,34,64,0.66)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px 16px 12px",marginTop:24}}>
-      <p style={{fontSize:12,color:"#94a3b8",margin:"0 0 12px",textAlign:"center"}}>
-        {preLaunch?"Pré-visualização com os portefólios demo. A partir de 1 de julho mostrará o Top 10 oficial":"Top 10 — rentabilidade ao longo da competição"}
+    <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px 16px 12px",marginTop:24}}>
+      <p style={{fontSize:12,margin:"0 0 12px",textAlign:"center",minHeight:17,lineHeight:1.4}}>
+        {(()=>{
+          const hp=hi&&shown.find(p=>p.name===hi);
+          if(hp&&Number.isFinite(hp.total)) return(<>
+            <span style={{color:"#e2e8f0",fontWeight:700}}>{hp._me?`${hp.name} (tu)`:hp.name}</span>
+            {" · "}
+            <span style={{fontFamily:"ui-monospace, monospace",fontWeight:800,color:hp.total>=0?"#4ade80":"#f87171"}}>{hp.total>=0?"+":""}{(hp.total*100).toFixed(2)}%</span>
+          </>);
+          return <span style={{color:"#94a3b8"}}>{preLaunch?"Pré-visualização com os portefólios demo. A partir de 1 de julho mostrará o Top 10 oficial":"Top 10 — rentabilidade ao longo da competição"}</span>;
+        })()}
       </p>
       {!mounted?(
         <div style={{height:300}}/>
@@ -2611,16 +2625,8 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
                   stroke={raceColorOf(p,i)}
                   strokeWidth={hi===p.name?(p._me?4.5:3.2):(p._me?3.5:2)}
                   strokeOpacity={dim?0.15:1}
-                  dot={false} connectNulls isAnimationActive={false}
-                  activeDot={hi===p.name?{r:4}:(p._me?{r:3.5}:false)}
-                  label={hi===p.name?(lp)=>{
-                    if(!lp||lp.value==null||lp.index!==data.length-1) return null;
-                    return(<text key="rl" x={lp.x} y={lp.y-9} textAnchor="end"
-                      fill={raceColorOf(p,i)} fontSize={12.5} fontWeight={700} fontFamily="ui-monospace, monospace"
-                      style={{paintOrder:"stroke",stroke:"rgba(8,15,32,0.9)",strokeWidth:3,strokeLinejoin:"round"}}>
-                      {lp.value>=0?"+":""}{Number(lp.value).toFixed(2)}%
-                    </text>);
-                  }:false}/>
+                  dot={false} connectNulls isAnimationActive={true} animationDuration={1000} animationEasing="ease-out" animationBegin={i*30}
+                  activeDot={hi===p.name?{r:4}:(p._me?{r:3.5}:false)}/>
               );
             })}
           </LineChart>
@@ -2697,10 +2703,19 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
   const nameByKey=k=>ranking.find(p=>p.key===k)?.name||"";
   const demos=ranking.filter(p=>!p.official);
   const officials=ranking.filter(p=>p.official);
+  // Render progressivo: mostra o topo primeiro e anexa o resto DEPOIS do 1º paint → a aba
+  // entra logo (não monta as 124 linhas de uma vez). Re-monta a cada entrada → rápido sempre.
+  const [shownRows,setShownRows]=useState(24);
+  useEffect(()=>{
+    if(shownRows>=officials.length) return;
+    // ~150ms antes de montar o resto: dá tempo à rolagem dos números do TOPO arrancar. Como
+    // a rolagem é uma transição de `transform` (corre no compositor/GPU), continua fluida mesmo
+    // durante o render pesado do resto → deixa de haver o "0.00%" parado nas linhas visíveis.
+    const t=setTimeout(()=>setShownRows(officials.length),150);
+    return()=>clearTimeout(t);
+  },[shownRows,officials.length]);
   const tableFor=(list)=>(
-    // Sem backdrop-filter (o blur sobre a Aurora animada re-desenhava a cada frame → scroll lento).
-    // Painel opaco-fosco com o mesmo aspeto de vidro (borda + sombra + brilho no topo).
-    <div style={{background:"rgba(22,34,64,0.66)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
+    <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
       <div className="rkRow" style={{padding:"10px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",
         fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600}}>
         <span style={{textAlign:"center"}}>#</span><span>Membro</span>
@@ -2721,13 +2736,15 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
           {bg:"rgba(241,245,249,0.12)",hov:"rgba(241,245,249,0.18)",bar:"#e2e8f0"},
           {bg:"rgba(245,158,11,0.11)",hov:"rgba(245,158,11,0.17)",bar:"#d97706"},
         ][i]:null;
-        // Top 3: sem fundo em repouso (só a barra lateral); o glow da cor aparece no hover.
+        const inTop10=i>=3&&i<10;                       // 4º–10º (o Top 3 são as medalhas)
+        const barColor=rr?rr.bar:(inTop10?"#22c55e":null);
+        // Top 3 e 4–10: só a barra em repouso (sem fundo); o tom verde aparece só no hover.
         const baseBg=picked?"rgba(59,130,246,0.16)":me?"rgba(34,197,94,0.04)":"transparent";
-        const hoverBg=picked?baseBg:rr?rr.hov:me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)";
+        const hoverBg=picked?baseBg:rr?rr.hov:inTop10?"rgba(34,197,94,0.10)":me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)";
         return(
           <div key={p.key} className="rkRow" onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
             style={{padding:"14px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",cursor:"pointer",
-              background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":rr?`inset 3px 0 0 ${rr.bar}`:"none",transition:"background 0.15s"}}
+              background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":barColor?`inset 3px 0 0 ${barColor}`:"none",transition:"background 0.15s"}}
             onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=hoverBg; }}
             onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
             <span style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -2740,11 +2757,11 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
             </span>
             <span className="rkSpark">
-              <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24} fill={false}/>
+              <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24}/>
             </span>
-            <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}>{pct(p.total)}</span>
+            <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}><Rolling text={pct(p.total)}/></span>
             <span style={{textAlign:"right",alignSelf:"center",fontFamily:"monospace",fontSize:13,fontWeight:600,
-              color:alpha==null?"#4b5563":alpha>=0?"#4ade80":"#f87171"}}>{alpha==null?"—":`${alpha>=0?"+":""}${(alpha*100).toFixed(2)}%`}</span>
+              color:alpha==null?"#4b5563":alpha>=0?"#4ade80":"#f87171"}}>{alpha==null?"—":<Rolling text={`${alpha>=0?"+":""}${(alpha*100).toFixed(2)}%`}/>}</span>
             <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:14,fontWeight:700}}>
               <span style={{color:"#4ade80"}}>{p.pos}</span><span style={{color:"#94a3b8"}}>/</span><span style={{color:"#f87171"}}>{p.neg}</span>
             </span>
@@ -2756,7 +2773,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
   );
   // Lista de inscritos (em espera): sem classificação; só o próprio dono vê o seu.
   const pendingList=(list)=>(
-    <div style={{background:"rgba(22,34,64,0.66)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
+    <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
       {list.map(p=>{
         const me=p.normName===myNorm;
         return(
@@ -2822,7 +2839,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
       ):(
         <>
           {/* Season Race — independente da secção Demo: pré = preview demos; pós = Top 10 oficial */}
-          <div style={{marginBottom:32}}>
+          <div style={{marginBottom:16}}>
             <GlowBehind><SeasonRace ranking={ranking} preLaunch={preLaunch} myNorm={myNorm} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""}/></GlowBehind>
           </div>
           {/* Tabela Demo — só antes do arranque (some sozinha ao arrancar) */}
@@ -2833,15 +2850,11 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
             </div>
           )}
           <div>
-            <div style={{margin:"0 0 12px"}}>
-              <h2 style={{fontSize:18,fontWeight:800,letterSpacing:"-0.3px",margin:"0 0 8px",textAlign:"center"}}>Oficial</h2>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-                <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,lineHeight:1.4,color:preLaunch?"#fbbf24":"#4ade80"}}>{preLaunch?`${officials.length} ${officials.length===1?"participante":"participantes"} em espera · começa 1 de julho`:"a decorrer"}</span>
-                <div style={{flexShrink:0}}><CompetitionTimer settings={settings}/></div>
-              </div>
+            <div style={{margin:"0 0 16px"}}>
+              <CompetitionTimer settings={settings}/>
             </div>
             {officials.length>0
-              ? (preLaunch?pendingList([...officials].sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||"")))):tableFor(officials))
+              ? (preLaunch?pendingList([...officials].sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||"")))):tableFor(officials.slice(0,shownRows)))
               : <div style={{background:"rgba(255,255,255,0.04)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:16,
                   padding:40,textAlign:"center",color:"#64748b",fontSize:14}}>
                   Ainda sem inscrições. Os portefólios submetidos a partir de agora entram aqui — admissão oficial a 1 de julho.
