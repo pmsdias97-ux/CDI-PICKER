@@ -1861,47 +1861,56 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio}){
   return(
     <div>
       {/* Hero */}
-      <section style={{textAlign:"center",padding:"100px 24px 80px",maxWidth:780,margin:"0 auto"}}>
-        <span style={{position:"relative",display:"inline-block",margin:"0 auto 32px"}}>
-          <BreatheGlow color="rgba(245,200,80,0.5)" mid="rgba(245,158,11,0.16)" inset="-34% -16%" base={0.4} duration={9000}/>
-          <span style={{position:"relative",zIndex:1,display:"inline-block"}}>
-            <GoldGlow src="/logo.png" alt="Conversas de Investidores" maskSrc="/logo.png" glow={20}
-              wrapStyle={{display:"block"}}
-              imgStyle={{width:"clamp(120px,18vw,180px)",height:"auto"}}/>
+      <section style={{position:"relative",overflow:"hidden",textAlign:"center",padding:"clamp(72px,11vw,116px) 24px 80px",maxWidth:900,margin:"0 auto"}}>
+        {/* grelha de fundo subtil (esbatida nas bordas) */}
+        <div aria-hidden="true" style={{position:"absolute",inset:0,zIndex:0,pointerEvents:"none",
+          backgroundImage:"linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px)",
+          backgroundSize:"clamp(34px,7vw,54px) clamp(34px,7vw,54px)",
+          WebkitMaskImage:"radial-gradient(120% 90% at 50% 34%, #000 30%, transparent 78%)",
+          maskImage:"radial-gradient(120% 90% at 50% 34%, #000 30%, transparent 78%)"}}/>
+        <div style={{position:"relative",zIndex:1}}>
+          <span style={{position:"relative",display:"inline-block",margin:"0 auto 32px"}}>
+            <BreatheGlow color="rgba(245,200,80,0.5)" mid="rgba(245,158,11,0.16)" inset="-34% -16%" base={0.4} duration={9000}/>
+            <span style={{position:"relative",zIndex:1,display:"inline-block"}}>
+              <GoldGlow src="/logo.png" alt="Conversas de Investidores" maskSrc="/logo.png" glow={20}
+                wrapStyle={{display:"block"}}
+                imgStyle={{width:"clamp(120px,18vw,180px)",height:"auto"}}/>
+            </span>
           </span>
-        </span>
-        <h1 style={{fontSize:"clamp(40px,6vw,72px)",fontWeight:800,lineHeight:1.1,letterSpacing:"-2px",margin:"0 0 24px"}}>
-          Conversas de{" "}
-          <span style={{color:"#22c55e"}}>Investidores</span>
-        </h1>
-        <div style={{marginBottom:12}}><SubmissionCountdown settings={settings}/></div>
-        <div style={{display:"inline-flex",alignItems:"center",gap:10,maxWidth:"min(92vw,460px)",
-          background:"rgba(34,197,94,0.10)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:16,
-          padding:"11px 18px",marginBottom:24,boxShadow:"0 4px 18px rgba(0,0,0,0.18)"}}>
-          <span style={{fontSize:"clamp(12px,3.4vw,14px)",lineHeight:1.45,color:"#4ade80",fontWeight:600,textAlign:"center"}}>
-            {isPreLaunch(settings)?<>Submissões encerradas<br/>Competição começa: 1 de julho</>:"Competição a decorrer"}
-          </span>
+          <h1 className="heroTitle" style={{fontSize:"clamp(46px,11vw,104px)",fontWeight:800,lineHeight:0.98,letterSpacing:"-0.03em",margin:"0 0 20px"}}>
+            <span style={{display:"block",color:"#f1f5f9"}}>Conversas de</span>
+            <span style={{display:"block",backgroundImage:"linear-gradient(180deg,#4ade80 0%,#22c55e 52%,#16a34a 100%)",
+              WebkitBackgroundClip:"text",backgroundClip:"text",color:"transparent",paddingBottom:"0.08em"}}>Investidores.</span>
+          </h1>
+          <div style={{marginBottom:12}}><SubmissionCountdown settings={settings}/></div>
+          <div style={{display:"inline-flex",alignItems:"center",gap:10,maxWidth:"min(92vw,460px)",
+            background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:999,
+            padding:"8px 16px",marginBottom:24}}>
+            <span style={{width:7,height:7,borderRadius:"50%",background:"#22c55e",display:"inline-block",flexShrink:0}}/>
+            <span style={{fontSize:"clamp(12px,3.4vw,13.5px)",lineHeight:1.4,color:"#86efac",fontWeight:600,textAlign:"center"}}>
+              {isPreLaunch(settings)?<>Submissões encerradas · Competição começa 1 de julho</>:"Competição a decorrer"}
+            </span>
+          </div>
+          <p style={{fontSize:"clamp(16px,2.4vw,20px)",color:"#94a3b8",lineHeight:1.55,maxWidth:600,margin:"0 auto 40px"}}>
+            O <strong style={{color:"#e2e8f0",fontWeight:700}}>jogo de portefólios</strong> da nossa comunidade.{" "}<br className="heroBrk"/>
+            Acompanha <strong style={{color:"#e2e8f0",fontWeight:700}}>ao vivo</strong> o ranking e a evolução ao longo da época.
+          </p>
+          <style>{`@media(max-width:520px){.heroTitle{letterSpacing:-0.02em;line-height:1.02}.heroBtns{flex-wrap:nowrap;gap:10px;align-items:stretch}.heroBtns>button{flex:1;min-width:0;padding:14px 12px;font-size:15px;line-height:1.2;white-space:nowrap}.heroBrk{display:none}} `}</style>
+          <div className="heroBtns" style={{display:"flex",justifyContent:"center",gap:12,flexWrap:"wrap"}}>
+            {submitted?(
+              <>
+                <Btn onClick={()=>nav("ranking")} primary large><span style={{display:"inline-flex",alignItems:"center",gap:9}}>Ver Ranking <Arrow/></span></Btn>
+                <Btn onClick={onMyPortfolio} large>Minhas 8</Btn>
+              </>
+            ):(
+              <>
+                <Btn onClick={onMyPortfolio} primary large><span style={{display:"inline-flex",alignItems:"center",gap:9}}><LockIcon/> Minhas 8</span></Btn>
+                <Btn onClick={()=>nav("ranking")} large><span style={{display:"inline-flex",alignItems:"center",gap:9}}>Ver Ranking <Arrow/></span></Btn>
+              </>
+            )}
+          </div>
+          {officialCount>0&&<p style={{marginTop:22,fontSize:13,color:"#6b7280"}}>{officialCount} {officialCount===1?"portefólio":"portefólios"} já submetidos</p>}
         </div>
-        <p style={{fontSize:18,color:"#6b7280",lineHeight:1.6,maxWidth:560,margin:"0 auto 40px"}}>
-          O jogo de portefólios da nossa comunidade.{" "}<br className="heroBrk"/>
-          As submissões estão encerradas — acompanha ao vivo{" "}<br className="heroBrk"/>
-          o ranking e a evolução dos portefólios ao longo da época.
-        </p>
-        <style>{`@media(max-width:520px){.heroBtns{flex-wrap:nowrap;gap:8px;align-items:stretch}.heroBtns>button{flex:1;min-width:0;padding:9px 8px;font-size:12.5px;line-height:1.2;white-space:normal}.heroBrk{display:none}} `}</style>
-        <div className="heroBtns" style={{display:"flex",justifyContent:"center",gap:12,flexWrap:"wrap"}}>
-          {submitted?(
-            <>
-              <Btn onClick={()=>nav("ranking")} primary>Ver Ranking</Btn>
-              <Btn onClick={onMyPortfolio}>Minhas 8</Btn>
-            </>
-          ):(
-            <>
-              <Btn onClick={onMyPortfolio} primary>Minhas 8 🔒</Btn>
-              <Btn onClick={()=>nav("ranking")}>Ver Ranking</Btn>
-            </>
-          )}
-        </div>
-        {officialCount>0&&<p style={{marginTop:20,fontSize:13,color:"#6b7280"}}>{officialCount} {officialCount===1?"portefólio":"portefólios"} já submetidos</p>}
       </section>
 
       {/* Liga ao vivo — vencedores */}
@@ -3921,6 +3930,14 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
 }
 
 /* ---- Reusable button ----------------------------------------------------- */
+// Ícones inline para os CTAs do herói (sem emojis).
+function Arrow(){
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{flexShrink:0}}><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>;
+}
+function LockIcon(){
+  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{flexShrink:0}}><rect x="4.5" y="11" width="15" height="9.5" rx="2"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/></svg>;
+}
+
 function Btn({children,onClick,primary,large}){
   return(
     <button onClick={onClick}
