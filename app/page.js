@@ -1839,8 +1839,28 @@ function MiniSparkline({series,current,height=48}){
   );
 }
 
+// Contagem animada 0 → alvo (ease-out), que ARRANCA quando entra no ecrã (scroll).
+function CountUp({to=0,dur=1100}){
+  const [n,setN]=useState(0);
+  const [go,setGo]=useState(false);
+  const ref=useRef(null);
+  useEffect(()=>{
+    const el=ref.current; if(!el) return;
+    const io=new IntersectionObserver((es)=>{ if(es[0].isIntersecting){ setGo(true); io.disconnect(); } },{threshold:0.4});
+    io.observe(el); return()=>io.disconnect();
+  },[]);
+  useEffect(()=>{
+    if(!go) return;
+    let raf; const t0=performance.now();
+    const tick=(t)=>{ const p=Math.min(1,(t-t0)/dur); setN(Math.round(to*(1-Math.pow(1-p,3)))); if(p<1) raf=requestAnimationFrame(tick); };
+    raf=requestAnimationFrame(tick); return()=>cancelAnimationFrame(raf);
+  },[go,to,dur]);
+  return <span ref={ref}>{n.toLocaleString("pt-PT")}</span>;
+}
 function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio}){
   const officialCount=(ranking||[]).filter(p=>p.official).length;
+  const compDay=(()=>{ const d=settings?.gameStartDate?new Date(settings.gameStartDate):null; if(!d||isNaN(d)) return 1; return Math.max(1,Math.min(365,Math.floor((Date.now()-d.getTime())/86400000)+1)); })();
+  const iconProps={viewBox:"0 0 24 24",fill:"none",stroke:"#8ea2bf",strokeWidth:1.6,strokeLinecap:"round",strokeLinejoin:"round",width:22,height:22,"aria-hidden":true};
   return(
     <div>
       {/* Hero */}
@@ -1899,6 +1919,31 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio}){
           <WinnersGrid top={ranking.filter(p=>Number.isFinite(p.total)).slice(0,5)} livePrices={livePrices} nav={nav}/>
         </section>
       )}
+
+      {/* A competição em números (métricas reais do jogo) */}
+      <section style={{maxWidth:980,margin:"0 auto",padding:"0 24px 80px"}}>
+        <style>{`
+          .statGrid{display:grid;grid-template-columns:1fr 1fr 1fr}
+          .statGrid .statCell + .statCell{border-left:1px solid rgba(255,255,255,0.08)}
+          @media(max-width:640px){.statGrid{grid-template-columns:1fr}.statGrid .statCell + .statCell{border-left:none;border-top:1px solid rgba(255,255,255,0.08)}}
+        `}</style>
+        <div style={{background:"transparent"}}>
+          <div className="statGrid">
+            {[
+              {icon:<svg {...iconProps}><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,val:<CountUp to={officialCount}/>,label:"Participantes"},
+              {icon:<svg {...iconProps}><line x1="6" y1="20" x2="6" y2="13"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="9"/></svg>,val:<CountUp to={officialCount*8}/>,label:"Ações escolhidas"},
+              {icon:<svg {...iconProps}><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><line x1="16" y1="2.5" x2="16" y2="6.5"/><line x1="8" y1="2.5" x2="8" y2="6.5"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,val:<><CountUp to={compDay}/><span style={{color:"#4b5563",fontWeight:700}}>/365</span></>,label:"Dia da competição"},
+            ].map((s,i)=>(
+              <div key={i} className="statCell" style={{padding:"28px 20px",textAlign:"center"}}>
+                <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:42,height:42,borderRadius:12,
+                  background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)",marginBottom:14}}>{s.icon}</div>
+                <div style={{fontSize:"clamp(30px,7vw,44px)",fontWeight:800,letterSpacing:"-1.5px",lineHeight:1,color:"#e2e8f0",fontVariantNumeric:"tabular-nums"}}>{s.val}</div>
+                <div style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"1.5px",fontWeight:600,marginTop:10}}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* Como funciona */}
       <section style={{maxWidth:980,margin:"0 auto",padding:"0 24px 80px"}}>
