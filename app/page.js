@@ -1289,6 +1289,8 @@ export default function App(){
   const [detailSlug,setDetailSlug]=useState(null);
   const [duelSlugs,setDuelSlugs]=useState(null); // [slugA, slugB] para o duelo 1v1
   const [toast,setToast]=useState(null);
+  const [rankHighlight,setRankHighlight]=useState(null); // key da linha a destacar ao VOLTAR de um detalhe
+  const rankHighlightRef=useRef(null); rankHighlightRef.current=rankHighlight;
 
   const showToast=useCallback((msg,kind="ok")=>{ setToast({msg,kind}); setTimeout(()=>setToast(null),3500); },[]);
 
@@ -1304,8 +1306,8 @@ export default function App(){
     applyRoute();
   },[applyRoute]);
   const slugForKey=useCallback((key)=>{ const pf=portfolios.find(p=>p.key===key); return pf?(slugify(pf.name)||keyToId(key)):keyToId(key); },[portfolios]);
-  const nav=useCallback((p)=>goRoute({page:p}),[goRoute]);
-  const openDetail=useCallback((k)=>goRoute({page:"detail",detailSlug:slugForKey(k)}),[goRoute,slugForKey]);
+  const nav=useCallback((p)=>{ setRankHighlight(null); goRoute({page:p}); },[goRoute]);
+  const openDetail=useCallback((k)=>{ setRankHighlight(null); goRoute({page:"detail",detailSlug:slugForKey(k)}); },[goRoute,slugForKey]);
   const openDuel=useCallback((a,b)=>goRoute({page:"duel",duelSlugs:[slugForKey(a),slugForKey(b)]}),[goRoute,slugForKey]);
 
   const refreshLivePrices=useCallback(async(pfs)=>{
@@ -1405,7 +1407,9 @@ export default function App(){
 
   useEffect(()=>{ load(); },[load]);
   // Ao mudar de ecrã (ou de portefólio aberto), começa no topo do scroll.
-  useEffect(()=>{ if(typeof window!=="undefined") window.scrollTo(0,0); },[page,detailSlug,duelSlugs]);
+  // Scroll para o topo ao mudar de página — EXCETO ao voltar ao ranking com uma linha a destacar
+  // (nesse caso o Ranking faz scroll para essa linha).
+  useEffect(()=>{ if(typeof window!=="undefined" && !(page==="ranking"&&rankHighlightRef.current)) window.scrollTo(0,0); },[page,detailSlug,duelSlugs]);
 
   // Routing por caminho: aplica a rota no arranque e em back/forward.
   // Inclui a entrada de admin (/admin) e os links partilháveis (/p/<slug>, /duel/<a>~<b>).
@@ -1543,9 +1547,9 @@ export default function App(){
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} showToast={showToast}/>);
-  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} preLaunch={isPreLaunch(settings)} settings={settings} onSelect={openDetail} onCompare={openDuel}/>);
+  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} preLaunch={isPreLaunch(settings)} settings={settings} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)}/>);
   if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
-  if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} myNorm={norm(myName)} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
   return null;
 }
@@ -1572,7 +1576,7 @@ function Shell({children,page,detailRank,detailIsOwn,nav,submitted,toast,onMyPor
   return(
     <div style={{minHeight:"100vh",position:"relative","--row-hover":theme.hover||"#0a1120",
       backgroundColor:theme.color,transition:"background-color .6s ease",
-      color:"#e2e8f0",fontFamily:"var(--font-app), system-ui, -apple-system, sans-serif",overflowX:"hidden"}}>
+      color:"#e2e8f0",fontFamily:"var(--font-app), system-ui, -apple-system, sans-serif",overflowX:"clip"}}>
       <BackgroundFade bg={theme.bg}/>
       <Aurora page={page}/>
       <style>{`
@@ -1599,7 +1603,12 @@ function Shell({children,page,detailRank,detailIsOwn,nav,submitted,toast,onMyPor
             box-shadow:0 7px 20px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.22)!important}
         }
       `}</style>
-      <header style={{position:"sticky",top:0,zIndex:50,padding:"12px 14px"}}>
+      <header style={{position:"sticky",top:0,zIndex:50,padding:"12px 14px 20px"}}>
+        {/* Vidro fosco estilo Apple: desfoca o conteúdo que passa por trás das abas e dissolve-se
+            no fundo (máscara), sem tom escuro. Camada dedicada → não afeta as abas. */}
+        <div aria-hidden="true" style={{position:"absolute",inset:0,zIndex:-1,pointerEvents:"none",
+          backdropFilter:"blur(18px) saturate(160%)",WebkitBackdropFilter:"blur(18px) saturate(160%)",
+          WebkitMaskImage:"linear-gradient(180deg,#000 0%,#000 58%,transparent 100%)",maskImage:"linear-gradient(180deg,#000 0%,#000 58%,transparent 100%)"}}/>
         <Nav page={page} nav={nav} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} tint={theme.tint} />
         <div className="cdiClock"><MarketStatus/></div>
       </header>
@@ -2674,7 +2683,7 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
   };
   return(<>
     <style>{`@media(max-width:640px){.snapBtn{display:none}}`}</style>
-    <div style={{position:"relative",background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px 16px 12px",marginTop:24}}>
+    <div style={{position:"relative",background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px 16px 12px"}}>
       <button className="snapBtn" onClick={()=>setSnapOpen(true)} title="Guardar imagem do Top 10"
         style={{position:"absolute",top:12,right:12,zIndex:2,display:"inline-flex",alignItems:"center",justifyContent:"center",width:32,height:32,borderRadius:9,cursor:"pointer",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",color:"#cbd5e1"}}>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -2790,7 +2799,7 @@ function InfoTip({text}){
     </span>
   );
 }
-function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,onCompare}){
+function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,preLaunch,settings,onSelect,onCompare,highlightKey,clearHighlight}){
   const [cmp,setCmp]=useState(false);
   const [sel,setSel]=useState([]);
   // Mini-curva por linha: snapshots por portefólio (histórico). Recarrega só quando o
@@ -2818,7 +2827,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
   const officials=ranking.filter(p=>p.official);
   // Render progressivo: mostra o topo primeiro e anexa o resto DEPOIS do 1º paint → a aba
   // entra logo (não monta as 124 linhas de uma vez). Re-monta a cada entrada → rápido sempre.
-  const [shownRows,setShownRows]=useState(24);
+  // Se vamos destacar uma linha (voltar de um detalhe), monta TUDO já — para poder fazer scroll até lá.
+  const [shownRows,setShownRows]=useState(highlightKey?100000:24);
   useEffect(()=>{
     if(shownRows>=officials.length) return;
     // ~150ms antes de montar o resto: dá tempo à rolagem dos números do TOPO arrancar. Como
@@ -2827,6 +2837,14 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
     const t=setTimeout(()=>setShownRows(officials.length),150);
     return()=>clearTimeout(t);
   },[shownRows,officials.length]);
+  // Voltar de um detalhe: faz scroll até à linha de origem e dá-lhe um destaque subtil (flash).
+  const highlightRef=useRef(null);
+  useEffect(()=>{
+    if(!highlightKey) return;
+    const raf=requestAnimationFrame(()=>{ if(highlightRef.current) highlightRef.current.scrollIntoView({block:"center",behavior:"auto"}); });
+    const t=setTimeout(()=>clearHighlight&&clearHighlight(),2600); // limpa o destaque no fim do flash
+    return()=>{ cancelAnimationFrame(raf); clearTimeout(t); };
+  },[highlightKey]);
   const tableFor=(list)=>(
     <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
       <div className="rkRow" style={{padding:"10px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",
@@ -2855,7 +2873,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
         const baseBg=picked?"rgba(59,130,246,0.16)":me?"rgba(34,197,94,0.04)":"transparent";
         const hoverBg=picked?baseBg:rr?rr.hov:inTop10?"rgba(34,197,94,0.10)":me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)";
         return(
-          <div key={p.key} className="rkRow" onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
+          <div key={p.key} ref={p.key===highlightKey?highlightRef:null} className={p.key===highlightKey?"rkRow rkHiFlash":"rkRow"} onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
             style={{padding:"14px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",cursor:"pointer",
               background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":barColor?`inset 3px 0 0 ${barColor}`:"none",transition:"background 0.15s"}}
             onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=hoverBg; }}
@@ -2914,11 +2932,114 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
       {sub&&<span style={{fontSize:12,fontWeight:700,color:subColor||"#94a3b8"}}>{sub}</span>}
     </div>
   );
+  // ---- Widgets das laterais (desktop) ----------------------------------------
+  const myRow=myNorm?officials.find(p=>p.normName===myNorm):null;
+  const myRank=myRow?officials.indexOf(myRow)+1:0;
+  const myAlpha=(myRow&&spy)?(()=>{ const s=spy.returnFor(myRow); return s==null?null:myRow.total-s; })():null;
+  const stats=useMemo(()=>{
+    const off=officials.filter(p=>Number.isFinite(p.total));
+    if(!off.length) return null;
+    const avg=off.reduce((a,p)=>a+p.total,0)/off.length;
+    let spyRet=null,beating=null,bestAlpha=null;
+    if(spy){ spyRet=spy.returnFor(off[0]); beating=0; for(const p of off){ const s=spy.returnFor(p); if(s!=null){ if(p.total>s) beating++; const a=p.total-s; if(!bestAlpha||a>bestAlpha.a) bestAlpha={p,a}; } } }
+    return { n:off.length, avg, spyRet, beating, bestAlpha, leader:off[0] };
+  },[officials,spy]);
+  const topPicks=useMemo(()=>{
+    const c={};
+    for(const p of officials) for(const s of (p.stocks||[])){ const t=(s.ticker||"").toUpperCase().trim(); if(t) c[t]=(c[t]||0)+1; }
+    const tot=officials.length||1;
+    return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([ticker,cnt])=>({ticker,cnt,frac:cnt/tot}));
+  },[officials]);
+  const topDaily=useMemo(()=>{
+    if(!dayChange) return null; let best=null;
+    for(const p of officials){
+      const rs=(p.stocks||[]).map(s=>{ const d=dayChange[s.ticker]; return Number.isFinite(d)?(s.side==="short"?-d:d):null; }).filter(x=>x!=null);
+      if(!rs.length) continue;
+      const day=rs.reduce((a,b)=>a+b,0)/rs.length;
+      if(!best||day>best.day) best={p,day};
+    }
+    return best;
+  },[officials,dayChange]);
+  const railCard=(title,children)=>(
+    <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:"14px 15px",boxShadow:"0 6px 20px rgba(0,0,0,0.22)"}}>
+      <div style={{fontSize:10.5,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:800,marginBottom:12}}>{title}</div>
+      {children}
+    </div>
+  );
+  const mono=(v,pos)=><span style={{fontFamily:"monospace",fontSize:13,fontWeight:800,color:pos?"#4ade80":"#f87171"}}>{v}</span>;
+  const hiRow=(label,p,valueEl,first)=> p?(
+    <div onClick={()=>onSelect(p.key)} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",padding:"7px 0",borderTop:first?"none":"1px solid rgba(255,255,255,0.07)"}}>
+      <span style={{fontSize:10,color:"#64748b",fontWeight:800,textTransform:"uppercase",letterSpacing:".4px",width:70,flexShrink:0}}>{label}</span>
+      <span style={{flex:1,minWidth:0,fontSize:13,fontWeight:600,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</span>
+      {valueEl}
+    </div>
+  ):null;
+  const wYou=myRow?railCard("A tua posição",(
+    <div onClick={()=>onSelect(myRow.key)} style={{cursor:"pointer"}}>
+      <div style={{display:"flex",alignItems:"baseline",gap:6,marginBottom:2}}>
+        <span style={{fontSize:32,fontWeight:800,letterSpacing:"-1px"}}>{myRank}</span>
+        <span style={{fontSize:15,color:"#64748b",fontWeight:700}}>/ {stats?stats.n:officials.length}</span>
+      </div>
+      <div style={{fontSize:13,color:"#cbd5e1",fontWeight:600,marginBottom:10,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{myRow.name}</div>
+      <div style={{display:"flex",gap:14,fontFamily:"monospace",fontSize:14,fontWeight:800,marginBottom:8}}>
+        <span style={{color:myRow.total>=0?"#4ade80":"#f87171"}}>{pct(myRow.total)}</span>
+        {myAlpha!=null&&<span title="Alpha (vs S&P 500)" style={{color:myAlpha>=0?"#4ade80":"#f87171"}}>α {myAlpha>=0?"+":""}{(myAlpha*100).toFixed(2)}%</span>}
+      </div>
+      <div style={{fontSize:12,color:"#94a3b8",lineHeight:1.5}}>
+        {myRank===1
+          ? "És o líder do ranking."
+          : <>{((officials[myRank-2].total-myRow.total)*100).toFixed(2)} pp do lugar acima<br/>{stats&&`${((stats.leader.total-myRow.total)*100).toFixed(2)} pp do 1º`}</>}
+      </div>
+    </div>
+  )):null;
+  const wHi=stats?railCard("Destaques",(
+    <div style={{marginTop:-3}}>
+      {hiRow("Líder",stats.leader,mono(pct(stats.leader.total),stats.leader.total>=0),true)}
+      {stats.bestAlpha&&hiRow("Melhor alpha",stats.bestAlpha.p,mono(`${stats.bestAlpha.a>=0?"+":""}${(stats.bestAlpha.a*100).toFixed(2)}%`,stats.bestAlpha.a>=0))}
+      {topDaily&&hiRow("Subida do dia",topDaily.p,mono(pct(topDaily.day),topDaily.day>=0))}
+    </div>
+  )):null;
+  const wVsSp=stats?railCard("Comunidade vs S&P 500",(
+    <div>
+      <div style={{display:"flex",alignItems:"baseline",gap:6,marginBottom:10}}>
+        <span style={{fontSize:30,fontWeight:800,letterSpacing:"-1px",color:"#4ade80"}}>{stats.beating!=null?Math.round(stats.beating/stats.n*100):"—"}%</span>
+        <span style={{fontSize:12.5,color:"#94a3b8"}}>batem o mercado</span>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,padding:"6px 0",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+        <span style={{color:"#94a3b8"}}>Média comunidade</span><span style={{fontFamily:"monospace",fontWeight:800,color:stats.avg>=0?"#4ade80":"#f87171"}}>{pct(stats.avg)}</span>
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,padding:"6px 0",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+        <span style={{color:"#94a3b8"}}>S&P 500</span><span style={{fontFamily:"monospace",fontWeight:800,color:stats.spyRet==null?"#64748b":stats.spyRet>=0?"#4ade80":"#f87171"}}>{stats.spyRet!=null?pct(stats.spyRet):"—"}</span>
+      </div>
+    </div>
+  )):null;
+  const wPicks=topPicks.length?railCard("Ações mais escolhidas",(
+    <div style={{display:"flex",flexDirection:"column",gap:9}}>
+      {topPicks.map(t=>(
+        <div key={t.ticker} style={{display:"flex",alignItems:"center",gap:8}}>
+          <StockLogo ticker={t.ticker} size={20}/>
+          <span style={{fontWeight:700,fontSize:12.5,width:50,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis"}}>{t.ticker}</span>
+          <div style={{flex:1,height:6,borderRadius:999,background:"rgba(255,255,255,0.07)",overflow:"hidden",minWidth:0}}>
+            <div style={{height:"100%",width:`${Math.max(5,Math.round(t.frac*100))}%`,background:"linear-gradient(90deg,#16a34a,#4ade80)",borderRadius:999}}/>
+          </div>
+          <span style={{fontSize:11.5,color:"#94a3b8",fontFamily:"monospace",width:30,textAlign:"right",flexShrink:0}}>{Math.round(t.frac*100)}%</span>
+        </div>
+      ))}
+    </div>
+  )):null;
+  const leftRail=<>{wYou}{wHi}</>;
+  const rightRail=<>{wVsSp}{wPicks}</>;
+
   return(
-    <div style={{maxWidth:900,margin:"0 auto",padding:"40px 20px 120px"}}>
+    <div style={{maxWidth:1520,margin:"0 auto",padding:"40px 20px 120px"}}>
       <style>{`
         .rkRow{display:grid;grid-template-columns:40px 190px 1fr 100px 100px 92px 110px;gap:8px}
         .rkSpark{display:flex;align-items:center;align-self:center;height:24px;overflow:hidden;min-width:0}
+        @keyframes rkHiFlash{0%{background-color:rgba(59,130,246,0.30)}60%{background-color:rgba(59,130,246,0.15)}100%{background-color:rgba(59,130,246,0)}}
+        .rkHiFlash{animation:rkHiFlash 2.6s ease-out}
+        .rkLayout{display:grid;grid-template-columns:minmax(240px,1fr) minmax(0,900px) minmax(240px,1fr);gap:28px;align-items:start;justify-content:center}
+        .rkRail{position:sticky;top:84px;display:flex;flex-direction:column;gap:16px}
+        @media(max-width:1439px){ .rkLayout{grid-template-columns:minmax(0,900px);justify-content:center} .rkRail{display:none} }
         @media(max-width:860px){
           .rkRow{grid-template-columns:40px 1fr 100px 100px 92px 110px}
           .rkSpark{display:none}
@@ -2928,6 +3049,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
           .rkHide{display:none}
         }
       `}</style>
+      <div style={{maxWidth:900,margin:"0 auto"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
         <h1 style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px",marginBottom:4}}>Ranking Geral</h1>
         {ranking.length>=2&&(
@@ -2944,37 +3066,32 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
         Classificação por rentabilidade total, em tempo real · {officials.length} {officials.length===1?"participante":"participantes"}.
         {pricesLoading?" · A atualizar preços…":""}
       </p>
-
-      {ranking.length===0?(
-        <div style={{textAlign:"center",padding:80,color:"#4b5563"}}>
-          Ainda não há portefólios submetidos.
+      {ranking.length>0&&(<>
+        {/* Season Race + (demos) + pílula do vencedor — a toda a largura, por cima da grelha */}
+        <div style={{marginBottom:16}}>
+          <GlowBehind><SeasonRace ranking={ranking} preLaunch={preLaunch} myNorm={myNorm} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""}/></GlowBehind>
         </div>
-      ):(
-        <>
-          {/* Season Race — independente da secção Demo: pré = preview demos; pós = Top 10 oficial */}
-          <div style={{marginBottom:16}}>
-            <GlowBehind><SeasonRace ranking={ranking} preLaunch={preLaunch} myNorm={myNorm} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""}/></GlowBehind>
+        {preLaunch&&demos.length>0&&(
+          <div style={{marginBottom:32}}>
+            {sectionTitle("Demo")}
+            {tableFor(demos)}
           </div>
-          {/* Tabela Demo — só antes do arranque (some sozinha ao arrancar) */}
-          {preLaunch&&demos.length>0&&(
-            <div style={{marginBottom:32}}>
-              {sectionTitle("Demo")}
-              {tableFor(demos)}
-            </div>
-          )}
-          <div>
-            <div style={{margin:"0 0 16px"}}>
-              <CompetitionTimer settings={settings}/>
-            </div>
-            {officials.length>0
-              ? (preLaunch?pendingList([...officials].sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||"")))):tableFor(officials.slice(0,shownRows)))
-              : <div style={{background:"rgba(255,255,255,0.04)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:16,
-                  padding:40,textAlign:"center",color:"#64748b",fontSize:14}}>
-                  Ainda sem inscrições. Os portefólios submetidos a partir de agora entram aqui — admissão oficial a 1 de julho.
-                </div>}
-          </div>
-        </>
-      )}
+        )}
+        <div style={{margin:"0 0 16px"}}>
+          <CompetitionTimer settings={settings}/>
+        </div>
+      </>)}
+      </div>{/* /cabeçalho centrado 900 */}
+
+      {/* Grelha: widgets laterais + a TABELA (os laterais começam no topo da tabela) */}
+      <div className="rkLayout">
+      <aside className="rkRail">{leftRail}</aside>
+      <div className="rkCenter" style={{minWidth:0}}>
+      {ranking.length===0
+        ? <div style={{textAlign:"center",padding:80,color:"#4b5563"}}>Ainda não há portefólios submetidos.</div>
+        : officials.length>0
+          ? (preLaunch?pendingList([...officials].sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||"")))):tableFor(officials.slice(0,shownRows)))
+          : <div style={{background:"rgba(255,255,255,0.04)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:16,padding:40,textAlign:"center",color:"#64748b",fontSize:14}}>Ainda sem inscrições. Os portefólios submetidos a partir de agora entram aqui — admissão oficial a 1 de julho.</div>}
       {cmp&&(
         <p style={{marginTop:12,fontSize:12,color:"#1f2937",textAlign:"right"}}>
           Seleciona 2 membros para comparar.
@@ -2997,6 +3114,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
           </button>
         </div>
       )}
+      </div>{/* /rkCenter */}
+      <aside className="rkRail">{rightRail}</aside>
+      </div>{/* /rkLayout */}
     </div>
   );
 }
@@ -3196,7 +3316,8 @@ function OwnLockedGate({pf,nav,reload,showToast}){
     </div>
   );
 }
-function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,myNorm,preLaunch,competitionStarted,gameStartDate,reload,showToast}){
+function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,myNorm,preLaunch,competitionStarted,gameStartDate,reload,showToast}){
+  const goBack=onBack||(()=>nav("ranking")); // voltar ao ranking (com destaque da linha, via onBack)
   // Coluna de rentabilidade da lista: "total" (desde a compra) ↔ "day" (diário).
   const [retMode,setRetMode]=useState("total");
   const rail=useBackRail();
@@ -3240,11 +3361,11 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,myNorm,
   const GLASS={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
   return(
     <div style={{maxWidth:1320,margin:"0 auto",padding:"40px 20px 80px"}}>
-      {rail.active&&<LeftBackRail gap={rail.gap} onBack={()=>nav("ranking")}/>}
+      {rail.active&&<LeftBackRail gap={rail.gap} onBack={goBack}/>}
       {rank===1&&<Confetti key={pf.key} intense={!!myNorm && pf.normName===myNorm}/>}
       <style>{`.cdiDetail{display:grid;gap:16px;grid-template-columns:1fr}@media(min-width:1000px){.cdiDetail{grid-template-columns:minmax(0,1fr) minmax(0,1.12fr);align-items:start}}`}</style>
       {!rail.active&&(
-      <button onClick={()=>nav("ranking")} className="backLink"
+      <button onClick={goBack} className="backLink"
         style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:14,marginBottom:24,
           display:"flex",alignItems:"center",gap:6,padding:0}}>
         <span className="backArrow">←</span> Ranking
