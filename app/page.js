@@ -770,17 +770,15 @@ function ATH({myTickers,auth,showToast}){
     setGLoading(true);
     let cancel=false;
     const id=setTimeout(async()=>{
-      const nq=norm(term);
-      // locais (S&P + extras já na tabela, com dados) — assim a pesquisa é a lista ÚNICA de adicionar
-      const local=rows?rows.filter(r=>norm(r.symbol).includes(nq)||norm(r.name).includes(nq))
-        .map(r=>({ticker:r.symbol,name:r.name,exchange:r.in_sp500!==false?"S&P 500":"",type:"EQUITY"})):[];
+      // Os que JÁ aparecem na tabela (com dados) não se repetem no dropdown — o dropdown é só p/ adicionar o que a tabela não mostra.
+      const have=rows?new Set(rows.map(r=>tkNorm(r.symbol))):new Set();
       const pop=searchPopular(term);        // populares europeias/internacionais (local)
       const cg=searchCryptos(term);         // cripto (local, fiável)
       let stocks=[];
-      try{ const r=await searchTickers(term); stocks=(r||[]).filter(x=>x.ticker); }catch{} // estrangeiras (SEC); dedup trata as repetidas
+      try{ const r=await searchTickers(term); stocks=(r||[]).filter(x=>x.ticker); }catch{} // estrangeiras (SEC)
       if(cancel) return;
       const seen=new Set(); const merged=[];
-      for(const x of [...local,...pop,...cg,...stocks]){ const k=tkNorm(x.ticker); if(k&&!seen.has(k)){ seen.add(k); merged.push(x); } }
+      for(const x of [...pop,...cg,...stocks]){ const k=tkNorm(x.ticker); if(k&&!have.has(k)&&!seen.has(k)){ seen.add(k); merged.push(x); } }
       setGlobalRes(merged.slice(0,8));
       setGLoading(false);
     },350);
@@ -805,7 +803,7 @@ function ATH({myTickers,auth,showToast}){
           price:(lq&&lq.price!=null)?lq.price:null, marketcap:(lq&&lq.marketcap!=null)?lq.marketcap:null,
           ath:(lq&&lq.ath!=null)?lq.ath:null, ath_ts:(lq&&lq.ath_ts)||null, down:(lq&&lq.down!=null)?lq.down:null, lite:true };
       });
-    } else base=rows.filter(r=>r.in_sp500!==false); // vista principal = só S&P 500
+    } else base=norm(q)?rows:rows.filter(r=>r.in_sp500!==false); // sem pesquisa = só S&P; a pesquisar = tudo (inclui extras)
     const needle=norm(q);
     let list=needle?base.filter(r=>norm(r.symbol).includes(needle)||norm(r.name).includes(needle)):base;
     const val={
@@ -845,6 +843,8 @@ function ATH({myTickers,auth,showToast}){
         @media(hover:hover){ .athClickable:hover{background:rgba(255,255,255,0.04)} .athPill:hover{filter:brightness(1.18);transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,0.25)} }
         .athSearchBox{max-width:560px}
         @media(min-width:768px){ .athSearchBox{max-width:280px} }
+        .athExtGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+        @media(max-width:640px){ .athExtGrid{grid-template-columns:1fr} }
 
         /* Colunas ordenáveis: par de setas (cinza = clicável; ativa acende a direção) */
         .athSortHd{cursor:pointer;user-select:none;color:#94a3b8;transition:color .15s}
@@ -951,28 +951,6 @@ function ATH({myTickers,auth,showToast}){
             </button>
           )}
         </div>
-        {authed&&q.trim().length>=2&&(()=>{
-          if(!globalRes.length&&!gLoading) return null;
-          return(
-            <div className="athSearchBox" style={{width:"100%",display:"flex",flexDirection:"column",gap:4}}>
-              <span style={{fontSize:11,color:"#64748b",textAlign:"center"}}>Adicionar à watchlist</span>
-              {globalRes.map((res,i)=>(
-                <button key={`${res.ticker}-${i}`}
-                  onClick={()=>{ const tk=String(res.ticker||"").toUpperCase(); setLiteQuotes(qq=>({...qq,[tkNorm(tk)]:{...(qq[tkNorm(tk)]||{}),name:res.name||tk}})); openAdd(tk); }}
-                  style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",textAlign:"left",borderRadius:10,padding:"8px 10px",
-                    border:"1px solid rgba(255,255,255,0.10)",background:"rgba(255,255,255,0.04)",color:"#e2e8f0"}}>
-                  <StockLogo ticker={res.ticker} size={24}/>
-                  <span style={{minWidth:0,flex:1,display:"flex",flexDirection:"column",lineHeight:1.2}}>
-                    <span style={{fontWeight:700,fontSize:13}}>{res.ticker}</span>
-                    <span style={{fontSize:11.5,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{res.name}{res.exchange?` · ${res.exchange}`:""}</span>
-                  </span>
-                  <span style={{color:"#4ade80",fontWeight:800,fontSize:16,flexShrink:0}}>+</span>
-                </button>
-              ))}
-              {gLoading&&!globalRes.length&&<span style={{fontSize:11,color:"#64748b",textAlign:"center"}}>A procurar…</span>}
-            </div>
-          );
-        })()}
         <div style={{width:"100%",maxWidth:560,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
           <span style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12.5,color:"#94a3b8",whiteSpace:"nowrap"}}>
             <span style={{width:8,height:8,borderRadius:"50%",background:"#34d399",flexShrink:0,boxShadow:"0 0 8px rgba(52,211,153,0.6)"}}/>
@@ -990,7 +968,6 @@ function ATH({myTickers,auth,showToast}){
         </div>
       </div>
 
-      {!q.trim() && (
       <div style={{...GLASS,borderRadius:16,overflow:"hidden"}}>
         <div className="athRow" style={{padding:"10px 18px",borderBottom:"1px solid rgba(255,255,255,0.10)",
           fontSize:11,textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,color:"#94a3b8"}}>
@@ -1024,7 +1001,7 @@ function ATH({myTickers,auth,showToast}){
           ))
         ):view.length===0?(
           <div style={{padding:50,textAlign:"center",color:"#64748b",fontSize:14}}>
-            {rows.length===0?"Ainda sem dados — a tabela vai ser preenchida em breve.":"Sem resultados."}
+            {rows.length===0?"Ainda sem dados — a tabela vai ser preenchida em breve.":q.trim()?"Nenhuma ação do S&P 500 corresponde.":"Sem resultados."}
           </div>
         ):(<>{view.slice(0,limit).map((r,i)=>{
           const up=r.down!=null&&r.down>=0;
@@ -1070,6 +1047,29 @@ function ATH({myTickers,auth,showToast}){
         )}
         </>)}
       </div>
+
+      {authed&&q.trim().length>=2&&(globalRes.length>0||gLoading)&&(
+        <div style={{marginTop:14}}>
+          <div style={{fontSize:11,color:"#64748b",textAlign:"center",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.5px"}}>
+            Fora do S&P 500 · adiciona à watchlist para ver valores
+          </div>
+          <div className="athExtGrid">
+            {globalRes.map((res,i)=>(
+              <button key={`${res.ticker}-${i}`}
+                onClick={()=>{ const tk=String(res.ticker||"").toUpperCase(); setLiteQuotes(qq=>({...qq,[tkNorm(tk)]:{...(qq[tkNorm(tk)]||{}),name:res.name||tk}})); openAdd(tk); }}
+                style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",textAlign:"left",borderRadius:10,padding:"8px 12px",
+                  border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",color:"#cbd5e1"}}>
+                <StockLogo ticker={res.ticker} size={22}/>
+                <span style={{minWidth:0,flex:1,display:"flex",flexDirection:"column",lineHeight:1.2}}>
+                  <span style={{fontWeight:700,fontSize:12.5}}>{res.ticker}</span>
+                  <span style={{fontSize:11,color:"#8792a3",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{res.name}{res.exchange?` · ${res.exchange}`:""}</span>
+                </span>
+                <span style={{color:"#4ade80",fontWeight:800,fontSize:15,flexShrink:0}}>+</span>
+              </button>
+            ))}
+            {gLoading&&!globalRes.length&&<span style={{fontSize:11,color:"#64748b",textAlign:"center",gridColumn:"1/-1"}}>A procurar…</span>}
+          </div>
+        </div>
       )}
 
       {addFor&&(
@@ -1544,7 +1544,7 @@ export default function App(){
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} showToast={showToast}/>);
-  if(page==="ranking")return sh(submitted?<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} preLaunch={isPreLaunch(settings)} settings={settings} onSelect={openDetail} onCompare={openDuel}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} preLaunch={isPreLaunch(settings)} settings={settings} onSelect={openDetail} onCompare={openDuel}/>);
   if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} myNorm={norm(myName)} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
@@ -1665,7 +1665,7 @@ function Nav({page,nav,submitted,onMyPortfolio,myPortfolioActive,tint}){
   return(
     <div className="cdiNav" style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap","--nav-tint":tint}}>
       <NavLink label="Início" active={page==="home"} onClick={()=>nav("home")}/>
-      <NavLink label="Ranking" active={page==="ranking"} onClick={()=>nav("ranking")} locked={!submitted}/>
+      <NavLink label="Ranking" active={page==="ranking"} onClick={()=>nav("ranking")}/>
       <NavLink label="ATH" active={page==="ath"} onClick={()=>nav("ath")}/>
       <NavLink label="Minhas 8" active={submitted?myPortfolioActive:page==="detail"} onClick={onMyPortfolio} locked={!submitted}/>
     </div>
@@ -1879,7 +1879,7 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio}){
           ):(
             <>
               <Btn onClick={onMyPortfolio} primary>Minhas 8 🔒</Btn>
-              <Btn onClick={()=>nav("ranking")}>Ver Ranking 🔒</Btn>
+              <Btn onClick={()=>nav("ranking")}>Ver Ranking</Btn>
             </>
           )}
         </div>
