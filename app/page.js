@@ -7,6 +7,7 @@ import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } fr
 import { searchCryptos, isCrypto, cryptoNameFor } from "./lib/crypto";
 import { searchPopular } from "./lib/popular";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
+import { toPng } from "html-to-image";
 
 /* ============================================================================
    CONVERSAS DE INVESTIDORES
@@ -1939,7 +1940,7 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio}){
             {[
               {icon:<svg {...iconProps}><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,val:<CountUp to={officialCount}/>,label:"Participantes"},
               {icon:<svg {...iconProps}><line x1="6" y1="20" x2="6" y2="13"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="9"/></svg>,val:<CountUp to={officialCount*8}/>,label:"Ações escolhidas"},
-              {icon:<svg {...iconProps}><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><line x1="16" y1="2.5" x2="16" y2="6.5"/><line x1="8" y1="2.5" x2="8" y2="6.5"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,val:<><CountUp to={compDay}/><span style={{color:"#4b5563",fontWeight:700}}>/365</span></>,label:"Dia da competição"},
+              {icon:<svg {...iconProps}><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><line x1="16" y1="2.5" x2="16" y2="6.5"/><line x1="8" y1="2.5" x2="8" y2="6.5"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,val:<><CountUp to={compDay}/><span style={{color:"#4b5563",fontWeight:700}}>/<CountUp to={365}/></span></>,label:"Dia da competição"},
             ].map((s,i)=>(
               <div key={i} className="statCell" style={{padding:"28px 20px",textAlign:"center"}}>
                 <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:42,height:42,borderRadius:12,
@@ -2482,7 +2483,10 @@ function LockedGate({nav,recoverByName,showToast}){
 }
 
 /* ---- Season Race (evolução multi-linha, estilo "season race") ------------ */
-const RACE_COLORS=["#4ade80","#38bdf8","#fbbf24","#f472b6","#a78bfa","#fb923c","#2dd4bf","#facc15","#22d3ee","#fca5a5"];
+// Cores por posição: 1º ouro, 2º cinzento-claro, 3º bronze; 4º–10º cores bem distintas
+// (sem tons parecidos entre si nem próximos do fundo azul-escuro). Usadas no gráfico Season
+// Race, na legenda e no snapshot (via raceColorOf) → tudo coerente. O próprio ("tu") = branco.
+const RACE_COLORS=["#facc15","#cbd5e1","#d97706","#4ade80","#2dd4bf","#38bdf8","#818cf8","#c084fc","#f472b6","#fb7185"];
 // Eixo X: só dia (DD/MM). Tooltip: dia + hora (DD/MM HH:mm), em hora local.
 function raceTick(iso){ const d=new Date(iso); if(Number.isNaN(d.getTime())) return String(iso); const p=n=>String(n).padStart(2,"0"); return `${p(d.getDate())}/${p(d.getMonth()+1)}`; }
 function raceFull(iso){ const d=new Date(iso); if(Number.isNaN(d.getTime())) return String(iso); const p=n=>String(n).padStart(2,"0"); return `${p(d.getDate())}/${p(d.getMonth()+1)} ${p(d.getHours())}:${p(d.getMinutes())}`; }
@@ -2514,12 +2518,69 @@ function SeasonRaceTooltip({active,payload,label}){
   );
 }
 const raceColorOf=(p,i)=> p._me?"#ffffff":RACE_COLORS[i%RACE_COLORS.length];
+// Cartão de partilha do Top 10 (fundos SÓLIDOS, sem blur → captura limpa com html-to-image).
+const SNAP_W=1000;
+function SnapshotCard({cardRef,shown,data,raceYMin,raceYMax,dateStr,compDay}){
+  const top10=shown.slice(0,10);
+  return(
+    <div ref={cardRef} style={{width:SNAP_W,boxSizing:"border-box",padding:34,
+      background:"radial-gradient(1200px 700px at 50% -10%, rgba(37,99,235,0.22), transparent 70%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 100%)",
+      color:"#e2e8f0",fontFamily:"system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif"}}>
+      <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:18}}>
+        <img src="/logo.png" alt="" width={52} height={52} style={{display:"block",flexShrink:0}}/>
+        <div style={{display:"flex",flexDirection:"column",lineHeight:1.15}}>
+          <span style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px"}}>CDI PICKER</span>
+          <span style={{fontSize:14,color:"#94a3b8",fontWeight:600}}>Top 10 · {dateStr} · Dia {compDay}/365</span>
+        </div>
+      </div>
+      <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px 10px 4px"}}>
+        <LineChart width={912} height={330} data={data} margin={{top:8,right:16,left:-6,bottom:0}}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.12)" vertical={false}/>
+          <XAxis dataKey="t" tickFormatter={raceTick} tick={{fill:"#94a3b8",fontSize:12}} minTickGap={28} axisLine={false} tickLine={false}/>
+          <YAxis domain={[raceYMin,raceYMax]} tickFormatter={(v)=>`${v>0?"+":""}${v}%`} tick={{fill:"#94a3b8",fontSize:12}} width={48} axisLine={false} tickLine={false}/>
+          <ReferenceLine y={0} stroke="rgba(255,255,255,0.30)" strokeDasharray="4 4"/>
+          {shown.map((p,i)=>(
+            <Line key={p.key} type="monotone" dataKey={p.name} stroke={raceColorOf(p,i)}
+              strokeWidth={p._me?3.5:2.4} dot={false} connectNulls isAnimationActive={false}/>
+          ))}
+        </LineChart>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"repeat(5,auto)",gridAutoFlow:"column",gap:"0 28px",marginTop:18}}>
+        {top10.map((p,i)=>(
+          <div key={p.key} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 4px",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+            <span style={{width:22,textAlign:"center",fontWeight:800,fontSize:15,color:i===0?"#facc15":i===1?"#e2e8f0":i===2?"#d97706":"#94a3b8"}}>{i+1}</span>
+            <span style={{width:10,height:10,borderRadius:"50%",background:raceColorOf(p,i),flexShrink:0}}/>
+            <span style={{flex:1,minWidth:0,fontWeight:600,fontSize:15,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p._me?`${p.name} (tu)`:p.name}</span>
+            <span style={{fontFamily:"ui-monospace, SFMono-Regular, Menlo, monospace",fontWeight:800,fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}>{p.total>=0?"+":""}{(p.total*100).toFixed(2)}%</span>
+          </div>
+        ))}
+      </div>
+      <div style={{textAlign:"center",marginTop:32,fontSize:13,color:"#64748b",fontWeight:600,letterSpacing:.3}}>Conversas de Investidores</div>
+    </div>
+  );
+}
 function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate}){
   const [snaps,setSnaps]=useState([]); // [] em vez de null → o gráfico desenha logo (baseline início→agora)
   const nowIso=useMemo(()=>new Date().toISOString(),[]); // "agora" fixo → conteúdo do data estável (não re-anima)
   const [mounted,setMounted]=useState(false);
   const [hi,setHi]=useState(null); // portefólio em destaque (hover no nome ou na linha)
+  const [snapOpen,setSnapOpen]=useState(false); // modal do snapshot (desktop)
+  const [snapUrl,setSnapUrl]=useState("");
+  const [snapMsg,setSnapMsg]=useState("");
+  const cardRef=useRef(null);
   useEffect(()=>{ setMounted(true); },[]);
+  useEffect(()=>{
+    if(!snapOpen){ setSnapUrl(""); setSnapMsg(""); return; }
+    let cancel=false;
+    const t=setTimeout(async()=>{
+      try{
+        if(!cardRef.current) return;
+        const url=await toPng(cardRef.current,{pixelRatio:2,cacheBust:true,backgroundColor:"#0b1730"});
+        if(!cancel) setSnapUrl(url);
+      }catch{ if(!cancel) setSnapMsg("Falha ao gerar a imagem."); }
+    },300); // dá tempo ao gráfico/logo renderizarem antes de capturar
+    return()=>{ cancel=true; clearTimeout(t); };
+  },[snapOpen]);
   // Pré-1jul: linhas dos DEMOS (pré-visualização). Depois: Top 10 oficiais.
   // O próprio é SEMPRE incluído (mesmo fora do Top 10), com a linha destacada.
   const shown=useMemo(()=>{
@@ -2591,8 +2652,25 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
   const raceYMin=Math.floor(yLo-Math.min(Math.max(ySpan*0.25,0.8),1.5));
   const raceYMax=Math.ceil(yHi+Math.min(Math.max(ySpan*0.12,0.4),1.5));
 
-  return(
-    <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px 16px 12px",marginTop:24}}>
+  const snapDate=fmtDateShort(nowIso);
+  const snapDay=(()=>{ const d=gameStartDate?new Date(gameStartDate):null; if(!d||isNaN(d)) return 1; return Math.max(1,Math.min(365,Math.floor((Date.now()-d.getTime())/86400000)+1)); })();
+  const snapDownload=()=>{ if(!snapUrl) return; const a=document.createElement("a"); a.href=snapUrl; a.download=`cdi-picker-top10-${nowIso.slice(0,10)}.png`; a.click(); };
+  const snapCopy=async()=>{
+    if(!snapUrl) return;
+    try{
+      if(!navigator.clipboard||typeof window.ClipboardItem==="undefined") throw new Error("no clipboard");
+      const blob=await (await fetch(snapUrl)).blob();
+      await navigator.clipboard.write([new window.ClipboardItem({"image/png":blob})]);
+      setSnapMsg("Imagem copiada ✓");
+    }catch{ setSnapMsg("Copiar não suportado — usa Descarregar."); }
+  };
+  return(<>
+    <style>{`@media(max-width:640px){.snapBtn{display:none}}`}</style>
+    <div style={{position:"relative",background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px 16px 12px",marginTop:24}}>
+      <button className="snapBtn" onClick={()=>setSnapOpen(true)} title="Guardar imagem do Top 10"
+        style={{position:"absolute",top:12,right:12,zIndex:2,display:"inline-flex",alignItems:"center",justifyContent:"center",width:32,height:32,borderRadius:9,cursor:"pointer",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",color:"#cbd5e1"}}>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      </button>
       <p style={{fontSize:12,margin:"0 0 12px",textAlign:"center",minHeight:17,lineHeight:1.4}}>
         {(()=>{
           const hp=hi&&shown.find(p=>p.name===hi);
@@ -2632,27 +2710,54 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
           </LineChart>
         </ResponsiveContainer>
       )}
-      {mounted&&enoughData&&(
-        <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"6px 16px",marginTop:14,padding:"0 4px"}}>
-          {shown.map((p,i)=>{
-            const dim=hi&&hi!==p.name;
-            return(
-              <span key={p.key} onMouseEnter={()=>setHi(p.name)} onMouseLeave={()=>setHi(null)}
-                style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"default",
-                  opacity:dim?0.3:1,transition:"opacity .15s ease"}}>
-                <span style={{width:7,height:7,borderRadius:"50%",background:raceColorOf(p,i),flexShrink:0,
-                  boxShadow:hi===p.name?`0 0 0 3px ${raceColorOf(p,i)}33`:"none",transition:"box-shadow .15s ease"}}/>
-                <span style={{fontSize:12.5,letterSpacing:.2,whiteSpace:"nowrap",
-                  color:hi===p.name?"#f1f5f9":"#94a3b8",fontWeight:hi===p.name?600:400,transition:"color .15s ease"}}>
-                  {p._me?`${p.name} (tu)`:p.name}
-                </span>
+      {mounted&&enoughData&&(()=>{
+        const item=(p,i)=>{
+          const dim=hi&&hi!==p.name;
+          return(
+            <span key={p.key} onMouseEnter={()=>setHi(p.name)} onMouseLeave={()=>setHi(null)}
+              style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"default",
+                opacity:dim?0.3:1,transition:"opacity .15s ease"}}>
+              <span style={{width:7,height:7,borderRadius:"50%",background:raceColorOf(p,i),flexShrink:0,
+                boxShadow:hi===p.name?`0 0 0 3px ${raceColorOf(p,i)}33`:"none",transition:"box-shadow .15s ease"}}/>
+              <span style={{fontSize:12.5,letterSpacing:.2,whiteSpace:"nowrap",
+                color:hi===p.name?"#f1f5f9":"#94a3b8",fontWeight:hi===p.name?600:400,transition:"color .15s ease"}}>
+                {p._me?`${p.name} (tu)`:p.name}
               </span>
-            );
-          })}
-        </div>
-      )}
+            </span>
+          );
+        };
+        const rowStyle={display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"6px 16px",padding:"0 4px"};
+        return(
+          <div style={{marginTop:14}}>
+            {/* Top 3 sempre na 1ª linha; os restantes por baixo. */}
+            <div style={rowStyle}>{shown.slice(0,3).map((p,i)=>item(p,i))}</div>
+            {shown.length>3&&<div style={{...rowStyle,marginTop:8}}>{shown.slice(3).map((p,i)=>item(p,i+3))}</div>}
+          </div>
+        );
+      })()}
     </div>
-  );
+    {snapOpen && (<>
+      <div aria-hidden="true" style={{position:"fixed",left:-99999,top:0,pointerEvents:"none"}}>
+        <SnapshotCard cardRef={cardRef} shown={shown} data={data} raceYMin={raceYMin} raceYMax={raceYMax} dateStr={snapDate} compDay={snapDay}/>
+      </div>
+      <div onClick={()=>setSnapOpen(false)} style={{position:"fixed",inset:0,zIndex:9998,background:"rgba(3,7,18,0.72)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div onClick={e=>e.stopPropagation()} style={{background:"#0a1428",border:"1px solid rgba(255,255,255,0.12)",borderRadius:16,padding:18,maxWidth:"min(94vw,720px)",width:"100%",maxHeight:"92vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+            <span style={{fontSize:15,fontWeight:800}}>Snapshot do Top 10</span>
+            <button onClick={()=>setSnapOpen(false)} style={{background:"none",border:"none",color:"#94a3b8",fontSize:22,cursor:"pointer",lineHeight:1}}>×</button>
+          </div>
+          {snapUrl
+            ? <img src={snapUrl} alt="Top 10" style={{display:"block",width:"100%",borderRadius:12,border:"1px solid rgba(255,255,255,0.10)"}}/>
+            : <div style={{height:260,display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14}}>A gerar imagem…</div>}
+          <div style={{display:"flex",flexWrap:"wrap",gap:10,marginTop:14,justifyContent:"center"}}>
+            <button onClick={snapDownload} disabled={!snapUrl} style={{padding:"11px 20px",borderRadius:12,fontSize:14,fontWeight:800,cursor:snapUrl?"pointer":"default",background:"#22c55e",border:"none",color:"#06281a",opacity:snapUrl?1:0.5}}>Descarregar PNG</button>
+            <button onClick={snapCopy} disabled={!snapUrl} style={{padding:"11px 20px",borderRadius:12,fontSize:14,fontWeight:700,cursor:snapUrl?"pointer":"default",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.16)",color:"#e2e8f0",opacity:snapUrl?1:0.5}}>Copiar imagem</button>
+          </div>
+          {snapMsg && <div style={{textAlign:"center",marginTop:10,fontSize:13,color:"#94a3b8"}}>{snapMsg}</div>}
+        </div>
+      </div>
+    </>)}
+  </>);
 }
 
 /* ---- Ranking ------------------------------------------------------------- */
