@@ -1604,7 +1604,7 @@ function Shell({children,page,detailRank,detailIsOwn,nav,submitted,toast,onMyPor
         <div className="cdiClock"><MarketStatus/></div>
       </header>
       <main className="cdiMain" style={{position:"relative",zIndex:1}}>{children}</main>
-      <BackToTop maxWidth={page==="ranking"?900:page==="detail"?1320:page==="ath"?940:null}/>
+      <BackToTop maxWidth={page==="ranking"?900:page==="detail"?1320:(page==="ath"||page==="home")?940:null}/>
       <UpdateBanner/>
       {toast&&(
         <div className="cdiBottomFloat" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:9999,
