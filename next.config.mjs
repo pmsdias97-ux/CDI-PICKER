@@ -42,6 +42,7 @@ const nextConfig = {
       { source: "/criar", destination: "/" },
       { source: "/confirmar", destination: "/" },
       { source: "/admin", destination: "/" },
+      { source: "/minhas", destination: "/" },
       { source: "/p/:slug", destination: "/" },
       { source: "/duel/:slugs", destination: "/" },
     ];

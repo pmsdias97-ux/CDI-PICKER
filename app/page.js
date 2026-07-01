@@ -1249,7 +1249,7 @@ const keyToId=(k)=>k?String(k).replace(/^pf_/,""):"";
 const slugify=(s)=>norm(s).replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
 function findBySlug(list,slug){ return slug?(list||[]).find(p=>slugify(p.name)===slug||keyToId(p.key)===slug)||null:null; }
 function routeToPath(r){
-  if(r.page==="detail"&&r.detailSlug) return `/p/${r.detailSlug}`;
+  if(r.page==="detail") return r.detailSlug?`/p/${r.detailSlug}`:"/minhas"; // sem slug = "Minhas 8" (deslogado → Área bloqueada)
   if(r.page==="duel"&&r.duelSlugs?.[0]&&r.duelSlugs?.[1]) return `/duel/${r.duelSlugs[0]}~${r.duelSlugs[1]}`;
   if(r.page==="ranking") return "/ranking";
   if(r.page==="ath")     return "/ath";
@@ -1271,6 +1271,7 @@ function parseRoute(){
   if(p==="/criar")     return {page:"create"};
   if(p==="/confirmar") return {page:"confirm"};
   if(p==="/admin")     return {page:"admin"};
+  if(p==="/minhas")    return {page:"detail"}; // detalhe sem slug = "Minhas 8"
   const mp=p.match(/^\/p\/(.+)$/);          if(mp) return {page:"detail",detailSlug:decodeURIComponent(mp[1])};
   const md=p.match(/^\/duel\/(.+)~(.+)$/);  if(md) return {page:"duel",duelSlugs:[decodeURIComponent(md[1]),decodeURIComponent(md[2])]};
   return {page:"home"};
@@ -1606,7 +1607,7 @@ function Shell({children,page,detailRank,detailIsOwn,nav,submitted,toast,onMyPor
         <div className="cdiClock"><MarketStatus/></div>
       </header>
       <main className="cdiMain" style={{position:"relative",zIndex:1}}>{children}</main>
-      <BackToTop maxWidth={page==="ranking"?900:page==="detail"?1320:null}/>
+      <BackToTop maxWidth={page==="ranking"?900:page==="detail"?1320:page==="ath"?940:null}/>
       <UpdateBanner/>
       {toast&&(
         <div className="cdiBottomFloat" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:9999,
