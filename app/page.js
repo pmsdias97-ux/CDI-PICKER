@@ -1166,7 +1166,7 @@ function CompetitionTimer({settings}){
   const [now,setNow]=useState(null);
   useEffect(()=>{
     setNow(Date.now());
-    const id=setInterval(()=>setNow(Date.now()),60_000);
+    const id=setInterval(()=>setNow(Date.now()),3600_000); // 1×/hora — os dias só mudam à meia-noite
     return()=>clearInterval(id);
   },[]);
   if(!settings||now==null) return null;
@@ -1201,10 +1201,11 @@ const SUBMISSIONS_CLOSE_MS=Date.UTC(2026,5,30,21,0,0);
 function SubmissionCountdown({settings}){
   const [now,setNow]=useState(null);
   useEffect(()=>{
+    if(!isPreLaunch(settings)) return; // pós-arranque: contador obsoleto → nem arranca o timer
     setNow(Date.now());
     const id=setInterval(()=>setNow(Date.now()),1000); // a cada segundo — relógio HH:MM:SS
     return()=>clearInterval(id);
-  },[]);
+  },[settings]);
   // Depois de a competição arrancar, este contador já não faz sentido.
   if(!isPreLaunch(settings)||now==null) return null;
   const diff=SUBMISSIONS_CLOSE_MS-now;
@@ -1547,7 +1548,7 @@ export default function App(){
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} showToast={showToast}/>);
-  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} preLaunch={isPreLaunch(settings)} settings={settings} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)}/>);
+  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)}/>);
   if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
@@ -2799,7 +2800,7 @@ function InfoTip({text}){
     </span>
   );
 }
-function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,preLaunch,settings,onSelect,onCompare,highlightKey,clearHighlight}){
+function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunch,settings,onSelect,onCompare,highlightKey,clearHighlight}){
   const [cmp,setCmp]=useState(false);
   const [sel,setSel]=useState([]);
   // Mini-curva por linha: snapshots por portefólio (histórico). Recarrega só quando o
@@ -2960,6 +2961,17 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,preLaunch,settings,
     }
     return best;
   },[officials,dayChange]);
+  // Melhores/piores AÇÕES da competição (retorno da própria ação desde o baseline), entre todas as escolhas.
+  const stockPerf=useMemo(()=>{
+    const seen={};
+    for(const p of officials) for(const s of (p.stocks||[])){
+      const t=(s.ticker||"").toUpperCase().trim();
+      if(t && !seen[t] && Number.isFinite(s.initialPrice) && s.initialPrice>0) seen[t]={ticker:t,init:s.initialPrice};
+    }
+    const arr=Object.values(seen).map(o=>{ const cur=curPrice(o.ticker,o.init,livePrices); return {...o,ret:(Number.isFinite(cur)&&o.init)?cur/o.init-1:0}; });
+    arr.sort((a,b)=>b.ret-a.ret);
+    return { best:arr.slice(0,5), worst:arr.slice(-5).reverse() };
+  },[officials,livePrices]);
   const railCard=(title,children)=>(
     <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:"14px 15px",boxShadow:"0 6px 20px rgba(0,0,0,0.22)"}}>
       <div style={{fontSize:10.5,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:800,marginBottom:12}}>{title}</div>
@@ -3027,8 +3039,23 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,preLaunch,settings,
       ))}
     </div>
   )):null;
-  const leftRail=<>{wYou}{wHi}</>;
-  const rightRail=<>{wVsSp}{wPicks}</>;
+  const perfRow=(o)=>(
+    <div key={o.ticker} style={{display:"flex",alignItems:"center",gap:8}}>
+      <StockLogo ticker={o.ticker} size={20}/>
+      <span style={{fontWeight:700,fontSize:12.5,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.ticker}</span>
+      <span style={{fontFamily:"ui-monospace, monospace",fontWeight:800,fontSize:12.5,color:o.ret>=0?"#4ade80":"#f87171"}}>{o.ret>=0?"+":""}{(o.ret*100).toFixed(2)}%</span>
+    </div>
+  );
+  const wStocks=(stockPerf.best.length||stockPerf.worst.length)?railCard("Ações da competição",(
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"#4ade80",fontWeight:800,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}><Tri size={9}/> Melhores</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>{stockPerf.best.map(perfRow)}</div>
+      <div style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"#f87171",fontWeight:800,textTransform:"uppercase",letterSpacing:".5px",margin:"14px 0 8px"}}><Tri up={false} size={9}/> Piores</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>{stockPerf.worst.map(perfRow)}</div>
+    </div>
+  )):null;
+  const leftRail=<>{wYou}{wStocks}</>;
+  const rightRail=<>{wVsSp}{wHi}{wPicks}</>;
 
   return(
     <div style={{maxWidth:1520,margin:"0 auto",padding:"40px 20px 120px"}}>
