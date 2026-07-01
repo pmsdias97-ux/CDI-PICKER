@@ -1849,22 +1849,9 @@ function MiniSparkline({series,current,height=48,fill=true}){
 }
 
 // Contagem animada 0 → alvo (ease-out), que ARRANCA quando entra no ecrã (scroll).
-function CountUp({to=0,dur=1100}){
-  const [n,setN]=useState(0);
-  const [go,setGo]=useState(false);
-  const ref=useRef(null);
-  useEffect(()=>{
-    const el=ref.current; if(!el) return;
-    const io=new IntersectionObserver((es)=>{ if(es[0].isIntersecting){ setGo(true); io.disconnect(); } },{threshold:0.4});
-    io.observe(el); return()=>io.disconnect();
-  },[]);
-  useEffect(()=>{
-    if(!go) return;
-    let raf; const t0=performance.now();
-    const tick=(t)=>{ const p=Math.min(1,(t-t0)/dur); setN(Math.round(to*(1-Math.pow(1-p,3)))); if(p<1) raf=requestAnimationFrame(tick); };
-    raf=requestAnimationFrame(tick); return()=>cancelAnimationFrame(raf);
-  },[go,to,dur]);
-  return <span ref={ref}>{n.toLocaleString("pt-PT")}</span>;
+// Número da secção "competição em números" — SEM animação: mostra o valor de imediato.
+function CountUp({to=0}){
+  return <span>{Number(to||0).toLocaleString("pt-PT")}</span>;
 }
 function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio}){
   const officialCount=(ranking||[]).filter(p=>p.official).length;
