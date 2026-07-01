@@ -2726,7 +2726,6 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
         return(
           <div key={p.key} className="rkRow" onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
             style={{padding:"14px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",cursor:"pointer",
-              contentVisibility:"auto",containIntrinsicSize:"auto 56px", // não desenha as linhas fora do ecrã → scroll fluido
               background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":rr?`inset 3px 0 0 ${rr.bar}`:"none",transition:"background 0.15s"}}
             onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=hoverBg; }}
             onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
@@ -2829,7 +2828,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
           {preLaunch&&demos.length>0&&(
             <div style={{marginBottom:32}}>
               {sectionTitle("Demo")}
-              <GlowBehind>{tableFor(demos)}</GlowBehind>
+              {tableFor(demos)}
             </div>
           )}
           <div>
@@ -2841,7 +2840,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,preLaunch,settings,onSelect,o
               </div>
             </div>
             {officials.length>0
-              ? (preLaunch?pendingList([...officials].sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||"")))):<GlowBehind>{tableFor(officials)}</GlowBehind>)
+              ? (preLaunch?pendingList([...officials].sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||"")))):tableFor(officials))
               : <div style={{background:"rgba(255,255,255,0.04)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:16,
                   padding:40,textAlign:"center",color:"#64748b",fontSize:14}}>
                   Ainda sem inscrições. Os portefólios submetidos a partir de agora entram aqui — admissão oficial a 1 de julho.
