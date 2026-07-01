@@ -686,7 +686,7 @@ function ATH({myTickers,auth,showToast}){
     const d=await r.json(); if(!r.ok||!d?.ok) throw new Error(d?.error||"Não foi possível guardar."); return d.list;
   },[auth]);
   const createList=useCallback(async(nm,ticker)=>{
-    try{ const saved=await apiSave({listName:nm,tickers:ticker?[String(ticker).toUpperCase()]:[]}); setLists(ls=>[...ls,saved]); return saved; }
+    try{ const saved=await apiSave({listName:nm,tickers:ticker?[String(ticker).toUpperCase()]:[]}); setLists(ls=>[...ls,saved]); showToast&&showToast("Lista criada"); return saved; }
     catch(e){ showToast&&showToast(e.message,"error"); return null; }
   },[apiSave,showToast]);
   const renameList=useCallback(async(id,nm)=>{
@@ -705,6 +705,7 @@ function ATH({myTickers,auth,showToast}){
     const t=tkNorm(ticker), has=l.tickers.some(x=>tkNorm(x)===t);
     const next=has?l.tickers.filter(x=>tkNorm(x)!==t):[...l.tickers,String(ticker).toUpperCase()];
     setLists(ls=>ls.map(x=>x.id===id?{...x,tickers:next}:x));
+    showToast&&showToast(`${String(ticker).toUpperCase()} ${has?"removida de":"adicionada a"} ${l.name}`);
     try{ await apiSave({id,listName:l.name,tickers:next}); }
     catch(e){ setLists(ls=>ls.map(x=>x.id===id?{...x,tickers:l.tickers}:x)); showToast&&showToast(e.message,"error"); }
   },[lists,apiSave,showToast]);
@@ -1075,37 +1076,33 @@ function ATH({myTickers,auth,showToast}){
       {addFor&&(
         <div onClick={()=>setAddFor(null)} style={{position:"fixed",inset:0,zIndex:9000,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div onClick={e=>e.stopPropagation()} style={{...GLASS,borderRadius:18,padding:18,width:"100%",maxWidth:340,maxHeight:"80vh",overflow:"auto"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-              <h3 style={{margin:0,fontSize:16,fontWeight:800}}>Adicionar {addFor}</h3>
-              <button onClick={()=>setNameModal({mode:"create",value:"Watch list"})} title="Criar nova lista"
-                style={{...miniBtn,padding:"2px 12px",fontSize:18,lineHeight:1,fontWeight:400}}>+</button>
-            </div>
+            <h3 style={{margin:"0 0 12px",fontSize:16,fontWeight:800}}>Adicionar {addFor}</h3>
             {lists.length===0&&<p style={{fontSize:13,color:"#94a3b8",margin:"0 0 10px"}}>Ainda não tens listas. Cria uma com "+".</p>}
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               {lists.map(l=>{
-                const sel=addSel.has(l.id);
+                const inList=l.tickers.some(x=>tkNorm(x)===tkNorm(addFor)); // pertence já à lista?
                 return(
-                  <button key={l.id} onClick={()=>setAddSel(s=>{ const n=new Set(s); n.has(l.id)?n.delete(l.id):n.add(l.id); return n; })}
-                    style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,cursor:"pointer",textAlign:"left",
+                  <button key={l.id} onClick={()=>toggleTicker(l.id,addFor)}
+                    style={{display:"flex",alignItems:"center",gap:12,cursor:"pointer",textAlign:"left",
                       borderRadius:10,padding:"10px 12px",fontSize:14,fontWeight:600,transition:"all .15s",
-                      border:`1px solid ${sel?"rgba(74,222,128,0.5)":"rgba(255,255,255,0.12)"}`,
-                      background:sel?"rgba(34,197,94,0.14)":"rgba(255,255,255,0.04)",color:"#e2e8f0"}}>
-                    <span>{l.name}</span>
-                    <span aria-hidden="true" style={{flexShrink:0,width:20,height:20,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",
-                      border:`2px solid ${sel?GREEN:"rgba(255,255,255,0.28)"}`,transition:"all .15s"}}>
-                      {sel&&<span style={{width:10,height:10,borderRadius:"50%",background:GREEN}}/>}
+                      border:`1px solid ${inList?"rgba(74,222,128,0.5)":"rgba(255,255,255,0.12)"}`,
+                      background:inList?"rgba(34,197,94,0.14)":"rgba(255,255,255,0.04)",color:"#e2e8f0"}}>
+                    <span aria-hidden="true" style={{flexShrink:0,width:20,height:20,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",
+                      border:`2px solid ${inList?GREEN:"rgba(255,255,255,0.28)"}`,background:inList?GREEN:"transparent",transition:"all .15s"}}>
+                      {inList&&<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#06281a" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>}
                     </span>
+                    <span style={{flex:1,minWidth:0}}>{l.name}</span>
                   </button>
                 );
               })}
             </div>
             <div style={{display:"flex",gap:10,marginTop:14}}>
-              <button onClick={()=>setAddFor(null)}
+              <button onClick={()=>setNameModal({mode:"create-add",ticker:addFor,value:"Watch list"})}
                 style={{flex:1,padding:"12px",borderRadius:14,fontSize:14,fontWeight:700,cursor:"pointer",
-                  background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.14)",color:"#cbd5e1"}}>Cancelar</button>
-              <button onClick={applyAdd} disabled={lists.length===0}
-                style={{flex:1,padding:"12px",borderRadius:14,fontSize:14,fontWeight:800,cursor:lists.length===0?"default":"pointer",
-                  background:GREEN,border:`1px solid ${GREEN}`,color:"#06281a",opacity:lists.length===0?0.5:1}}>Guardar</button>
+                  background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.14)",color:"#cbd5e1"}}>+ Nova lista</button>
+              <button onClick={()=>{ setAddFor(null); setQ(""); setGlobalRes([]); }}
+                style={{flex:1,padding:"12px",borderRadius:14,fontSize:14,fontWeight:800,cursor:"pointer",
+                  background:GREEN,border:`1px solid ${GREEN}`,color:"#06281a"}}>Concluído</button>
             </div>
           </div>
         </div>
