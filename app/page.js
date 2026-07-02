@@ -2442,9 +2442,8 @@ function LockedGate({nav,recoverByName,showToast}){
         <div style={{fontSize:40,marginBottom:16}}>🔒</div>
         <h1 style={{fontSize:22,fontWeight:700,marginBottom:12}}>Área bloqueada</h1>
         <p style={{fontSize:14,color:"#94a3b8",marginBottom:0,lineHeight:1.6}}>
-          As submissões estão encerradas.<br/>
-          Os portefólios dos outros membros só ficam visíveis quando a competição começar,<br/>
-          a 1 de julho de 2026.
+          As submissões estão encerradas e a competição já está a decorrer.<br/>
+          Os portefólios dos membros só ficam visíveis para quem participa.
         </p>
 
         <div style={{marginTop:32,paddingTop:24,borderTop:"1px solid #1f2937"}}>
