@@ -2888,6 +2888,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     const ranked=list.map((p,i)=>({...p,_rank:i+1}));
     const q=norm(query), pq=norm(posQuery);
     const matchesPos=(p)=>(p.stocks||[]).some(s=>norm(s.ticker).includes(pq)||norm(s.companyName).includes(pq));
+    const posCount=(searchable&&pq)?ranked.filter(matchesPos).length:0; // quantos membros têm a posição
     // Demos (searchable=false): tudo, como antes. Oficiais: filtra (nome + posição) → ordena (coluna)
     // → fatia (render progressivo, só quando não há pesquisa nenhuma → a pesquisa vê a lista toda).
     let shown=ranked;
@@ -2944,6 +2945,11 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
           </span>
         ) : (<span className="rkHide" style={{textAlign:"left"}}>Posições</span>)}
       </div>
+      {searchable&&pq&&posCount>0&&(
+        <div style={{padding:"9px 20px",borderBottom:"1px solid rgba(255,255,255,0.08)",fontSize:12.5,color:"#94a3b8",background:"rgba(34,197,94,0.06)",textAlign:"right"}}>
+          <strong style={{color:"#e2e8f0",fontWeight:800}}>{posCount}</strong> {posCount===1?"membro tem":"membros têm"} <strong style={{color:"#4ade80",fontWeight:700}}>{posQuery.trim()}</strong>
+        </div>
+      )}
       {shown.map((p)=>{
         const i=p._rank-1; // rank real (mantém nº do lugar e estilos Top 3/Top 10 mesmo ao filtrar)
         const me=p.normName===myNorm;
