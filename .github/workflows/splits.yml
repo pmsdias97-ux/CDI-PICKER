@@ -1,0 +1,35 @@
+name: Splits — auto-correção de baselines
+
+# Deteta splits recentes das ações que os membros TÊM (Ticker.splits, fiável no dia efetivo)
+# e faz POST a /api/cron/splits, que divide os baselines pelo fator do split — só para quem
+# trancou o baseline ANTES do split (justo ao membro). Idempotente (ledger applied_stock_splits).
+#
+# Cadência: de hora a hora na janela de mercado US (13:00–22:00 UTC, para apanhar o split
+# logo na abertura do 1º pregão pós-split) + 1× de madrugada como rede de segurança.
+# Também disparável à mão. Segredos: CRON_SECRET, SUPABASE_URL, SUPABASE_ANON_KEY.
+
+on:
+  schedule:
+    - cron: "0 13-22 * * 1-5"   # horário, dias úteis, janela de mercado US
+    - cron: "30 3 * * *"        # backstop diário (apanha o que escapou ao fim de semana)
+  workflow_dispatch:
+
+concurrency:
+  group: splits
+  cancel-in-progress: true
+
+jobs:
+  splits:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r scripts/ath/requirements.txt
+      - run: python scripts/ath/fetch_ath.py --mode splits
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}

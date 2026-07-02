@@ -2,9 +2,11 @@
 """Recolhe o ATH (máximo histórico) + preço + marketcap do S&P 500 e envia para o
 CDI-PICKER (POST /api/cron/ath, Bearer CRON_SECRET → upsert em sp500_ath).
 
-Dois modos:
+Três modos:
   --mode full     (diário)  ATH (max High de toda a história) + nome + preço + marketcap + shares
   --mode prices   (hora a hora) preço atual (bulk) + marketcap (shares lidas do site)
+  --mode splits   (horário) deteta splits recentes das ações dos membros (Ticker.splits) e
+                  faz POST a /api/cron/splits, que corrige os baselines de forma justa.
 
 Corre fora do Vercel (GitHub Actions) porque o Yahoo bloqueia o IP do site a esta escala.
 
@@ -29,6 +31,7 @@ socket.setdefaulttimeout(45)
 
 INGEST_URL = os.environ.get("ATH_INGEST_URL", "https://cdi-picker.vercel.app/api/cron/ath")
 EXTRA_URL = INGEST_URL.replace("/api/cron/ath", "/api/cron/extra-tickers")
+SPLITS_URL = INGEST_URL.replace("/api/cron/ath", "/api/cron/splits")
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
@@ -278,10 +281,78 @@ def fetch_prices():
     post_rows(rows)
 
 
+def held_tickers():
+    """Tickers que os membros TÊM (portfolio_stocks, anon-legível) — para vigiar splits."""
+    if not (SUPABASE_URL and SUPABASE_ANON_KEY):
+        return []
+    r = requests.get(
+        f"{SUPABASE_URL}/rest/v1/portfolio_stocks?select=ticker",
+        headers={"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {SUPABASE_ANON_KEY}"},
+        timeout=30,
+    )
+    r.raise_for_status()
+    out, seen = [], set()
+    for row in r.json():
+        t = str(row.get("ticker") or "").upper().strip()
+        # exclui futuros/commodities ("=") que penduram o yfinance; cripto não faz splits.
+        if t and "=" not in t and t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
+def recent_splits(tickers, days=45):
+    """Splits das últimas `days` para os tickers dados, via Ticker.splits (fiável no dia
+    efetivo — ao contrário da coluna 'Stock Splits' do download, que só aparece quando já
+    existe a barra de preço do dia). Devolve [{symbol, date, factor}] com o ticker ORIGINAL
+    (como está no portfolio_stocks) para o endpoint casar."""
+    import datetime as _dt
+    cutoff = (_dt.datetime.utcnow().date() - _dt.timedelta(days=days)).isoformat()
+    out = []
+    for t in tickers:
+        try:
+            sp = yf.Ticker(yf_symbol(t)).splits
+        except Exception:
+            continue
+        if sp is None or len(sp) == 0:
+            continue
+        for ts, val in sp.items():
+            try:
+                f = float(val)
+                d = ts.strftime("%Y-%m-%d")
+            except Exception:
+                continue
+            if f and f > 0 and d >= cutoff:
+                out.append({"symbol": t, "date": d, "factor": round(f, 6)})
+    return out
+
+
+def post_splits(splits):
+    if not splits:
+        print("[splits] nenhum split recente a enviar")
+        return
+    r = requests.post(
+        SPLITS_URL,
+        json={"splits": splits},
+        headers={"Authorization": f"Bearer {CRON_SECRET}", "Content-Type": "application/json"},
+        timeout=60,
+    )
+    print(f"[splits] POST {len(splits)} -> {r.status_code} {r.text[:300]}")
+    r.raise_for_status()
+
+
+def fetch_splits():
+    tickers = held_tickers()
+    print(f"[splits] {len(tickers)} tickers de membros a vigiar")
+    splits = recent_splits(tickers)
+    print(f"[splits] {len(splits)} split(s) recente(s): {splits}")
+    post_splits(splits)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["full", "prices"], default="full")
+    ap.add_argument("--mode", choices=["full", "prices", "splits"], default="full")
     args = ap.parse_args()
     if not CRON_SECRET:
         sys.exit("CRON_SECRET em falta")
-    (fetch_full if args.mode == "full" else fetch_prices)()
+    {"full": fetch_full, "prices": fetch_prices, "splits": fetch_splits}[args.mode]()
