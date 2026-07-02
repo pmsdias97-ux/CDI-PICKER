@@ -2433,10 +2433,10 @@ function LockedGate({nav,recoverByName,showToast}){
   }
   return(
     <div style={{maxWidth:480,margin:"40px auto 80px",padding:"0 20px"}}>
-      <button onClick={()=>nav("home")} className="backLink"
+      <button onClick={()=>nav("ranking")} className="backLink"
         style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:14,marginBottom:20,
           display:"flex",alignItems:"center",gap:6,padding:0}}>
-        <span className="backArrow">←</span> Voltar ao início
+        <span className="backArrow">←</span> Ranking
       </button>
       <div style={{textAlign:"center",background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:20,padding:48}}>
         <div style={{fontSize:40,marginBottom:16}}>🔒</div>
