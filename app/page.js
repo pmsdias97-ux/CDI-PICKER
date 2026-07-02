@@ -2670,7 +2670,7 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
     }catch(e){ console.error("snapshot copy failed:",e); setSnapMsg("O browser não deixou copiar — descarrega em vez disso."); }
   };
   return(<>
-    <style>{`@media(max-width:640px){.snapBtn{display:none}}`}</style>
+    <style>{`.raceLegendV{display:none;flex-direction:column;gap:2px}@media(max-width:640px){.snapBtn{display:none}.raceLegendH{display:none}.raceLegendV{display:flex}}`}</style>
     <div style={{position:"relative",background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px 16px 12px"}}>
       <button className="snapBtn" onClick={()=>setSnapOpen(true)} title="Guardar imagem do Top 10"
         style={{position:"absolute",top:12,right:12,zIndex:2,display:"inline-flex",alignItems:"center",justifyContent:"center",width:32,height:32,borderRadius:9,cursor:"pointer",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",color:"#cbd5e1"}}>
@@ -2734,9 +2734,22 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
         const rowStyle={display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"6px 16px",padding:"0 4px"};
         return(
           <div style={{marginTop:14}}>
-            {/* Top 3 sempre na 1ª linha; os restantes por baixo. */}
-            <div style={rowStyle}>{shown.slice(0,3).map((p,i)=>item(p,i))}</div>
-            {shown.length>3&&<div style={{...rowStyle,marginTop:8}}>{shown.slice(3).map((p,i)=>item(p,i+3))}</div>}
+            {/* Desktop: legenda horizontal (nomes; hover destaca a linha). Top 3 na 1ª linha. */}
+            <div className="raceLegendH">
+              <div style={rowStyle}>{shown.slice(0,3).map((p,i)=>item(p,i))}</div>
+              {shown.length>3&&<div style={{...rowStyle,marginTop:8}}>{shown.slice(3).map((p,i)=>item(p,i+3))}</div>}
+            </div>
+            {/* Mobile: lista vertical SEMPRE visível com a rentabilidade (não depende de ter o dedo
+                no gráfico — o tooltip continua a funcionar ao tocar, para o valor num instante). */}
+            <div className="raceLegendV">
+              {shown.map((p,i)=>(
+                <div key={p.key} style={{display:"flex",alignItems:"center",gap:9,padding:"5px 2px",borderTop:i===0?"none":"1px solid rgba(255,255,255,0.06)"}}>
+                  <span style={{width:8,height:8,borderRadius:"50%",background:raceColorOf(p,i),flexShrink:0}}/>
+                  <span style={{flex:1,minWidth:0,fontSize:13.5,color:p._me?"#f1f5f9":"#cbd5e1",fontWeight:p._me?700:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p._me?`${p.name} (tu)`:p.name}</span>
+                  <span style={{fontFamily:"ui-monospace, monospace",fontSize:13.5,fontWeight:800,color:Number.isFinite(p.total)?(p.total>=0?"#4ade80":"#f87171"):"#64748b"}}>{Number.isFinite(p.total)?`${p.total>=0?"+":""}${(p.total*100).toFixed(2)}%`:"—"}</span>
+                </div>
+              ))}
+            </div>
           </div>
         );
       })()}
