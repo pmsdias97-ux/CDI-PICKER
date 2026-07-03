@@ -1989,6 +1989,7 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio}){
               "Depois de submetidos, os portefólios ficaram bloqueados",
               "As posições arrancam ao preço de abertura do mercado de 1 de julho",
               "A rentabilidade é calculada como a média das 8 ações",
+              "A rentabilidade não inclui dividendos — conta só a variação de preço",
               "O ranking usa os preços de mercado mais recentes",
               "A competição dura 1 ano: o vencedor é apurado a 30 de junho de 2027",
             ].map((r,i)=>(
@@ -2916,6 +2917,14 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   },[shownRows,officials.length]);
   // Voltar de um detalhe: faz scroll até à linha de origem e dá-lhe um destaque subtil (flash).
   const highlightRef=useRef(null);
+  // "A tua posição": clicar faz scroll suave até à minha linha no ranking + flash subtil.
+  const meRowRef=useRef(null);
+  const [meFlash,setMeFlash]=useState(false);
+  const scrollToMe=()=>{
+    const el=meRowRef.current; if(!el) return;
+    el.scrollIntoView({behavior:"smooth",block:"center"});
+    setMeFlash(true); setTimeout(()=>setMeFlash(false),2600);
+  };
   useEffect(()=>{
     if(!highlightKey) return;
     const raf=requestAnimationFrame(()=>{ if(highlightRef.current) highlightRef.current.scrollIntoView({block:"center",behavior:"auto"}); });
@@ -2950,7 +2959,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       if(!q&&!pq) shown=shown.slice(0,shownRows);
     }
     return(
-    <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
+    <div style={{background:"rgba(15,27,50,0.62)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
       <div className="rkRow" style={{padding:"10px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",
         fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,alignItems:"center"}}>
         {searchable ? (
@@ -3020,7 +3029,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         const baseBg=picked?"rgba(59,130,246,0.16)":me?"rgba(34,197,94,0.04)":"transparent";
         const hoverBg=picked?baseBg:rr?rr.hov:inTop10?"rgba(34,197,94,0.10)":me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)";
         return(
-          <div key={p.key} ref={p.key===highlightKey?highlightRef:null} className={p.key===highlightKey?"rkRow rkHiFlash":"rkRow"} onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
+          <div key={p.key} ref={(me||p.key===highlightKey)?((el)=>{ if(me) meRowRef.current=el; if(p.key===highlightKey) highlightRef.current=el; }):null} className={(p.key===highlightKey||(me&&meFlash))?"rkRow rkHiFlash":"rkRow"} onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
             style={{padding:"14px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",cursor:"pointer",
               background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":barColor?`inset 3px 0 0 ${barColor}`:"none",transition:"background 0.15s"}}
             onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=hoverBg; }}
@@ -3037,9 +3046,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
             <span className="rkSpark">
               <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24}/>
             </span>
-            <span style={{textAlign:"center",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:"clamp(12.5px,3.6vw,15px)",color:p.total>=0?"#4ade80":"#f87171"}}><Rolling text={pct(p.total)}/></span>
+            <span style={{textAlign:"center",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:"clamp(12.5px,3.6vw,15px)",color:p.total>=0?"#4ade80":"#f87171"}}>{pct(p.total)}</span>
             <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:"clamp(11px,3vw,13px)",fontWeight:600,
-              color:dayRet==null?"#4b5563":dayRet>=0?"#4ade80":"#f87171"}}>{dayRet==null?"—":<Rolling text={pct(dayRet)}/>}</span>
+              color:dayRet==null?"#4b5563":dayRet>=0?"#4ade80":"#f87171"}}>{dayRet==null?"—":pct(dayRet)}</span>
             <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:"clamp(11px,3vw,14px)",fontWeight:700}}>
               <span style={{color:"#4ade80"}}>{p.pos}</span><span style={{color:"#94a3b8"}}>/</span><span style={{color:"#f87171"}}>{p.neg}</span>
             </span>
@@ -3160,7 +3169,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     </div>
   ):null;
   const wYou=myRow?railCard("A tua posição",(
-    <div onClick={()=>onSelect(myRow.key)} style={{cursor:"pointer"}}>
+    <div onClick={scrollToMe} title="Ver a minha posição no ranking" style={{cursor:"pointer"}}>
       <div style={{display:"flex",alignItems:"baseline",gap:6,marginBottom:2}}>
         <span style={{fontSize:32,fontWeight:800,letterSpacing:"-1px"}}>{myRank}</span>
         <span style={{fontSize:15,color:"#64748b",fontWeight:700}}>/ {stats?stats.n:officials.length}</span>
