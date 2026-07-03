@@ -1808,7 +1808,7 @@ function WinnerCard({p,rank,livePrices,series,onClick}){
   );
 }
 
-function MiniSparkline({series,current,height=48,fill=true}){
+function MiniSparkline({series,current,height=48,fill=true,flat=false}){
   const uid=useId();
   const today=new Date().toISOString().slice(0,10);
   const pts=(series||[]).map(s=>({date:s.date,r:s.r}));
@@ -1839,8 +1839,8 @@ function MiniSparkline({series,current,height=48,fill=true}){
   const col=isEx?"#64748b":(last>=0?"#34d399":"#fb7185");
   const gid=`spk-${uid}`;
   return(
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className={isEx?undefined:"winSpark"} style={{width:"100%",height,display:"block",opacity:isEx?0.55:undefined}}>
-      {fill&&<>
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className={(isEx||flat)?undefined:"winSpark"} style={{width:"100%",height,display:"block",opacity:isEx?0.55:undefined}}>
+      {fill&&!flat&&<>
         <defs>
           <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={col} stopOpacity={isEx?0.16:0.32}/>
@@ -3029,7 +3029,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         const baseBg=picked?"rgba(59,130,246,0.16)":me?"rgba(34,197,94,0.04)":"transparent";
         const hoverBg=picked?baseBg:rr?rr.hov:inTop10?"rgba(34,197,94,0.10)":me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)";
         return(
-          <div key={p.key} ref={(me||p.key===highlightKey)?((el)=>{ if(me) meRowRef.current=el; if(p.key===highlightKey) highlightRef.current=el; }):null} className={(p.key===highlightKey||(me&&meFlash))?"rkRow rkHiFlash":"rkRow"} onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
+          <div key={p.key} ref={(me||p.key===highlightKey)?((el)=>{ if(me) meRowRef.current=el; if(p.key===highlightKey) highlightRef.current=el; }):null} className={"rkRow rkDataRow"+((p.key===highlightKey||(me&&meFlash))?" rkHiFlash":"")} onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
             style={{padding:"14px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",cursor:"pointer",
               background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":barColor?`inset 3px 0 0 ${barColor}`:"none",transition:"background 0.15s"}}
             onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=hoverBg; }}
@@ -3044,7 +3044,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
             </span>
             <span className="rkSpark">
-              <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24}/>
+              <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24} flat/>
             </span>
             <span style={{textAlign:"center",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:"clamp(12.5px,3.6vw,15px)",color:p.total>=0?"#4ade80":"#f87171"}}>{pct(p.total)}</span>
             <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:"clamp(11px,3vw,13px)",fontWeight:600,
@@ -3247,6 +3247,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
            todas as linhas alinhadas e as sparklines (1fr) começam todas no mesmo sítio, colado ao
            maior nome. Fallback 190px enquanto não mede. */
         .rkRow{display:grid;grid-template-columns:40px var(--rk-name-w,190px) 1fr 72px 72px 56px 150px;gap:8px}
+        /* Lista longa (124 linhas × sparkline + 8 ícones): o browser não renderiza/pinta as linhas
+           fora do ecrã → scroll fluido (senão saturava o compositor e a pintura ficava atrasada).
+           Só no desktop, onde as linhas têm altura fixa de 1 linha (evita saltos). */
+        @media(min-width:861px){ .rkDataRow{content-visibility:auto;contain-intrinsic-size:auto 56px} }
         .rkSpark{display:flex;align-items:center;align-self:center;height:24px;overflow:hidden;min-width:0}
         .rkNarrowHd{display:none}   /* cabeçalhos simples #/Membro: só aparecem no mobile */
         @keyframes rkHiFlash{0%{background-color:rgba(59,130,246,0.30)}60%{background-color:rgba(59,130,246,0.15)}100%{background-color:rgba(59,130,246,0)}}
