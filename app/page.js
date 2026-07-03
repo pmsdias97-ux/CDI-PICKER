@@ -3204,6 +3204,15 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
           .rkSearchCell{display:none!important}
           .rkNarrowHd{display:block!important}
         }
+        @media(min-width:641px) and (max-width:860px){
+          /* TABLET: repõe a tabela rica do desktop (sparkline + pesquisa + 8 ícones), grelha compacta.
+             rank | nome(1fr) | spark | rentab | diário | 🟢/🔴 | posições(8 ícones) */
+          .rkRow{grid-template-columns:32px minmax(0,1fr) 64px 72px 66px 50px 146px;gap:6px}
+          .rkSpark{display:flex}
+          .rkHide{display:flex!important}
+          .rkSearchCell{display:flex!important}
+          .rkNarrowHd{display:none!important}
+        }
         @media(max-width:640px){
           /* nomes primeiro: coluna Membro larga; numéricas apertadas (fontes já encolhem via clamp). */
           .rkRow{grid-template-columns:24px 1fr 56px 50px 42px;gap:6px}
