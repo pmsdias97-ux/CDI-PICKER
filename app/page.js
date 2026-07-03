@@ -1466,7 +1466,7 @@ export default function App(){
       if(base==null||!base) return null;
       return now/base-1;
     };
-    return { now, returnFor };
+    return { now, returnFor, priceAt: closeOnOrBefore };
   },[livePrices,spyHist]);
 
   async function doSubmit(name,stocks,pin){
@@ -2523,7 +2523,7 @@ function SeasonRaceTooltip({active,payload,label}){
 const raceColorOf=(p,i)=> p._me?"#ffffff":RACE_COLORS[i%RACE_COLORS.length];
 // Cartão de partilha do Top 10 (fundos SÓLIDOS, sem blur → captura limpa com html-to-image).
 const SNAP_W=1000;
-function SnapshotCard({cardRef,shown,data,raceYMin,raceYMax,dateStr,compDay}){
+function SnapshotCard({cardRef,shown,data,raceYMin,raceYMax,dateStr,compDay,dayTicks,hasSpy}){
   const top10=shown.slice(0,10);
   return(
     <div ref={cardRef} style={{width:SNAP_W,boxSizing:"border-box",padding:34,
@@ -2539,13 +2539,14 @@ function SnapshotCard({cardRef,shown,data,raceYMin,raceYMax,dateStr,compDay}){
       <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px 10px 4px"}}>
         <LineChart width={912} height={330} data={data} margin={{top:8,right:16,left:-6,bottom:0}}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.12)" vertical={false}/>
-          <XAxis dataKey="t" tickFormatter={raceTick} tick={{fill:"#94a3b8",fontSize:12}} minTickGap={28} axisLine={false} tickLine={false}/>
+          <XAxis dataKey="t" tickFormatter={raceTick} ticks={dayTicks} tick={{fill:"#94a3b8",fontSize:12}} minTickGap={28} axisLine={false} tickLine={false}/>
           <YAxis domain={[raceYMin,raceYMax]} tickFormatter={(v)=>`${v>0?"+":""}${v}%`} tick={{fill:"#94a3b8",fontSize:12}} width={48} axisLine={false} tickLine={false}/>
           <ReferenceLine y={0} stroke="rgba(255,255,255,0.30)" strokeDasharray="4 4"/>
           {shown.map((p,i)=>(
             <Line key={p.key} type="monotone" dataKey={p.name} stroke={raceColorOf(p,i)}
               strokeWidth={p._me?3.5:2.4} dot={false} connectNulls isAnimationActive={false}/>
           ))}
+          {hasSpy&&<Line type="monotone" dataKey="S&P 500" stroke="#ffffff" strokeWidth={2} strokeDasharray="6 5" strokeOpacity={0.8} dot={false} connectNulls isAnimationActive={false}/>}
         </LineChart>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gridTemplateRows:"repeat(5,auto)",gridAutoFlow:"column",gap:"0 28px",marginTop:18}}>
@@ -2562,7 +2563,7 @@ function SnapshotCard({cardRef,shown,data,raceYMin,raceYMax,dateStr,compDay}){
     </div>
   );
 }
-function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate}){
+function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDate}){
   const [snaps,setSnaps]=useState([]); // [] em vez de null → o gráfico desenha logo (baseline início→agora)
   const nowIso=useMemo(()=>new Date().toISOString(),[]); // "agora" fixo → conteúdo do data estável (não re-anima)
   const [mounted,setMounted]=useState(false);
@@ -2642,8 +2643,20 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
       shown.forEach(p=>{ if(!Number.isFinite(a[p.name])) a[p.name]=0; });
       byT[t0]=a;
     }
+    // Benchmark S&P 500: rentabilidade do SPY desde a base (SPY no arranque = spyInitialPrice)
+    // ao longo do tempo. Ancorado a 0 no t0, tal como as linhas dos membros. "agora" = SPY ao vivo.
+    const spyBase=(()=>{ for(const p of shown){ const b=p.spyInitialPrice; if(Number.isFinite(b)&&b>0) return b; } return null; })();
+    // Só na competição a valer: aí todos os oficiais partilham a mesma base (fecho 30-jun),
+    // por isso a base coincide com o t0. Nos demos (pré-lançamento) as datas variam → evitar.
+    if(spy&&spyBase>0&&!preLaunch){
+      for(const t of Object.keys(byT)){
+        if(t===t0){ byT[t]["S&P 500"]=0; continue; }
+        const px=(t===nowIso)?spy.now:(spy.priceAt?spy.priceAt(t):null);
+        if(Number.isFinite(px)&&px>0) byT[t]["S&P 500"]=(px/spyBase-1)*100;
+      }
+    }
     return Object.values(byT).sort((a,b)=>a.t<b.t?-1:1);
-  },[snaps,shown,competitionStarted,gameStartDate,nowIso]);
+  },[snaps,shown,competitionStarted,gameStartDate,nowIso,spy,preLaunch]);
   // Referência estável: se o conteúdo não mudou (ex.: snapshots vazios a chegar no dia 1),
   // devolve o array anterior → o Recharts não re-desenha/re-anima a linha.
   const dataStable=useRef(null);
@@ -2656,8 +2669,11 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
 
   if(!shown.length) return null;
   const enoughData=data&&data.length>=2;
-  // Domínio Y com folga moderada (não deixar auto-escalar até -8%; chega a ~-6% no caso atual).
-  const allVals=enoughData?data.flatMap(r=>shown.map(p=>r[p.name])).filter(Number.isFinite):[];
+  // Uma marca por DIA no eixo X (evita "01/07" repetido: arranque 00:00 + abertura do dia 1).
+  const dayTicks=(()=>{ const seen=new Set(),out=[]; for(const r of (data||[])){ const day=String(r.t).slice(0,10); if(!seen.has(day)){ seen.add(day); out.push(r.t); } } return out; })();
+  const hasSpy=enoughData&&data.some(r=>Number.isFinite(r["S&P 500"]));
+  // Domínio Y com folga moderada — inclui o S&P para a linha ficar sempre visível.
+  const allVals=enoughData?data.flatMap(r=>[...shown.map(p=>r[p.name]),r["S&P 500"]]).filter(Number.isFinite):[];
   const yLo=Math.min(0,...allVals,0), yHi=Math.max(0,...allVals,0);
   const ySpan=Math.max(yHi-yLo,1);
   const raceYMin=Math.floor(yLo-Math.min(Math.max(ySpan*0.25,0.8),1.5));
@@ -2703,7 +2719,7 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
         <ResponsiveContainer width="100%" height={320}>
           <LineChart data={data} margin={{top:8,right:14,left:-6,bottom:0}}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.12)" vertical={false}/>
-            <XAxis dataKey="t" tickFormatter={raceTick} tick={{fill:"#94a3b8",fontSize:11}} minTickGap={28} axisLine={false} tickLine={false}/>
+            <XAxis dataKey="t" tickFormatter={raceTick} ticks={dayTicks} tick={{fill:"#94a3b8",fontSize:11}} minTickGap={28} axisLine={false} tickLine={false}/>
             <YAxis domain={[raceYMin,raceYMax]} tickFormatter={(v)=>`${v>0?"+":""}${v}%`} tick={{fill:"#94a3b8",fontSize:11}} width={46} axisLine={false} tickLine={false}/>
             <ReferenceLine y={0} stroke="rgba(255,255,255,0.30)" strokeDasharray="4 4"/>
             <Tooltip content={<SeasonRaceTooltip/>}/>
@@ -2718,6 +2734,7 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
                   activeDot={hi===p.name?{r:4}:(p._me?{r:3.5}:false)}/>
               );
             })}
+            {hasSpy&&<Line type="monotone" dataKey="S&P 500" name="S&P 500" stroke="#ffffff" strokeWidth={1.8} strokeDasharray="6 5" strokeOpacity={0.75} dot={false} connectNulls isAnimationActive={true} animationDuration={1000} animationEasing="ease-out"/>}
           </LineChart>
         </ResponsiveContainer>
       )}
@@ -2756,13 +2773,21 @@ function SeasonRace({ranking,preLaunch,myNorm,competitionStarted,gameStartDate})
                 </div>
               ))}
             </div>
+            {hasSpy&&(
+              <div style={{display:"flex",justifyContent:"center",marginTop:10}}>
+                <span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:11.5,color:"#94a3b8"}}>
+                  <span aria-hidden="true" style={{width:22,borderTop:"2px dashed #ffffff",opacity:0.8}}/>
+                  S&amp;P 500 (benchmark)
+                </span>
+              </div>
+            )}
           </div>
         );
       })()}
     </div>
     {snapOpen && (<>
       <div aria-hidden="true" style={{position:"fixed",left:-99999,top:0,pointerEvents:"none"}}>
-        <SnapshotCard cardRef={cardRef} shown={shown} data={data} raceYMin={raceYMin} raceYMax={raceYMax} dateStr={snapDate} compDay={snapDay}/>
+        <SnapshotCard cardRef={cardRef} shown={shown} data={data} raceYMin={raceYMin} raceYMax={raceYMax} dateStr={snapDate} compDay={snapDay} dayTicks={dayTicks} hasSpy={hasSpy}/>
       </div>
       <div onClick={()=>setSnapOpen(false)} style={{position:"fixed",inset:0,zIndex:9998,background:"rgba(3,7,18,0.72)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
         <div onClick={e=>e.stopPropagation()} style={{background:"#0a1428",border:"1px solid rgba(255,255,255,0.12)",borderRadius:16,padding:18,maxWidth:"min(94vw,720px)",width:"100%",maxHeight:"92vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
@@ -2873,6 +2898,14 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     document.body.removeChild(el);
     if(max>0) setNameW(Math.min(190,Math.ceil(max)+12)); // +12: respiro antes da linha + margem p/ o "Tu"
   },[namesKey]);
+  // "Atualizado …" — igual ao ATH: o updated_at mais recente do sp500_ath (fonte dos preços).
+  const [pricesAt,setPricesAt]=useState(null);
+  useEffect(()=>{
+    let cancel=false;
+    supabase.from("sp500_ath").select("updated_at").order("updated_at",{ascending:false}).limit(1).maybeSingle()
+      .then(({data})=>{ if(!cancel&&data?.updated_at) setPricesAt(data.updated_at); }).catch(()=>{});
+    return()=>{cancel=true;};
+  },[]);
   useEffect(()=>{
     if(shownRows>=officials.length) return;
     // ~150ms antes de montar o resto: dá tempo à rolagem dos números do TOPO arrancar. Como
@@ -3231,8 +3264,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
           .rkNarrowHd{display:none!important}
         }
         @media(max-width:640px){
-          /* nomes primeiro: coluna Membro larga; numéricas apertadas (fontes já encolhem via clamp). */
-          .rkRow{grid-template-columns:24px 1fr 56px 50px 42px;gap:6px}
+          /* nomes largos + mais folga entre as numéricas (Rentab./Diário não coladas). */
+          .rkRow{grid-template-columns:22px 1fr 58px 54px 44px;gap:10px}
         }
       `}</style>
       <div style={{maxWidth:900,margin:"0 auto"}}>
@@ -3248,14 +3281,17 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
           </button>
         )}
       </div>
-      <p style={{color:"#94a3b8",fontSize:14,marginBottom:28}}>
+      <p style={{color:"#94a3b8",fontSize:14,margin:"0 0 8px"}}>
         Classificação por rentabilidade total, em tempo real · {officials.length} {officials.length===1?"participante":"participantes"}.
-        {pricesLoading?" · A atualizar preços…":""}
+        {pricesLoading?" · A atualizar preços…":(pricesAt?` · Atualizado ${new Date(pricesAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}`:"")}
+      </p>
+      <p style={{color:"#64748b",fontSize:12.5,margin:"0 0 28px"}}>
+        <span style={{whiteSpace:"nowrap"}}>🟢/🔴 = nº de ações em ganho / em perda</span> <span style={{opacity:0.75}}>(não são posições long/short)</span>
       </p>
       {ranking.length>0&&(<>
         {/* Season Race + (demos) + pílula do vencedor — a toda a largura, por cima da grelha */}
         <div style={{marginBottom:16}}>
-          <GlowBehind><SeasonRace ranking={ranking} preLaunch={preLaunch} myNorm={myNorm} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""}/></GlowBehind>
+          <GlowBehind><SeasonRace ranking={ranking} preLaunch={preLaunch} myNorm={myNorm} spy={spy} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""}/></GlowBehind>
         </div>
         {preLaunch&&demos.length>0&&(
           <div style={{marginBottom:32}}>
@@ -3314,17 +3350,23 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
 --------------------------------------------------------------------------- */
 function EvoTooltip({active,payload,label}){
   if(!active||!payload||!payload.length) return null;
-  const v=payload[0]?.value;
-  if(v==null) return null;
+  const rows=payload.filter(p=>p.value!=null);
+  if(!rows.length) return null;
+  const nameOf=k=>k==="spy"?"S&P 500":"A tua";
   return(
-    <div style={{background:"rgba(8,15,32,0.95)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,padding:"6px 10px",fontSize:12,boxShadow:"0 8px 24px rgba(0,0,0,0.45)"}}>
-      <span style={{color:"#94a3b8"}}>{raceFull(label)}</span>
-      {" · "}
-      <span style={{fontFamily:"monospace",fontWeight:700,color:v>=0?"#4ade80":"#f87171"}}>{v>=0?"+":""}{Number(v).toFixed(2)}%</span>
+    <div style={{background:"rgba(8,15,32,0.95)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,padding:"7px 11px",fontSize:12,boxShadow:"0 8px 24px rgba(0,0,0,0.45)"}}>
+      <div style={{color:"#94a3b8",marginBottom:rows.length>1?5:0,fontFamily:"monospace"}}>{raceFull(label)}</div>
+      {rows.map(p=>(
+        <div key={p.dataKey} style={{display:"flex",alignItems:"center",gap:8,lineHeight:1.6}}>
+          <span style={{width:8,height:8,borderRadius:"50%",background:p.color,flexShrink:0}}/>
+          <span style={{color:"#cbd5e1",flex:1,whiteSpace:"nowrap"}}>{nameOf(p.dataKey)}</span>
+          <span style={{fontFamily:"monospace",fontWeight:700,color:p.value>=0?"#4ade80":"#f87171"}}>{p.value>=0?"+":""}{Number(p.value).toFixed(2)}%</span>
+        </div>
+      ))}
     </div>
   );
 }
-function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarted,gameStartDate}){
+function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarted,gameStartDate,spy,spyInitialPrice}){
   const [snaps,setSnaps]=useState(null);
   const [mounted,setMounted]=useState(false);
   useEffect(()=>{ setMounted(true); },[]);
@@ -3357,13 +3399,20 @@ function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarte
   }
   if(typeof currentReturn==="number"&&(!startTs||now>startTs)) byT[now]=currentReturn*100;
   if(startTs) byT[startTs]=0;                     // arranca SEMPRE a 0%
-  const data=Object.entries(byT).map(([t,r])=>({t,r})).sort((a,b)=>a.t<b.t?-1:1);
+  // Benchmark S&P 500: rentabilidade do SPY desde a MESMA base do portefólio (spyInitialPrice),
+  // ancorada a 0 no arranque — dá contexto à linha do membro (igual ao gráfico Top 10).
+  const spyBase=(Number.isFinite(spyInitialPrice)&&spyInitialPrice>0)?spyInitialPrice:null;
+  const spyAt=(t)=>{ if(!spy||!spyBase) return null; if(t===startTs) return 0; const px=(t===now)?spy.now:(spy.priceAt?spy.priceAt(t):null); return (Number.isFinite(px)&&px>0)?(px/spyBase-1)*100:null; };
+  const data=Object.entries(byT).map(([t,r])=>{ const sv=spyAt(t); return sv==null?{t,r}:{t,r,spy:sv}; }).sort((a,b)=>a.t<b.t?-1:1);
+  const hasSpy=data.some(d=>Number.isFinite(d.spy));
+  // Uma marca por DIA no eixo X (evita a data do arranque duplicada).
+  const dayTicks=(()=>{ const seen=new Set(),out=[]; for(const d of data){ const day=String(d.t).slice(0,10); if(!seen.has(day)){ seen.add(day); out.push(d.t); } } return out; })();
   const enough=data.length>=2;
   const last=enough?data[data.length-1].r:0;
   const col=last>=0?"#4ade80":"#f87171";
   // Domínio do Y com FOLGA (para a linha não parecer que foi à falência):
   // margem generosa por baixo do ponto mais baixo + um pouco acima do 0%.
-  const vals=data.map(d=>d.r).filter(Number.isFinite);
+  const vals=data.flatMap(d=>[d.r,d.spy]).filter(Number.isFinite);
   const lo=Math.min(0,...vals), hi=Math.max(0,...vals);
   const span=Math.max(hi-lo,1);
   const yMin=Math.floor(lo-Math.min(Math.max(span*0.45,1.5),4));
@@ -3382,13 +3431,20 @@ function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarte
         <ResponsiveContainer width="100%" height={210}>
           <LineChart data={data} margin={{top:8,right:14,left:-6,bottom:0}}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.12)" vertical={false}/>
-            <XAxis dataKey="t" tickFormatter={raceTick} tick={{fill:"#94a3b8",fontSize:11}} minTickGap={28} axisLine={false} tickLine={false}/>
+            <XAxis dataKey="t" tickFormatter={raceTick} ticks={dayTicks} tick={{fill:"#94a3b8",fontSize:11}} minTickGap={28} axisLine={false} tickLine={false}/>
             <YAxis domain={[yMin,yMax]} tickFormatter={(v)=>`${v>0?"+":""}${v}%`} tick={{fill:"#94a3b8",fontSize:11}} width={46} axisLine={false} tickLine={false}/>
             <ReferenceLine y={0} stroke="rgba(255,255,255,0.30)" strokeDasharray="4 4"/>
             <Tooltip content={<EvoTooltip/>}/>
-            <Line type="monotone" dataKey="r" stroke={col} strokeWidth={2.4} dot={false} isAnimationActive={false}/>
+            <Line type="monotone" dataKey="r" name="A tua" stroke={col} strokeWidth={2.4} dot={false} isAnimationActive={false}/>
+            {hasSpy&&<Line type="monotone" dataKey="spy" name="S&P 500" stroke="#ffffff" strokeWidth={1.8} strokeDasharray="6 5" strokeOpacity={0.7} dot={false} connectNulls isAnimationActive={false}/>}
           </LineChart>
         </ResponsiveContainer>
+      )}
+      {enough&&hasSpy&&(
+        <div style={{display:"flex",justifyContent:"center",gap:16,marginTop:8,fontSize:11.5,color:"#94a3b8"}}>
+          <span style={{display:"inline-flex",alignItems:"center",gap:6}}><span style={{width:14,height:2,background:col,display:"inline-block",borderRadius:2}}/>A tua rentabilidade</span>
+          <span style={{display:"inline-flex",alignItems:"center",gap:6}}><span aria-hidden="true" style={{width:16,borderTop:"2px dashed #ffffff",opacity:0.75,display:"inline-block"}}/>S&amp;P 500</span>
+        </div>
       )}
       {provisional&&(
         <div style={{textAlign:"center",fontSize:12,color:"#6b7280",marginTop:8,lineHeight:1.5}}>
@@ -3657,7 +3713,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16,marginBottom:16}}>
         <TiltCard style={{...GLASS,borderRadius:16,padding:24}}>
           <h3 className="detailCardTitle" style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Evolução da rentabilidade</h3>
-          <EvolutionChart portfolioId={pf.id} currentReturn={st.total} submittedAt={pf.submittedAt} competitionStarted={competitionStarted} gameStartDate={gameStartDate}/>
+          <EvolutionChart portfolioId={pf.id} currentReturn={st.total} submittedAt={pf.submittedAt} competitionStarted={competitionStarted} gameStartDate={gameStartDate} spy={spy} spyInitialPrice={pf.spyInitialPrice}/>
         </TiltCard>
         <TiltCard style={{...GLASS,borderRadius:16,padding:24}}>
           <h3 className="detailCardTitle" style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Exposição por setor</h3>
