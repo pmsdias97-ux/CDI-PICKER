@@ -136,6 +136,12 @@ function stockRet(s,livePrices){
   // Short: rentabilidade é o espelho da variação da ação (cai 10% -> +10%).
   return s.side==="short"?-base:base;
 }
+// Rentabilidade do portefólio HOJE: média das variações do dia das ações (espelhada p/ shorts).
+function pfDayRet(pf,dayChange){
+  const dc=dayChange||{};
+  const rs=(pf?.stocks||[]).map(s=>{ const d=dc[s.ticker]; return Number.isFinite(d)?(s.side==="short"?-d:d):null; }).filter(x=>x!=null);
+  return rs.length?rs.reduce((a,b)=>a+b,0)/rs.length:null;
+}
 function mapPortfolioFromSupabase(row){
   const user=row.users;
   const name=user?.telegram_name||"";
@@ -1550,7 +1556,7 @@ export default function App(){
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} showToast={showToast}/>);
   if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)}/>);
-  if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} dayChange={dayChange} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
   return null;
@@ -1672,7 +1678,7 @@ function MarketStatus(){
 /* ---- Nav ----------------------------------------------------------------- */
 function Nav({page,nav,submitted,onMyPortfolio,myPortfolioActive,tint}){
   return(
-    <div className="cdiNav" style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap","--nav-tint":tint}}>
+    <div className="cdiNav" style={{display:"flex",alignItems:"center",gap:6,flexWrap:"nowrap","--nav-tint":tint}}>
       <NavLink label="Início" active={page==="home"} onClick={()=>nav("home")}/>
       <NavLink label="Ranking" active={page==="ranking"} onClick={()=>nav("ranking")}/>
       <NavLink label="ATH" active={page==="ath"} onClick={()=>nav("ath")}/>
@@ -1693,7 +1699,7 @@ function NavLink({label,active,onClick,locked}){
         WebkitBackdropFilter:active?"blur(16px) saturate(180%)":"none",
         border:`1px solid ${active?"rgba(255,255,255,0.14)":"transparent"}`,
         boxShadow:active?"0 4px 18px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.16)":"none",
-        transition:"color 0.15s",display:"flex",alignItems:"center",gap:4}}>
+        transition:"color 0.15s",display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap",flexShrink:0}}>
       {label}{locked&&<span style={{fontSize:10,opacity:0.5}}>🔒</span>}
     </button>
   );
@@ -1733,7 +1739,7 @@ function WinnersGrid({top,livePrices,nav}){
             filter:blur(1.5px);opacity:0.5}
           .cdiPeek>div{width:260px}
         }
-        @media(max-width:768px){.cdiWinners{grid-template-columns:repeat(2,minmax(0,1fr))}}
+        @media(max-width:768px){.cdiWinners{grid-template-columns:repeat(2,minmax(0,1fr))}.winMetric{text-align:center}.winMetric>div{justify-content:center}}
       `}</style>
       <div className={`cdiWinners${peek?" has-peek":""}`}>
         {main.map((p,i)=>(
@@ -1781,7 +1787,7 @@ function WinnerCard({p,rank,livePrices,series,onClick}){
           fontSize:13,fontWeight:800,...badge}}>{rank}</div>
         <span style={{fontWeight:700,fontSize:"clamp(12.5px,3.4vw,16px)",letterSpacing:"-0.4px",flex:1,minWidth:0,lineHeight:1.2,overflowWrap:"anywhere"}}>{p.name}</span>
       </div>
-      <div style={{marginBottom:18}}>
+      <div className="winMetric" style={{marginBottom:18}}>
         <div style={{display:"flex",alignItems:"baseline",gap:8}}>
           <span style={{fontSize:13,color:col}}>{up?"▲":"▼"}</span>
           <span style={{fontFamily:"'SF Mono',ui-monospace,monospace",fontWeight:800,fontSize:30,letterSpacing:"-1.5px",color:col}}>
@@ -1895,7 +1901,7 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio}){
             O <strong style={{color:"#e2e8f0",fontWeight:700}}>jogo de portefólios</strong> da nossa comunidade.{" "}<br className="heroBrk"/>
             Acompanha <strong style={{color:"#e2e8f0",fontWeight:700}}>ao vivo</strong> o ranking e a evolução ao longo da época.
           </p>
-          <style>{`@media(max-width:520px){.heroTitle{letterSpacing:-0.02em;line-height:1.02}.heroBtns{flex-wrap:nowrap;gap:10px;align-items:stretch}.heroBtns>button{flex:1;min-width:0;padding:14px 12px;font-size:15px;line-height:1.2;white-space:nowrap}.heroBrk{display:none}} `}</style>
+          <style>{`@media(max-width:520px){.heroTitle{letterSpacing:-0.02em;line-height:1.02}.heroBtns{flex-wrap:nowrap;gap:10px;align-items:stretch}.heroBtns>button{flex:1;min-width:0;padding:14px 10px!important;font-size:15px!important;line-height:1.2}.heroBrk{display:none}} `}</style>
           <div className="heroBtns" style={{display:"flex",justifyContent:"center",gap:12,flexWrap:"wrap"}}>
             {submitted?(
               <>
@@ -1972,9 +1978,9 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio}){
 
       {/* Regras */}
       <section style={{maxWidth:980,margin:"0 auto",padding:"0 24px 80px"}}>
-        <div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16,padding:40}}>
+        <div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16,padding:"clamp(22px,5vw,40px)"}}>
           <h2 style={{fontSize:22,fontWeight:700,marginBottom:28,letterSpacing:"-0.3px",textAlign:"center"}}>Regras do Jogo</h2>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:"12px 40px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(260px,100%),1fr))",gap:"12px 40px"}}>
             {[
               "Cada participante criou 1 portefólio com 8 ações",
               "Cada ação representa 12,5% do portefólio (peso igual)",
@@ -2869,11 +2875,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     const t=setTimeout(()=>clearHighlight&&clearHighlight(),2600); // limpa o destaque no fim do flash
     return()=>{ cancelAnimationFrame(raf); clearTimeout(t); };
   },[highlightKey]);
-  const pfDayReturn=(p)=>{
-    // Rentabilidade do portefólio HOJE: média das variações do dia das ações (espelhada p/ shorts).
-    const rs=(p.stocks||[]).map(s=>{ const d=dayChange?.[s.ticker]; return Number.isFinite(d)?(s.side==="short"?-d:d):null; }).filter(x=>x!=null);
-    return rs.length?rs.reduce((a,b)=>a+b,0)/rs.length:null;
-  };
+  const pfDayReturn=(p)=>pfDayRet(p,dayChange);
   const SortHd=({k,children})=>{
     const active=sortKey===k;
     return(
@@ -2905,7 +2907,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       <div className="rkRow" style={{padding:"10px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",
         fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,alignItems:"center"}}>
         {searchable ? (
-          <span style={{gridColumn:"span 2",position:"relative",display:"flex",alignItems:"center",minWidth:0}}>
+          <>
+          <span className="rkSearchCell" style={{gridColumn:"span 2",position:"relative",display:"flex",alignItems:"center",minWidth:0}}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
               style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}>
               <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
@@ -2921,6 +2924,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
               </button>
             )}
           </span>
+          <span className="rkNarrowHd" style={{textAlign:"center"}}>#</span>
+          <span className="rkNarrowHd">Membro</span>
+          </>
         ) : (<><span style={{textAlign:"center"}}>#</span><span>Membro</span></>)}
         <span className="rkSpark"></span>
         {searchable?<SortHd k="total">Rentab.</SortHd>:<span style={{textAlign:"right"}}>Rentab.</span>}
@@ -2978,16 +2984,16 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
                 : <span style={{fontSize:13,color:"#94a3b8",fontWeight:700}}>{i+1}</span>}
             </span>
             <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
-              <span style={{overflowWrap:"anywhere",lineHeight:1.2}}>{p.name}</span>
+              <span style={{overflowWrap:"normal",wordBreak:"normal",lineHeight:1.2}}>{p.name}</span>
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
             </span>
             <span className="rkSpark">
               <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24}/>
             </span>
-            <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:15,color:p.total>=0?"#4ade80":"#f87171"}}><Rolling text={pct(p.total)}/></span>
-            <span style={{textAlign:"right",alignSelf:"center",fontFamily:"monospace",fontSize:13,fontWeight:600,
+            <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:"clamp(12.5px,3.6vw,15px)",color:p.total>=0?"#4ade80":"#f87171"}}><Rolling text={pct(p.total)}/></span>
+            <span style={{textAlign:"right",alignSelf:"center",fontFamily:"monospace",fontSize:"clamp(11px,3vw,13px)",fontWeight:600,
               color:dayRet==null?"#4b5563":dayRet>=0?"#4ade80":"#f87171"}}>{dayRet==null?"—":<Rolling text={pct(dayRet)}/>}</span>
-            <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:14,fontWeight:700}}>
+            <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:"clamp(11px,3vw,14px)",fontWeight:700}}>
               <span style={{color:"#4ade80"}}>{p.pos}</span><span style={{color:"#94a3b8"}}>/</span><span style={{color:"#f87171"}}>{p.neg}</span>
             </span>
             <span className="rkHide" style={{display:"flex",alignItems:"center",justifyContent:"flex-start",gap:2,flexWrap:"nowrap",overflow:"hidden"}}>
@@ -3017,7 +3023,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
             onMouseEnter={me?(e=>e.currentTarget.style.background="rgba(34,197,94,0.08)"):undefined}
             onMouseLeave={me?(e=>e.currentTarget.style.background="rgba(34,197,94,0.04)"):undefined}>
             <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
-              <span style={{overflowWrap:"anywhere",lineHeight:1.2}}>{p.name}</span>
+              <span style={{overflowWrap:"normal",wordBreak:"normal",lineHeight:1.2}}>{p.name}</span>
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
             </span>
             <span style={{fontSize:12,color:me?"#4ade80":"#94a3b8",whiteSpace:"nowrap",flexShrink:0}}>
@@ -3037,14 +3043,14 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   // ---- Widgets das laterais (desktop) ----------------------------------------
   const myRow=myNorm?officials.find(p=>p.normName===myNorm):null;
   const myRank=myRow?officials.indexOf(myRow)+1:0;
-  const myAlpha=(myRow&&spy)?(()=>{ const s=spy.returnFor(myRow); return s==null?null:myRow.total-s; })():null;
+  const myDay=myRow?pfDayReturn(myRow):null;
   const stats=useMemo(()=>{
     const off=officials.filter(p=>Number.isFinite(p.total));
     if(!off.length) return null;
     const avg=off.reduce((a,p)=>a+p.total,0)/off.length;
-    let spyRet=null,beating=null,bestAlpha=null;
-    if(spy){ spyRet=spy.returnFor(off[0]); beating=0; for(const p of off){ const s=spy.returnFor(p); if(s!=null){ if(p.total>s) beating++; const a=p.total-s; if(!bestAlpha||a>bestAlpha.a) bestAlpha={p,a}; } } }
-    return { n:off.length, avg, spyRet, beating, bestAlpha, leader:off[0] };
+    let spyRet=null,beating=null;
+    if(spy){ spyRet=spy.returnFor(off[0]); beating=0; for(const p of off){ const s=spy.returnFor(p); if(s!=null&&p.total>s) beating++; } }
+    return { n:off.length, avg, spyRet, beating, leader:off[0] };
   },[officials,spy]);
   const topPicks=useMemo(()=>{
     const c={};
@@ -3052,16 +3058,35 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     const tot=officials.length||1;
     return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([ticker,cnt])=>({ticker,cnt,frac:cnt/tot}));
   },[officials]);
-  const topDaily=useMemo(()=>{
-    if(!dayChange) return null; let best=null;
+  const dayExtremes=useMemo(()=>{
+    if(!dayChange) return null; let best=null,worst=null;
     for(const p of officials){
-      const rs=(p.stocks||[]).map(s=>{ const d=dayChange[s.ticker]; return Number.isFinite(d)?(s.side==="short"?-d:d):null; }).filter(x=>x!=null);
-      if(!rs.length) continue;
-      const day=rs.reduce((a,b)=>a+b,0)/rs.length;
+      const day=pfDayRet(p,dayChange);
+      if(day==null) continue;
       if(!best||day>best.day) best={p,day};
+      if(!worst||day<worst.day) worst={p,day};
+    }
+    return {best,worst};
+  },[officials,dayChange]);
+  // Maior subida no ranking: lugar atual vs lugar no 1º snapshot (≈ arranque), via seriesById.
+  const topClimber=useMemo(()=>{
+    const nowRank=new Map(officials.map((p,i)=>[p.id,i+1]));
+    const startRet=new Map(); let withHist=0;
+    for(const p of officials){
+      const s=seriesById[p.id];
+      if(s&&s.length){ startRet.set(p.id,s[0].r); withHist++; }
+      else startRet.set(p.id,Number.isFinite(p.total)?p.total:0);
+    }
+    if(withHist<3) return null; // histórico insuficiente → não mostra
+    const startOrder=[...officials].sort((a,b)=>startRet.get(b.id)-startRet.get(a.id));
+    const startRank=new Map(startOrder.map((p,i)=>[p.id,i+1]));
+    let best=null;
+    for(const p of officials){
+      const climb=startRank.get(p.id)-nowRank.get(p.id); // >0 = subiu lugares
+      if(climb>0&&(!best||climb>best.climb)) best={p,climb};
     }
     return best;
-  },[officials,dayChange]);
+  },[officials,seriesById]);
   // Melhores/piores AÇÕES da competição (retorno da própria ação desde o baseline), entre todas as escolhas.
   const stockPerf=useMemo(()=>{
     const seen={};
@@ -3073,9 +3098,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     arr.sort((a,b)=>b.ret-a.ret);
     return { best:arr.slice(0,5), worst:arr.slice(-5).reverse() };
   },[officials,livePrices]);
-  const railCard=(title,children)=>(
+  const railCard=(title,children,info)=>(
     <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:"14px 15px",boxShadow:"0 6px 20px rgba(0,0,0,0.22)"}}>
-      <div style={{fontSize:10.5,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:800,marginBottom:12}}>{title}</div>
+      <div style={{fontSize:10.5,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:800,marginBottom:12,display:"flex",alignItems:"center",gap:6}}>{title}{info&&<InfoTip text={info}/>}</div>
       {children}
     </div>
   );
@@ -3096,7 +3121,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       <div style={{fontSize:13,color:"#cbd5e1",fontWeight:600,marginBottom:10,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{myRow.name}</div>
       <div style={{display:"flex",gap:14,fontFamily:"monospace",fontSize:14,fontWeight:800,marginBottom:8}}>
         <span style={{color:myRow.total>=0?"#4ade80":"#f87171"}}>{pct(myRow.total)}</span>
-        {myAlpha!=null&&<span title="Alpha (vs S&P 500)" style={{color:myAlpha>=0?"#4ade80":"#f87171"}}>α {myAlpha>=0?"+":""}{(myAlpha*100).toFixed(2)}%</span>}
+        {myDay!=null&&<span title="Rentabilidade de hoje" style={{color:myDay>=0?"#4ade80":"#f87171"}}>Diário {pct(myDay)}</span>}
       </div>
       <div style={{fontSize:12,color:"#94a3b8",lineHeight:1.5}}>
         {myRank===1
@@ -3108,8 +3133,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   const wHi=stats?railCard("Destaques",(
     <div style={{marginTop:-3}}>
       {hiRow("Líder",stats.leader,mono(pct(stats.leader.total),stats.leader.total>=0),true)}
-      {stats.bestAlpha&&hiRow("Melhor alpha",stats.bestAlpha.p,mono(`${stats.bestAlpha.a>=0?"+":""}${(stats.bestAlpha.a*100).toFixed(2)}%`,stats.bestAlpha.a>=0))}
-      {topDaily&&hiRow("Subida do dia",topDaily.p,mono(pct(topDaily.day),topDaily.day>=0))}
+      {dayExtremes?.best&&hiRow("Subida do dia",dayExtremes.best.p,mono(pct(dayExtremes.best.day),dayExtremes.best.day>=0))}
+      {dayExtremes?.worst&&dayExtremes.worst.p.id!==dayExtremes.best?.p.id&&hiRow("Queda do dia",dayExtremes.worst.p,mono(pct(dayExtremes.worst.day),dayExtremes.worst.day>=0))}
+      {topClimber&&hiRow("Maior subida",topClimber.p,<span title={`Subiu ${topClimber.climb} ${topClimber.climb===1?"lugar":"lugares"} desde o arranque`} style={{fontFamily:"monospace",fontSize:13,fontWeight:800,color:"#4ade80",whiteSpace:"nowrap"}}>▲ {topClimber.climb}</span>)}
     </div>
   )):null;
   const wVsSp=stats?railCard("Comunidade vs S&P 500",(
@@ -3126,7 +3152,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       </div>
     </div>
   )):null;
-  const wPicks=topPicks.length?railCard("Ações mais escolhidas",(
+  const wPicks=topPicks.length?railCard("Mais escolhidas",(
     <div style={{display:"flex",flexDirection:"column",gap:9}}>
       {topPicks.map(t=>(
         <div key={t.ticker} style={{display:"flex",alignItems:"center",gap:8}}>
@@ -3147,14 +3173,14 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       <span style={{fontFamily:"ui-monospace, monospace",fontWeight:800,fontSize:12.5,color:o.ret>=0?"#4ade80":"#f87171"}}>{o.ret>=0?"+":""}{(o.ret*100).toFixed(2)}%</span>
     </div>
   );
-  const wStocks=(stockPerf.best.length||stockPerf.worst.length)?railCard("Ações da competição",(
+  const wStocks=(stockPerf.best.length||stockPerf.worst.length)?railCard("Performance",(
     <div>
       <div style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"#4ade80",fontWeight:800,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}><Tri size={9}/> Melhores</div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>{stockPerf.best.map(perfRow)}</div>
       <div style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"#f87171",fontWeight:800,textTransform:"uppercase",letterSpacing:".5px",margin:"14px 0 8px"}}><Tri up={false} size={9}/> Piores</div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>{stockPerf.worst.map(perfRow)}</div>
     </div>
-  )):null;
+  ),"Ações escolhidas pelos membros com melhor e pior rentabilidade desde o arranque da competição."):null;
   const leftRail=<>{wYou}{wStocks}</>;
   const rightRail=<>{wVsSp}{wHi}{wPicks}</>;
 
@@ -3163,18 +3189,24 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       <style>{`
         .rkRow{display:grid;grid-template-columns:40px 190px 1fr 100px 100px 92px 150px;gap:8px}
         .rkSpark{display:flex;align-items:center;align-self:center;height:24px;overflow:hidden;min-width:0}
+        .rkNarrowHd{display:none}   /* cabeçalhos simples #/Membro: só aparecem no mobile */
         @keyframes rkHiFlash{0%{background-color:rgba(59,130,246,0.30)}60%{background-color:rgba(59,130,246,0.15)}100%{background-color:rgba(59,130,246,0)}}
         .rkHiFlash{animation:rkHiFlash 2.6s ease-out}
         .rkLayout{display:grid;grid-template-columns:minmax(240px,1fr) minmax(0,900px) minmax(240px,1fr);gap:28px;align-items:start;justify-content:center}
         .rkRail{position:sticky;top:84px;display:flex;flex-direction:column;gap:16px}
         @media(max-width:1439px){ .rkLayout{grid-template-columns:minmax(0,900px);justify-content:center} .rkRail{display:none} }
         @media(max-width:860px){
+          /* MOBILE/tablet: sem caixas de pesquisa nem ícones de posições (são só desktop).
+             As caixas/ícones têm display:flex inline → precisa de !important para as esconder. */
           .rkRow{grid-template-columns:40px 1fr 100px 100px 92px}
           .rkSpark{display:none}
-          .rkHide{display:none}   /* Posições (8 ícones) só cabe no desktop */
+          .rkHide{display:none!important}
+          .rkSearchCell{display:none!important}
+          .rkNarrowHd{display:block!important}
         }
         @media(max-width:640px){
-          .rkRow{grid-template-columns:26px 1fr 64px 64px 56px;gap:6px}
+          /* nomes primeiro: coluna Membro larga; numéricas apertadas (fontes já encolhem via clamp). */
+          .rkRow{grid-template-columns:24px 1fr 56px 50px 42px;gap:6px}
         }
       `}</style>
       <div style={{maxWidth:900,margin:"0 auto"}}>
@@ -3474,8 +3506,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
     const cur=curPrice(s.ticker,s.initialPrice,livePrices);
     return{...s,cur,ret:stockRet(s,livePrices)};
   });
-  const spyRet=spy?spy.returnFor(pf):null;
-  const alpha=spyRet!=null?st.total-spyRet:null;
+  const dayRet=pfDayRet(pf,dayChange);
   // Tabela: ordenada por rentabilidade desde a submissão (métrica do jogo).
   const bySorted=[...rows].sort((a,b)=>b.ret-a.ret);
   // Destaques: melhor/pior performance DO DIA (variação vs fecho anterior),
@@ -3531,9 +3562,9 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
           <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"10px 24px",marginTop:18,fontSize:13,color:"#94a3b8"}}>
             <span style={{color:"#4ade80"}}><Tri size={11}/> {st.pos} positivas</span>
             <span style={{color:"#f87171"}}><Tri up={false} size={11}/> {st.neg} negativas</span>
-            {alpha!=null&&(
-              <span title="A tua rentabilidade menos a do S&P 500 no mesmo período">
-                Alpha: <strong style={{color:alpha>=0?"#4ade80":"#f87171"}}><Rolling text={`${alpha>=0?"+":""}${(alpha*100).toFixed(2)}%`}/></strong>
+            {dayRet!=null&&(
+              <span title="Rentabilidade do portefólio hoje">
+                Diário: <strong style={{color:dayRet>=0?"#4ade80":"#f87171"}}><Rolling text={pct(dayRet)}/></strong>
               </span>
             )}
           </div>
@@ -3792,7 +3823,7 @@ function DuelPicksSide({rows}){
     </div>
   );
 }
-function Duel({a,b,livePrices,spy,nav}){
+function Duel({a,b,livePrices,spy,dayChange,nav}){
   if(!a||!b) return(
     <div style={{textAlign:"center",padding:80,color:"#4b5563"}}>
       Duelo inválido. <button onClick={()=>nav("ranking")} style={{color:"#22c55e",background:"none",border:"none",cursor:"pointer"}}>Voltar</button>
@@ -3802,7 +3833,7 @@ function Duel({a,b,livePrices,spy,nav}){
   const sa=pfStats(a,livePrices), sb=pfStats(b,livePrices);
   const ra=a.stocks.map(s=>({...s,ret:stockRet(s,livePrices)}));
   const rb=b.stocks.map(s=>({...s,ret:stockRet(s,livePrices)}));
-  const alphaA=spy?a.total-spy.returnFor(a):null, alphaB=spy?b.total-spy.returnFor(b):null;
+  const dayA=pfDayRet(a,dayChange), dayB=pfDayRet(b,dayChange);
   const diff=a.total-b.total;
   const leader=diff>=0?a:b, gap=Math.abs(diff);
   const setA=new Set(a.stocks.map(s=>s.ticker)), setB=new Set(b.stocks.map(s=>s.ticker));
@@ -3862,7 +3893,7 @@ function Duel({a,b,livePrices,spy,nav}){
       {/* Confronto de métricas */}
       <div style={{...GLASS,borderRadius:16,padding:"8px 24px 16px",marginBottom:16}}>
         <DuelMetric label="Rentab. média" a={sa.total} b={sb.total} better="high" fmt={pct}/>
-        {alphaA!=null&&alphaB!=null&&<DuelMetric label="Alpha" a={alphaA} b={alphaB} better="high" fmt={pct}/>}
+        {dayA!=null&&dayB!=null&&<DuelMetric label="Diário" a={dayA} b={dayB} better="high" fmt={pct}/>}
         <DuelMetric label="Positivas" a={sa.pos} b={sb.pos} better="high" fmt={v=>String(v)}/>
         <DuelMetric label="Negativas" a={sa.neg} b={sb.neg} better="low" fmt={v=>String(v)}/>
       </div>
@@ -4324,6 +4355,7 @@ function Btn({children,onClick,primary,large}){
       style={{background:primary?"#22c55e":"transparent",color:primary?"#000":"#e2e8f0",
         border:primary?"none":"1px solid #374151",borderRadius:10,
         padding:large?"15px 36px":"10px 22px",fontSize:large?16:14,fontWeight:700,cursor:"pointer",
+        display:"inline-flex",alignItems:"center",justifyContent:"center",whiteSpace:"nowrap",textAlign:"center",
         transition:"background .15s, border-color .15s, transform .12s"}}
       onMouseEnter={e=>{ if(primary) e.currentTarget.style.background="#16a34a"; else e.currentTarget.style.borderColor="#6b7280"; e.currentTarget.style.transform="translateY(-1px)"; }}
       onMouseLeave={e=>{ if(primary) e.currentTarget.style.background="#22c55e"; else e.currentTarget.style.borderColor="#374151"; e.currentTarget.style.transform="none"; }}
