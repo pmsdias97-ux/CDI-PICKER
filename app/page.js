@@ -172,6 +172,38 @@ function pfStats(p,livePrices){
   const rets=p.stocks.map(s=>stockRet(s,livePrices));
   return{ total:rets.reduce((a,b)=>a+b,0)/rets.length, pos:rets.filter(r=>r>0).length, neg:rets.filter(r=>r<0).length };
 }
+// Mini-época MENSAL ("Campeão do mês"): MESMA fórmula do total, mas com o baseline do
+// início do mês (monthBase[ticker]) em vez do preço de submissão. Justo ao membro — pondera
+// cada ação por 1/preço-início-do-mês (não por 1/preço-de-submissão, que sobrevaloriza ações
+// que já dispararam desde o arranque). Sem baseline do mês → cai no preço inicial (ex.: julho,
+// o mês de arranque, fica = ao total automaticamente).
+function pfMonthRet(p,monthBase,livePrices){
+  if(!p?.stocks?.length) return null;
+  // Entrou a meio do mês (submissão dentro do período)? O baseline dele é o preço de submissão
+  // (comprou a meio), não o preço de abertura do mês que nunca negociou.
+  const periodStartMs=Date.parse(new Date().toISOString().slice(0,7)+"-01T00:00:00Z");
+  const enteredThisMonth=p.submittedAt?Date.parse(p.submittedAt)>=periodStartMs:false;
+  const rets=p.stocks.map(s=>{
+    const mb=monthBase&&monthBase[s.ticker];
+    const baseline=(!enteredThisMonth&&Number.isFinite(mb)&&mb>0)?mb:s.initialPrice;
+    const c=curPrice(s.ticker,s.initialPrice,livePrices);
+    const base=baseline?c/baseline-1:0;
+    return s.side==="short"?-base:base; // short = espelho
+  });
+  return rets.reduce((a,b)=>a+b,0)/rets.length;
+}
+// Rentabilidade de um período JÁ FECHADO: preço no fim (baseTo) vs início (baseFrom), por ticker.
+function pfPeriodRet(p,baseFrom,baseTo){
+  const rets=(p?.stocks||[]).map(s=>{
+    const a=baseFrom&&baseFrom[s.ticker], b=baseTo&&baseTo[s.ticker];
+    if(!(a>0)||!(b>0)) return null;
+    const base=b/a-1;
+    return s.side==="short"?-base:base;
+  }).filter(x=>x!=null);
+  return rets.length?rets.reduce((x,y)=>x+y,0)/rets.length:null;
+}
+function nextPeriod(p){ const [y,m]=p.split("-").map(Number); return m===12?`${y+1}-01`:`${y}-${String(m+1).padStart(2,"0")}`; }
+function periodLabel(p){ const [y,m]=p.split("-").map(Number); return new Date(Date.UTC(y,m-1,1)).toLocaleDateString("pt-PT",{month:"long"}); }
 function pct(x,dp=2){ const v=(x*100).toFixed(dp); return `${x>=0?"+":""}${v}%`; }
 // Odómetro estilo Robinhood: cada dígito rola na vertical até ao valor (na entrada
 // e quando o valor muda). Carateres não-dígitos (sinais, ".", "%") ficam estáticos.
@@ -624,7 +656,7 @@ function sinceLabelShort(ts){
   return `${Math.round(days/365.25)}a`;
 }
 const tkNorm=(s)=>String(s||"").toUpperCase().replace(/\./g,"-").trim(); // matching de tickers (BRK.B↔BRK-B)
-function ATH({myTickers,auth,showToast}){
+function ATH({myTickers,auth,showToast,pickCounts,compTickers}){
   const authed=!!(auth&&auth.name&&auth.pin);
   const [rows,setRows]=useState(null);
   const [activeFilter,setActiveFilter]=useState(null); // null | "mine" | listId (watchlist)
@@ -740,9 +772,10 @@ function ATH({myTickers,auth,showToast}){
   const activeList=useMemo(()=>activeFilter&&activeFilter!=="mine"?lists.find(l=>l.id===activeFilter)||null:null,[activeFilter,lists]);
   const filterTickers=useMemo(()=>{
     if(activeFilter==="mine") return myTickers||[];
+    if(activeFilter==="comp") return compTickers||[];   // só as ações da competição
     if(activeList) return (activeList.tickers||[]).filter(t=>!String(t).includes("=")); // esconde futuros/commodities (ex. CC=F)
     return null; // null => mostrar a tabela toda (S&P 500)
-  },[activeFilter,myTickers,activeList]);
+  },[activeFilter,myTickers,activeList,compTickers]);
   // Preço/nome ao vivo dos tickers da lista ativa que NÃO estão no S&P 500 (ex. ASML).
   useEffect(()=>{
     if(!filterTickers||!rows) return;
@@ -829,11 +862,11 @@ function ATH({myTickers,auth,showToast}){
     border:`1px solid ${on?"rgba(74,222,128,0.55)":"rgba(255,255,255,0.14)"}`,background:on?"rgba(34,197,94,0.20)":"rgba(255,255,255,0.05)",color:on?"#bbf7d0":"#cbd5e1"});
   const miniBtn={cursor:"pointer",borderRadius:999,padding:"5px 12px",fontSize:12,fontWeight:600,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:"#cbd5e1"};
   const menuItem={cursor:"pointer",textAlign:"left",borderRadius:8,padding:"8px 12px",fontSize:13,fontWeight:600,border:"none",background:"transparent",color:"#e2e8f0",whiteSpace:"nowrap"};
-  const Hd=({k,children,align="center"})=>{
+  const Hd=({k,children,align="center",cls})=>{
     const active=sortKey===k;
     const ai=align==="right"?"flex-end":align==="left"?"flex-start":"center";
     return(
-      <span onClick={()=>onSort(k)} className={"athSortHd"+(active?" on":"")}
+      <span onClick={()=>onSort(k)} className={"athSortHd"+(active?" on":"")+(cls?" "+cls:"")}
         style={{display:"flex",flexDirection:"column",alignItems:ai,gap:1,cursor:"pointer",userSelect:"none"}}>
         <i className={"athArr"+(active&&sortDir==="asc"?" on":"")} aria-hidden="true">▲</i>
         {children}
@@ -844,7 +877,8 @@ function ATH({myTickers,auth,showToast}){
   return(
     <div style={{maxWidth:940,margin:"0 auto",padding:"40px 20px 120px"}}>
       <style>{`
-        .athRow{display:grid;grid-template-columns:44px 1fr 116px 96px 110px 110px 92px;gap:10px;align-items:center}
+        .athRow{display:grid;grid-template-columns:44px 1fr 116px 96px 84px 110px 110px 92px;gap:10px;align-items:center}
+        .athPickMini{display:none}
         .athPx{display:contents}            /* desktop: Preço e ATH ocupam 2 pistas reais */
         .athSinceShort{display:none}
         @keyframes athSpin{to{transform:rotate(360deg)}}
@@ -868,7 +902,7 @@ function ATH({myTickers,auth,showToast}){
 
         /* TABLET (<=760): mantém as 7 colunas, só aperta */
         @media(max-width:760px){
-          .athRow{grid-template-columns:30px 1fr 90px 84px 84px 80px 64px;gap:8px;
+          .athRow{grid-template-columns:30px 1fr 90px 84px 70px 84px 80px 64px;gap:8px;
             padding-left:14px!important;padding-right:14px!important}
         }
 
@@ -876,6 +910,8 @@ function ATH({myTickers,auth,showToast}){
         @media(max-width:480px){
           .athRow{grid-template-columns:16px minmax(0,1fr) 56px 60px 52px 38px;gap:6px;
             padding-left:8px!important;padding-right:8px!important}
+          .athPick{display:none!important}   /* coluna Membros: cabe só desktop/tablet */
+          .athPickMini{display:inline!important}   /* no telemóvel, % ao lado do ticker */
           .athNum{text-align:left!important;padding-left:0!important;font-size:12px!important}
           .athRow .stkLogo>*{width:22px!important;height:22px!important}
           .athRow .stkLogo img{width:22px!important;height:22px!important}
@@ -903,8 +939,12 @@ function ATH({myTickers,auth,showToast}){
       <h1 style={{textAlign:"center",fontSize:28,fontWeight:800,letterSpacing:"-0.5px",margin:"0 0 4px"}}>Máximo histórico</h1>
       <p style={{textAlign:"center",color:"#94a3b8",fontSize:14,margin:"0 0 24px"}}>Preço atual vs. ATH</p>
 
-      {authed&&(
+      {(authed||(compTickers&&compTickers.length>0))&&(
         <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",alignItems:"center",gap:8,marginBottom:12}}>
+          {compTickers&&compTickers.length>0&&(
+            <button className="athPill" onClick={()=>setActiveFilter(f=>f==="comp"?null:"comp")} title="Só as ações que os membros escolheram"
+              style={pillStyle(activeFilter==="comp")}>{activeFilter==="comp"?"✓ ":""}Competição · {compTickers.length}</button>
+          )}
           {myTickers&&myTickers.length>0&&(
             <button className="athPill" onClick={()=>setActiveFilter(f=>f==="mine"?null:"mine")} title="Mostrar só as minhas ações"
               style={pillStyle(activeFilter==="mine")}>{activeFilter==="mine"?"✓ ":""}Minhas {myTickers.length}</button>
@@ -929,7 +969,7 @@ function ATH({myTickers,auth,showToast}){
               )}
             </span>
           ))}
-          {draftName!==null?(
+          {authed&&(draftName!==null?(
             <input autoFocus value={draftName} onChange={e=>setDraftName(e.target.value)}
               onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); e.currentTarget.blur(); } else if(e.key==="Escape"){ draftCancel.current=true; e.currentTarget.blur(); } }}
               onBlur={()=>{ if(draftCancel.current){ draftCancel.current=false; setDraftName(null); return; } const nm=(draftName||"").trim(); if(nm) createList(nm); setDraftName(null); }}
@@ -939,7 +979,7 @@ function ATH({myTickers,auth,showToast}){
           ):(
             <button onClick={()=>setDraftName("")} title="Criar nova watchlist"
               style={{cursor:"pointer",background:"none",border:"none",color:"#94a3b8",fontSize:22,lineHeight:1,padding:"2px 8px",fontWeight:400}}>+</button>
-          )}
+          ))}
         </div>
       )}
 
@@ -983,6 +1023,7 @@ function ATH({myTickers,auth,showToast}){
           <span aria-hidden="true"/><span className="athHead">Empresa</span>
           <Hd k="marketcap" align="center"><span className="athHead">Marketcap</span></Hd>
           <Hd k="down" align="center"><span className="athHead">% abaixo</span></Hd>
+          <span className="athPick athHead" style={{textAlign:"center"}}>Membros</span>
           <span className="athPx athHead" style={{textAlign:"center"}}>
             <span style={{textAlign:"center"}}>Preço</span>
             <span className="athHeadAth" style={{textAlign:"center"}}>ATH</span>
@@ -1017,13 +1058,18 @@ function ATH({myTickers,auth,showToast}){
           const col=r.down==null?"#94a3b8":up?"#4ade80":"#f87171";
           const bg=r.down==null?"transparent":up?"rgba(34,197,94,0.10)":"rgba(248,113,113,0.10)";
           const bd=r.down==null?"rgba(255,255,255,0.12)":up?"rgba(34,197,94,0.35)":"rgba(248,113,113,0.35)";
+          const picks=pickCounts?.[tkNorm(r.symbol)]||0;
+          const mine=!!(myTickers&&myTickers.some(t=>tkNorm(t)===tkNorm(r.symbol)));
           return(
-            <div key={r.symbol} className={"athRow"+(authed?" athClickable":"")} onClick={authed?()=>openAdd(r.symbol):undefined} title={authed?"Adicionar a uma watchlist":undefined} style={{padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,0.07)",cursor:authed?"pointer":"default"}}>
+            <div key={r.symbol} className={"athRow"+(authed?" athClickable":"")} onClick={authed?()=>openAdd(r.symbol):undefined} title={authed?"Adicionar a uma watchlist":undefined} style={{padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,0.07)",cursor:authed?"pointer":"default",boxShadow:mine?"inset 3px 0 0 rgba(34,197,94,0.6)":"none"}}>
               <span className="athNum" style={{textAlign:"center",fontSize:13,color:"#64748b",fontWeight:700}}>{i+1}</span>
               <span className="athEmp" style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
                 <StockLogo ticker={r.symbol} size={30}/>
                 <span style={{minWidth:0,display:"flex",flexDirection:"column",lineHeight:1.15}}>
-                  <span className="athSym" style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.symbol}</span>
+                  <span className="athSym" style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{r.symbol}</span>
+                    {picks>0&&<span className="athPickMini" style={{fontSize:10.5,color:"#94a3b8",fontWeight:700,flexShrink:0}}>{picks}</span>}
+                  </span>
                   <span className="athName" style={{fontSize:12,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</span>
                 </span>
               </span>
@@ -1033,6 +1079,9 @@ function ATH({myTickers,auth,showToast}){
                   background:bg,border:`1px solid ${bd}`,borderRadius:8,padding:"4px 8px"}}>
                   {r.down==null?"—":`${up?"+":""}${(r.down*100).toFixed(1)}%`}
                 </span>
+              </span>
+              <span className="athPick" style={{textAlign:"center",fontFamily:"monospace",fontSize:13,fontWeight:700,color:picks>0?"#94a3b8":"#475569"}} title={picks>0?`${picks} membro(s) têm esta ação`:"Ninguém na competição tem esta ação"}>
+                {picks>0?picks:"—"}
               </span>
               <span className="athPx">
                 <span className="athPxPrice" style={{textAlign:"center",fontFamily:"monospace",fontSize:14,fontWeight:700}}>{fmtMoneyC(r.price,curSym(curForTicker(r.symbol)))}</span>
@@ -1169,7 +1218,7 @@ function fmtDateShort(iso){
 }
 // Contador da competição: antes do arranque conta até ao fim das submissões;
 // depois mostra a data do vencedor + contagem decrescente. Elegante e responsivo.
-function CompetitionTimer({settings}){
+function CompetitionTimer({settings,period}){
   const [now,setNow]=useState(null);
   useEffect(()=>{
     setNow(Date.now());
@@ -1178,25 +1227,33 @@ function CompetitionTimer({settings}){
   },[]);
   if(!settings||now==null) return null;
   const started=settings.competitionStarted;
-  const targetStr=started?settings.gameEndDate:settings.gameStartDate;
-  if(!targetStr) return null;
-  const target=new Date(targetStr).getTime();
-  if(isNaN(target)) return null;
-  const diff=target-now;
-  if(diff<=0) return null;
-  const d=Math.ceil(diff/86400000);
-  const cd=d===1?"1 dia":`${d} dias`;
+  let label, d;
+  if(started&&period==="month"){
+    // Mini-época mensal: vencedor apurado no ÚLTIMO dia do mês. Faltam = (último dia − dia de hoje).
+    const nd=new Date(now);
+    const lastNum=new Date(nd.getFullYear(),nd.getMonth()+1,0).getDate(); // ex.: 31 (julho)
+    d=lastNum-nd.getDate();                                               // 31 − 3 = 28
+    const endStr=`${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,"0")}-${String(lastNum).padStart(2,"0")}`;
+    label=`Vencedor a ${fmtDateShort(endStr)}`;
+  }else{
+    const targetStr=started?settings.gameEndDate:settings.gameStartDate;
+    if(!targetStr) return null;
+    const target=new Date(targetStr).getTime();
+    if(isNaN(target)) return null;
+    const diff=target-now;
+    if(diff<=0) return null;
+    d=Math.ceil(diff/86400000);
+    label=started?`Vencedor a ${fmtDateShort(settings.gameEndDate)}`:"";
+  }
   const accent=started?"#fbbf24":"#fcd34d";
-  const label=started?`Vencedor a ${fmtDateShort(settings.gameEndDate)}`:"";
   return(
     <div style={{display:"flex",justifyContent:"center"}}>
-      <style>{`@keyframes cdtPulse{0%,100%{transform:scale(1);opacity:0.92}50%{transform:scale(1.04);opacity:1}}`}</style>
       <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:10,flexWrap:"wrap",
-        maxWidth:"100%",padding:"8px 16px",borderRadius:999,textAlign:"center",animation:"cdtPulse 2.4s ease-in-out infinite",
+        maxWidth:"100%",padding:"8px 16px",borderRadius:999,textAlign:"center",
         background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",
         border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 6px 22px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"}}>
         {label&&<span style={{fontSize:13,color:"#cbd5e1",fontWeight:600,whiteSpace:"nowrap"}}>{label}</span>}
-        <span style={{fontSize:13,fontWeight:800,fontFamily:"monospace",color:accent,whiteSpace:"nowrap"}}>faltam {cd}</span>
+        <span style={{fontSize:13,fontWeight:800,fontFamily:"monospace",color:accent,whiteSpace:"nowrap"}}>{d<=0?"apura-se hoje":`faltam ${d===1?"1 dia":`${d} dias`}`}</span>
       </div>
     </div>
   );
@@ -1289,6 +1346,8 @@ export default function App(){
   const [settings,setSettings]=useState(null);
   const [portfolios,setPortfolios]=useState([]);
   const [spyHist,setSpyHist]=useState(null);
+  const [monthBase,setMonthBase]=useState({}); // {ticker:preço} baseline do mês atual (mini-época mensal)
+  const [pastBaselines,setPastBaselines]=useState({}); // {period:{ticker:preço}} p/ campeões de meses fechados
   const [myName,setMyName]=useState(null);
   const [hasSubmitted,setHasSubmitted]=useState(false);
   const [livePrices,setLivePrices]=useState({});
@@ -1400,6 +1459,16 @@ export default function App(){
     // unavailable, the benchmark simply doesn't render.
     fetchStockHistory("SPY").then(h=>setSpyHist(h&&h.length?h:null)).catch(()=>{});
 
+    // Baselines mensais (mini-época "Campeão do mês"). Falha em silêncio → cai no total.
+    supabase.from("monthly_baselines").select("period,ticker,price").then(({data})=>{
+      const period=new Date().toISOString().slice(0,7); // 'YYYY-MM' (UTC)
+      const cur={}, past={};
+      (data||[]).forEach(r=>{ const price=Number(r.price); if(!(price>0)) return;
+        (past[r.period]=past[r.period]||{})[r.ticker]=price;
+        if(r.period===period) cur[r.ticker]=price; });
+      setMonthBase(cur); setPastBaselines(past);
+    }).catch(()=>{});
+
     let submitted=false;
     if(mn?.trim()){
       const { data: userRow, error: userError }=await supabase
@@ -1444,6 +1513,12 @@ export default function App(){
     portfolios.map(p=>({...p,...pfStats(p,livePrices)}))
       .sort((a,b)=>(Number.isFinite(b.total)?b.total:-Infinity)-(Number.isFinite(a.total)?a.total:-Infinity))
   ,[portfolios,livePrices]);
+  // Popularidade por ação na competição (liga a aba ATH ao jogo): quantos oficiais têm cada ticker.
+  const compStats=useMemo(()=>{
+    const off=ranking.filter(p=>p.official); const counts={};
+    for(const p of off) for(const s of (p.stocks||[])){ const k=tkNorm(s.ticker); if(k) counts[k]=(counts[k]||0)+1; }
+    return { counts, members:off.length, tickers:Object.keys(counts) };
+  },[ranking]);
 
   // S&P 500 benchmark — alinhado no tempo: "se tivesses metido no SPY em vez das
   // 8 ações, no mesmo período". Usa o preço do SPY AGORA (ao vivo) vs o preço do
@@ -1554,8 +1629,8 @@ export default function App(){
   if(page==="home")   return sh(<Home nav={nav} submitted={submitted} settings={settings} ranking={ranking} livePrices={livePrices} onMyPortfolio={openMyPortfolio}/>);
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
-  if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} showToast={showToast}/>);
-  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)}/>);
+  if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} pickCounts={compStats.counts} compTickers={compStats.tickers} showToast={showToast}/>);
+  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} monthBase={monthBase} pastBaselines={pastBaselines} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)}/>);
   if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} dayChange={dayChange} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
@@ -2831,14 +2906,16 @@ function HoverName({label,children,ring}){
     </span>
   );
 }
-function InfoTip({text}){
+function InfoTip({text,children}){
   const [open,setOpen]=useState(false);
   return(
     <span style={{position:"relative",display:"inline-flex",verticalAlign:"middle"}}
       onMouseEnter={()=>setOpen(true)} onMouseLeave={()=>setOpen(false)}>
       <span onClick={e=>{e.stopPropagation();setOpen(o=>!o);}}
-        style={{display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,
-          width:14,height:14,borderRadius:"50%",border:"1px solid currentColor",fontSize:9,lineHeight:1,fontWeight:700,opacity:0.65}}>i</span>
+        style={children
+          ?{display:"inline-flex",alignItems:"center",cursor:"help"}
+          :{display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,
+            width:14,height:14,borderRadius:"50%",border:"1px solid currentColor",fontSize:9,lineHeight:1,fontWeight:700,opacity:0.65}}>{children||"i"}</span>
       {open&&(
         <span onClick={e=>e.stopPropagation()} style={{position:"absolute",top:"calc(100% + 8px)",right:0,zIndex:100,width:230,
           background:"rgba(8,15,32,0.97)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,padding:"9px 12px",
@@ -2850,7 +2927,7 @@ function InfoTip({text}){
     </span>
   );
 }
-function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunch,settings,onSelect,onCompare,highlightKey,clearHighlight}){
+function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunch,settings,monthBase,pastBaselines,onSelect,onCompare,highlightKey,clearHighlight}){
   const [cmp,setCmp]=useState(false);
   const [sel,setSel]=useState([]);
   // Mini-curva por linha: snapshots por portefólio (histórico). Recarrega só quando o
@@ -2885,6 +2962,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   const [sortKey,setSortKey]=useState("total"); // total (Rentab.) | day (Diário) — colunas ordenáveis
   const [sortDir,setSortDir]=useState("desc");  // desc = melhor no topo; 2º clique inverte (▲/▼)
   const onSort=(k)=>{ if(sortKey===k) setSortDir(d=>d==="asc"?"desc":"asc"); else { setSortKey(k); setSortDir("desc"); } };
+  // Mini-época mensal: 'total' = Ranking Geral; 'month' = corrida deste mês (reset do ponto de partida).
+  const [period,setPeriod]=useState("total");
+  const monthOf=(p)=>pfMonthRet(p,monthBase,livePrices);
+  const hasMonth=!!(monthBase&&Object.keys(monthBase).length); // só há corrida mensal distinta quando há baselines do mês (a partir de agosto)
   // Coluna do nome = largura do NOME MAIS COMPRIDO (medido na fonte real) → todas as linhas
   // alinhadas e as sparklines começam todas no MESMO sítio (logo a seguir ao maior nome).
   const [nameW,setNameW]=useState(190);
@@ -2942,8 +3023,12 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     );
   };
   const tableFor=(list,{searchable=false}={})=>{
+    const monthly=searchable&&period==="month";
+    // Modo mensal: reordena a base pela rentabilidade do MÊS → o nº do lugar (#) reflete a
+    // CLASSIFICAÇÃO MENSAL (corrida nova), não a geral. Modo geral: ordem tal como vem (por total).
+    const src=monthly?[...list].sort((a,b)=>{ const va=monthOf(a),vb=monthOf(b); if(va==null&&vb==null)return 0; if(va==null)return 1; if(vb==null)return -1; return vb-va; }):list;
     // Rank REAL anotado antes de ordenar/filtrar (a ordenação/filtro NÃO estraga o nº do lugar).
-    const ranked=list.map((p,i)=>({...p,_rank:i+1}));
+    const ranked=src.map((p,i)=>({...p,_rank:i+1}));
     const q=norm(query), pq=norm(posQuery);
     const matchesPos=(p)=>(p.stocks||[]).some(s=>norm(s.ticker).includes(pq)||norm(s.companyName).includes(pq));
     const posCount=(searchable&&pq)?ranked.filter(matchesPos).length:0; // quantos membros têm a posição
@@ -2953,13 +3038,13 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     if(searchable){
       if(q) shown=shown.filter(p=>norm(p.name).includes(q));
       if(pq) shown=shown.filter(matchesPos);
-      const valOf=sortKey==="day"?pfDayReturn:(p=>p.total);
+      const valOf=monthly?(sortKey==="day"?pfDayReturn:monthOf):(sortKey==="day"?pfDayReturn:(p=>p.total));
       const sign=sortDir==="asc"?1:-1;
       shown=[...shown].sort((a,b)=>{ const va=valOf(a),vb=valOf(b); if(va==null&&vb==null)return 0; if(va==null)return 1; if(vb==null)return -1; return (va-vb)*sign; });
       if(!q&&!pq) shown=shown.slice(0,shownRows);
     }
     return(
-    <div style={{background:"rgba(15,27,50,0.62)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
+    <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
       <div className="rkRow" style={{padding:"10px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",
         fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,alignItems:"center"}}>
         {searchable ? (
@@ -2985,9 +3070,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
           </>
         ) : (<><span style={{textAlign:"center"}}>#</span><span>Membro</span></>)}
         <span className="rkSpark"></span>
-        {searchable?<SortHd k="total">Rentab.</SortHd>:<span style={{textAlign:"center"}}>Rentab.</span>}
+        {searchable?<SortHd k="total">{period==="month"?"Mês":"Rentab."}</SortHd>:<span style={{textAlign:"center"}}>Rentab.</span>}
         {searchable?<SortHd k="day">Diário</SortHd>:<span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>Diário<InfoTip text="Rentabilidade do portefólio hoje (média diária das ações; espelhada para shorts)."/></span>}
-        <span style={{textAlign:"center"}}>🟢/🔴</span>
+        <span style={{display:"flex",alignItems:"center",justifyContent:"center"}}><InfoTip text="🟢/🔴 = nº de ações em ganho / em perda (não são posições long/short).">🟢/🔴</InfoTip></span>
         {searchable ? (
           <span className="rkHide" style={{position:"relative",display:"flex",alignItems:"center",minWidth:0}}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
@@ -3016,6 +3101,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         const i=p._rank-1; // rank real (mantém nº do lugar e estilos Top 3/Top 10 mesmo ao filtrar)
         const me=p.normName===myNorm;
         const dayRet=pfDayReturn(p);
+        const rentVal=monthly?monthOf(p):p.total; // valor mostrado na coluna Rentab./Mês
         const picked=cmp&&sel.includes(p.key);
         // Top 3: ouro (1º, amarelo vivo) / prata (2º) / bronze-âmbar (3º). 4º-10º: cor geral.
         const rr=i<3?[
@@ -3044,11 +3130,11 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
             </span>
             <span className="rkSpark">
-              <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24} flat/>
+              <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24}/>
             </span>
-            <span style={{textAlign:"center",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:"clamp(12.5px,3.6vw,15px)",color:p.total>=0?"#4ade80":"#f87171"}}>{pct(p.total)}</span>
+            <span style={{textAlign:"center",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:"clamp(12.5px,3.6vw,15px)",color:(rentVal??0)>=0?"#4ade80":"#f87171"}}>{rentVal==null?"—":<Rolling text={pct(rentVal)}/>}</span>
             <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:"clamp(11px,3vw,13px)",fontWeight:600,
-              color:dayRet==null?"#4b5563":dayRet>=0?"#4ade80":"#f87171"}}>{dayRet==null?"—":pct(dayRet)}</span>
+              color:dayRet==null?"#4b5563":dayRet>=0?"#4ade80":"#f87171"}}>{dayRet==null?"—":<Rolling text={pct(dayRet)}/>}</span>
             <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:"clamp(11px,3vw,14px)",fontWeight:700}}>
               <span style={{color:"#4ade80"}}>{p.pos}</span><span style={{color:"#94a3b8"}}>/</span><span style={{color:"#f87171"}}>{p.neg}</span>
             </span>
@@ -3237,7 +3323,53 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       <div style={{display:"flex",flexDirection:"column",gap:8}}>{stockPerf.worst.map(perfRow)}</div>
     </div>
   ),"Ações escolhidas pelos membros com melhor e pior rentabilidade desde o arranque da competição."):null;
+  // "Campeão do mês" (mini-época mensal): líder ao vivo deste mês + campeões dos meses fechados
+  // (recalculados on-the-fly a partir dos baselines de início de cada mês).
+  const monthNameCap=(()=>{ const n=new Date().toLocaleDateString("pt-PT",{month:"long"}); return n.charAt(0).toUpperCase()+n.slice(1); })();
+  const monthLeaders=preLaunch?[]:[...officials].map(p=>({p,m:monthOf(p)})).filter(x=>x.m!=null).sort((a,b)=>b.m-a.m);
+  const pastChamps=(()=>{
+    if(preLaunch||!pastBaselines) return [];
+    const curPeriod=new Date().toISOString().slice(0,7);
+    const out=[];
+    for(const per of Object.keys(pastBaselines).sort()){
+      if(per>=curPeriod) continue;                 // só meses JÁ FECHADOS
+      const from=pastBaselines[per], to=pastBaselines[nextPeriod(per)]; // fim do mês = início do mês seguinte
+      if(!from||!to) continue;
+      let best=null;
+      for(const p of officials){ const r=pfPeriodRet(p,from,to); if(r!=null&&(!best||r>best.r)) best={p,r}; }
+      if(best) out.push({period:per,...best});
+    }
+    return out.reverse();                           // mais recente primeiro
+  })();
+  const wMonthChamp=(!preLaunch&&officials.length)?railCard(`Campeão de ${monthNameCap}`,(
+    <div>
+      {monthLeaders.length?(
+        // Mês em curso: o vencedor só é apurado no último dia do mês. Sem líder à vista → mais suspense.
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:20,lineHeight:1}}>⏳</span>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:14,fontWeight:800,color:"#e2e8f0",lineHeight:1.15}}>Por apurar</div>
+            <div style={{fontSize:10.5,color:"#94a3b8"}}>Apurado no último dia do mês</div>
+          </div>
+        </div>
+      ):<div style={{fontSize:12.5,color:"#94a3b8"}}>Sem participantes ainda.</div>}
+      {pastChamps.length>0&&(
+        <div style={{marginTop:10,borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:8}}>
+          <div style={{fontSize:10,color:"#64748b",fontWeight:800,textTransform:"uppercase",letterSpacing:".4px",marginBottom:6}}>Campeões anteriores</div>
+          {pastChamps.slice(0,4).map(c=>(
+            <div key={c.period} onClick={()=>onSelect(c.p.key)} title="Ver portefólio" style={{cursor:"pointer",display:"flex",justifyContent:"space-between",gap:8,padding:"4px 0",fontSize:12.5}}>
+              <span style={{color:"#94a3b8",textTransform:"capitalize",flexShrink:0}}>{periodLabel(c.period)}</span>
+              <span style={{color:"#e2e8f0",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,textAlign:"right"}}>{c.p.name}</span>
+              <span style={{fontFamily:"monospace",fontWeight:800,color:c.r>=0?"#4ade80":"#f87171",flexShrink:0}}>{pct(c.r)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  ),"Melhor rentabilidade do mês, com o ponto de partida reposto no início de cada mês (mesma carteira) — uma corrida nova todos os meses. O campeão só é apurado no último dia do mês. Os meses fechados são recalculados a partir dos preços de início de cada mês."):null;
   const leftRail=<>{wYou}{wStocks}</>;
+  // O campeão sai do rail direito e vai, isolado, para a linha do cabeçalho (célula .railChamp,
+  // à altura do 1v1). Os restantes ficam no rail direito (.railR), à altura da tabela — onde sempre estiveram.
   const rightRail=<>{wVsSp}{wHi}{wPicks}</>;
 
   return(
@@ -3255,9 +3387,42 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         .rkNarrowHd{display:none}   /* cabeçalhos simples #/Membro: só aparecem no mobile */
         @keyframes rkHiFlash{0%{background-color:rgba(59,130,246,0.30)}60%{background-color:rgba(59,130,246,0.15)}100%{background-color:rgba(59,130,246,0)}}
         .rkHiFlash{animation:rkHiFlash 2.6s ease-out}
-        .rkLayout{display:grid;grid-template-columns:minmax(240px,1fr) minmax(0,900px) minmax(240px,1fr);gap:28px;align-items:start;justify-content:center}
+        /* Grelha de 2 LINHAS: linha 1 = cabeçalho (centro) + campeão (direita, à altura do 1v1);
+           linha 2 = rail esquerdo + tabela + rail direito (widgets onde sempre estiveram). */
+        .rkLayout{display:grid;grid-template-columns:minmax(240px,1fr) minmax(0,900px) minmax(240px,1fr);
+          grid-template-rows:auto auto;grid-template-areas:". hdr champ" "left tbl rail";
+          column-gap:28px;row-gap:0;align-items:start;justify-content:center}
+        .cHeader{grid-area:hdr;min-width:0}
+        .rkCenter{grid-area:tbl;min-width:0}
         .rkRail{position:sticky;top:84px;display:flex;flex-direction:column;gap:16px}
-        @media(max-width:1439px){ .rkLayout{grid-template-columns:minmax(0,900px);justify-content:center} .rkRail{display:none} }
+        .railL{grid-area:left}
+        .railR{grid-area:rail}
+        /* "Campeão do mês" ISOLADO na linha do cabeçalho, coluna direita (na horizontal do 1v1). A
+           célula estica à altura do cabeçalho e o cartão fica sticky: pina no topo e CEDE quando a
+           linha da tabela sobe (aí os widgets de baixo, .railR, tomam o topo). Sem sobreposição:
+           por baixo do campeão, na sua célula, só há espaço vazio. */
+        .railChamp{grid-area:champ;align-self:stretch;min-width:0}
+        /* z-index:10 → o cartão (e a etiqueta "i", que transborda para cima do gráfico) fica ACIMA
+           do GlowBehind do SeasonRace (que é position:relative;z-index:1). */
+        .railChamp > *{position:sticky;top:84px;z-index:10}
+        /* Linha do cabeçalho: título (esq.) · toggle (centro EXATO da página) · 1v1 (dir.).
+           1fr auto 1fr → o toggle fica sempre no centro, independentemente de o título ser
+           "Ranking Geral" ou "Ranking Mensal" (larguras diferentes não o mexem). */
+        .rkHeadRow{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:12px;margin-bottom:6px}
+        .rkHeadTitle{justify-self:start;min-width:0}
+        .rkHeadToggle{justify-self:center}
+        .rkHeadV1{justify-self:end}
+        @media(max-width:560px){
+          /* telemóvel: título + 1v1 na 1ª linha; toggle centrado na 2ª. */
+          .rkHeadRow{grid-template-columns:1fr auto;grid-template-areas:"title v1" "toggle toggle";row-gap:10px}
+          .rkHeadTitle{grid-area:title;white-space:normal}
+          .rkHeadV1{grid-area:v1}
+          .rkHeadToggle{grid-area:toggle}
+        }
+        @media(max-width:1439px){
+          .rkLayout{grid-template-columns:minmax(0,900px);grid-template-areas:"hdr" "tbl";justify-content:center}
+          .rkRail,.railChamp{display:none}
+        }
         @media(max-width:860px){
           /* MOBILE/tablet: sem caixas de pesquisa nem ícones de posições (são só desktop).
              As caixas/ícones têm display:flex inline → precisa de !important para as esconder. */
@@ -3281,25 +3446,32 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
           .rkRow{grid-template-columns:22px 1fr 58px 54px 44px;gap:10px}
         }
       `}</style>
-      <div style={{maxWidth:900,margin:"0 auto"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
-        <h1 style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px",marginBottom:4}}>Ranking Geral</h1>
-        {ranking.length>=2&&(
-          <button onClick={()=>{ setCmp(v=>!v); setSel([]); }}
+      {/* Grelha de 2 linhas: campeão isolado em cima-direita (linha do cabeçalho, à altura do 1v1);
+          rail esquerdo, tabela e rail direito na linha de baixo (onde sempre estiveram). */}
+      <div className="rkLayout">
+      <aside className="rkRail railL">{leftRail}</aside>
+      <aside className="railChamp">{wMonthChamp}</aside>
+      <div className="cHeader">
+      <div className="rkHeadRow">
+        <h1 className="rkHeadTitle" style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px",margin:0,whiteSpace:"nowrap"}}>{period==="month"?"Ranking Mensal":"Ranking Geral"}</h1>
+        {hasMonth&&!preLaunch?(
+          <div className="rkHeadToggle" style={{display:"inline-flex",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:999,padding:2}}>
+            {[["total","Geral"],["month","Este mês"]].map(([k,lbl])=>(
+              <button key={k} onClick={()=>setPeriod(k)} style={{cursor:"pointer",fontSize:12.5,fontWeight:700,borderRadius:999,padding:"6px 14px",border:"none",whiteSpace:"nowrap",
+                color:period===k?"#0a0a0a":"#cbd5e1",background:period===k?"#4ade80":"transparent",transition:"all .15s"}}>{lbl}</button>
+            ))}
+          </div>
+        ):<span className="rkHeadToggle" aria-hidden="true"/>}
+        {ranking.length>=2?(
+          <button className="rkHeadV1" onClick={()=>{ setCmp(v=>!v); setSel([]); }}
             style={{cursor:"pointer",fontSize:13,fontWeight:700,borderRadius:999,padding:"8px 16px",
-              color:cmp?"#0a0a0a":"#cbd5e1",
-              background:cmp?"#3b82f6":"rgba(255,255,255,0.06)",
-              border:`1px solid ${cmp?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.12)"}`}}>
-            1v1
-          </button>
-        )}
+              color:cmp?"#0a0a0a":"#cbd5e1",background:cmp?"#3b82f6":"rgba(255,255,255,0.06)",
+              border:`1px solid ${cmp?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.12)"}`}}>1v1</button>
+        ):<span className="rkHeadV1" aria-hidden="true"/>}
       </div>
-      <p style={{color:"#94a3b8",fontSize:14,margin:"0 0 8px"}}>
-        Classificação por rentabilidade total, em tempo real · {officials.length} {officials.length===1?"participante":"participantes"}.
+      <p style={{color:"#94a3b8",fontSize:14,margin:"0 0 28px"}}>
+        {period==="month"?"Corrida deste mês · ponto de partida reposto no início do mês (mesma carteira)":"Classificação por rentabilidade total, em tempo real"} · {officials.length} {officials.length===1?"participante":"participantes"}.
         {pricesLoading?" · A atualizar preços…":(pricesAt?` · Atualizado ${new Date(pricesAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}`:"")}
-      </p>
-      <p style={{color:"#64748b",fontSize:12.5,margin:"0 0 28px"}}>
-        <span style={{whiteSpace:"nowrap"}}>🟢/🔴 = nº de ações em ganho / em perda</span> <span style={{opacity:0.75}}>(não são posições long/short)</span>
       </p>
       {ranking.length>0&&(<>
         {/* Season Race + (demos) + pílula do vencedor — a toda a largura, por cima da grelha */}
@@ -3313,14 +3485,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
           </div>
         )}
         <div style={{margin:"0 0 16px"}}>
-          <CompetitionTimer settings={settings}/>
+          <CompetitionTimer settings={settings} period={period}/>
         </div>
       </>)}
-      </div>{/* /cabeçalho centrado 900 */}
-
-      {/* Grelha: widgets laterais + a TABELA (os laterais começam no topo da tabela) */}
-      <div className="rkLayout">
-      <aside className="rkRail">{leftRail}</aside>
+      </div>{/* /cHeader */}
       <div className="rkCenter" style={{minWidth:0}}>
       {ranking.length===0
         ? <div style={{textAlign:"center",padding:80,color:"#4b5563"}}>Ainda não há portefólios submetidos.</div>
@@ -3350,7 +3518,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         </div>
       )}
       </div>{/* /rkCenter */}
-      <aside className="rkRail">{rightRail}</aside>
+      <aside className="rkRail railR">{rightRail}</aside>
       </div>{/* /rkLayout */}
     </div>
   );

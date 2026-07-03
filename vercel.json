@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/dispatch-ath",
       "schedule": "0 6 * * 1-5"
+    },
+    {
+      "path": "/api/cron/monthly-baselines",
+      "schedule": "0 14 1-5 * *"
     }
   ]
 }
