@@ -2859,6 +2859,20 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   const [sortKey,setSortKey]=useState("total"); // total (Rentab.) | day (Diário) — colunas ordenáveis
   const [sortDir,setSortDir]=useState("desc");  // desc = melhor no topo; 2º clique inverte (▲/▼)
   const onSort=(k)=>{ if(sortKey===k) setSortDir(d=>d==="asc"?"desc":"asc"); else { setSortKey(k); setSortDir("desc"); } };
+  // Coluna do nome = largura do NOME MAIS COMPRIDO (medido na fonte real) → todas as linhas
+  // alinhadas e as sparklines começam todas no MESMO sítio (logo a seguir ao maior nome).
+  const [nameW,setNameW]=useState(190);
+  const namesKey=officials.map(p=>p.name).join("|");
+  useEffect(()=>{
+    if(typeof document==="undefined"||!officials.length) return;
+    const el=document.createElement("span");
+    el.style.cssText="position:absolute;left:-9999px;top:-9999px;visibility:hidden;white-space:nowrap;font-weight:600;font-size:15px;font-family:var(--font-app),system-ui,-apple-system,sans-serif";
+    document.body.appendChild(el);
+    let max=0;
+    for(const p of officials){ el.textContent=p.name||""; if(el.offsetWidth>max) max=el.offsetWidth; }
+    document.body.removeChild(el);
+    if(max>0) setNameW(Math.min(190,Math.ceil(max)+12)); // +12: respiro antes da linha + margem p/ o "Tu"
+  },[namesKey]);
   useEffect(()=>{
     if(shownRows>=officials.length) return;
     // ~150ms antes de montar o resto: dá tempo à rolagem dos números do TOPO arrancar. Como
@@ -2879,7 +2893,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   const SortHd=({k,children})=>{
     const active=sortKey===k;
     return(
-      <span onClick={()=>onSort(k)} title="Ordenar" style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:3,cursor:"pointer",userSelect:"none",color:active?"#e2e8f0":undefined}}>
+      <span onClick={()=>onSort(k)} title="Ordenar" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:3,cursor:"pointer",userSelect:"none",color:active?"#e2e8f0":undefined}}>
         {children}
         <span aria-hidden="true" style={{fontSize:8,lineHeight:1,color:active?"#e2e8f0":"#475569"}}>{active?(sortDir==="asc"?"▲":"▼"):"▼"}</span>
       </span>
@@ -2929,8 +2943,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
           </>
         ) : (<><span style={{textAlign:"center"}}>#</span><span>Membro</span></>)}
         <span className="rkSpark"></span>
-        {searchable?<SortHd k="total">Rentab.</SortHd>:<span style={{textAlign:"right"}}>Rentab.</span>}
-        {searchable?<SortHd k="day">Diário</SortHd>:<span style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4}}>Diário<InfoTip text="Rentabilidade do portefólio hoje (média diária das ações; espelhada para shorts)."/></span>}
+        {searchable?<SortHd k="total">Rentab.</SortHd>:<span style={{textAlign:"center"}}>Rentab.</span>}
+        {searchable?<SortHd k="day">Diário</SortHd>:<span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>Diário<InfoTip text="Rentabilidade do portefólio hoje (média diária das ações; espelhada para shorts)."/></span>}
         <span style={{textAlign:"center"}}>🟢/🔴</span>
         {searchable ? (
           <span className="rkHide" style={{position:"relative",display:"flex",alignItems:"center",minWidth:0}}>
@@ -2990,8 +3004,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
             <span className="rkSpark">
               <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24}/>
             </span>
-            <span style={{textAlign:"right",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:"clamp(12.5px,3.6vw,15px)",color:p.total>=0?"#4ade80":"#f87171"}}><Rolling text={pct(p.total)}/></span>
-            <span style={{textAlign:"right",alignSelf:"center",fontFamily:"monospace",fontSize:"clamp(11px,3vw,13px)",fontWeight:600,
+            <span style={{textAlign:"center",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:"clamp(12.5px,3.6vw,15px)",color:p.total>=0?"#4ade80":"#f87171"}}><Rolling text={pct(p.total)}/></span>
+            <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:"clamp(11px,3vw,13px)",fontWeight:600,
               color:dayRet==null?"#4b5563":dayRet>=0?"#4ade80":"#f87171"}}>{dayRet==null?"—":<Rolling text={pct(dayRet)}/>}</span>
             <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:"clamp(11px,3vw,14px)",fontWeight:700}}>
               <span style={{color:"#4ade80"}}>{p.pos}</span><span style={{color:"#94a3b8"}}>/</span><span style={{color:"#f87171"}}>{p.neg}</span>
@@ -3185,9 +3199,12 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   const rightRail=<>{wVsSp}{wHi}{wPicks}</>;
 
   return(
-    <div style={{maxWidth:1520,margin:"0 auto",padding:"40px 20px 120px"}}>
+    <div style={{maxWidth:1520,margin:"0 auto",padding:"40px 20px 120px","--rk-name-w":`${nameW}px`}}>
       <style>{`
-        .rkRow{display:grid;grid-template-columns:40px 190px 1fr 100px 100px 92px 150px;gap:8px}
+        /* Coluna do nome = largura FIXA do nome mais comprido (--rk-name-w, medido em runtime) →
+           todas as linhas alinhadas e as sparklines (1fr) começam todas no mesmo sítio, colado ao
+           maior nome. Fallback 190px enquanto não mede. */
+        .rkRow{display:grid;grid-template-columns:40px var(--rk-name-w,190px) 1fr 72px 72px 56px 150px;gap:8px}
         .rkSpark{display:flex;align-items:center;align-self:center;height:24px;overflow:hidden;min-width:0}
         .rkNarrowHd{display:none}   /* cabeçalhos simples #/Membro: só aparecem no mobile */
         @keyframes rkHiFlash{0%{background-color:rgba(59,130,246,0.30)}60%{background-color:rgba(59,130,246,0.15)}100%{background-color:rgba(59,130,246,0)}}
