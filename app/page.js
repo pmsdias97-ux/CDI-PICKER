@@ -3703,18 +3703,24 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   // medalhão (não é uma época com vencedor apurado). Só visual (não clicável).
   const badgeSrc=period==="week"?"/cdi-semana-winner.webp":"/cdi-mensal-winner.webp";
   const wBadge=period==="total"?null:(
-    // key={period} → remonta ao trocar de aba (Mensal↔Semanal) para a entrada "cunhagem" repetir.
+    // key={period} → remonta ao trocar de aba (Mensal↔Semanal) para a entrada "autocolante" repetir.
+    // Estrutura: .cdiHolo (entrada + sombra) > .cdiHolo__inner (interação hover) > img + camadas.
     <div className="cdiHolo" key={period}>
-      <img className="cdiHolo__img"
-        src={badgeSrc}
-        alt={period==="week"?"Vencedor da semana":"Vencedor do mês"}
-        draggable={false} width={454} height={531}/>
-      {/* Efeito holograma: gradiente especular em color-dodge, mascarado pela luminância do PRÓPRIO
-          medalhão (substitui o "spec map" do exemplo) em multiply. Anima em loop para o brilho varrer.
-          Puramente decorativo (não clicável). */}
-      <div className="cdiHolo__spec" aria-hidden="true"
-        style={{WebkitMaskImage:`url(${badgeSrc})`,maskImage:`url(${badgeSrc})`}}>
-        <div className="cdiHolo__mask" style={{backgroundImage:`url(${badgeSrc})`}}/>
+      <div className="cdiHolo__inner">
+        <img className="cdiHolo__img"
+          src={badgeSrc}
+          alt={period==="week"?"Vencedor da semana":"Vencedor do mês"}
+          draggable={false} width={454} height={531}/>
+        {/* Efeito holograma: gradiente especular em color-dodge, mascarado pela luminância do PRÓPRIO
+            medalhão (substitui o "spec map" do exemplo) em multiply. Puramente decorativo. */}
+        <div className="cdiHolo__spec" aria-hidden="true"
+          style={{WebkitMaskImage:`url(${badgeSrc})`,maskImage:`url(${badgeSrc})`}}>
+          <div className="cdiHolo__mask" style={{backgroundImage:`url(${badgeSrc})`}}/>
+        </div>
+        {/* Brilho estilo badge do pódio (risca diagonal branca a varrer), recortado à silhueta.
+            Arranca depois da entrada (delay) e volta a passar em loop; acelera no hover. */}
+        <div className="cdiHolo__shine" aria-hidden="true"
+          style={{WebkitMaskImage:`url(${badgeSrc})`,maskImage:`url(${badgeSrc})`}}/>
       </div>
     </div>
   );
@@ -3763,8 +3769,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         .railBadge > *{position:sticky;top:84px;z-index:10}
         /* --- Efeito holograma do medalhão (color-dodge specular + máscara multiply) --- */
         /* filter+isolation isolam o blend ao medalhão (não "sangra" para o fundo da página). */
+        /* .cdiHolo = camada externa: isolamento do blend + sombra + ENTRADA "cunhagem" (stamp). */
         .cdiHolo{position:relative;display:block;width:100%;max-width:240px;margin:0 auto;isolation:isolate;
-          backface-visibility:hidden;filter:drop-shadow(0 10px 26px rgba(0,0,0,0.5));
+          backface-visibility:hidden;filter:drop-shadow(0 10px 26px rgba(0,0,0,0.5));transition:filter .28s ease;
           transform-origin:center;animation:cdiStamp .5s cubic-bezier(.2,.9,.25,1) both}
         /* Entrada "cunhagem": entra grande e translúcido, encolhe e CRAVA com um ligeiro ressalto. */
         @keyframes cdiStamp{
@@ -3773,6 +3780,12 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
           72%{transform:scale(1.03)}            /* ressalto */
           100%{opacity:1;transform:scale(1)}
         }
+        .cdiHolo:hover{filter:drop-shadow(0 18px 34px rgba(0,0,0,0.58))}
+        /* .cdiHolo__inner = camada de INTERAÇÃO: no hover o autocolante "descola" (inclina 3D + sobe),
+           sem colidir com o transform da entrada (que fica na camada externa). */
+        .cdiHolo__inner{position:relative;display:block;transform-origin:72% 28%;
+          transition:transform .28s cubic-bezier(.2,.7,.3,1);will-change:transform}
+        .cdiHolo:hover .cdiHolo__inner{transform:perspective(760px) rotateX(7deg) rotateY(-9deg) translateY(-4px) scale(1.035)}
         .cdiHolo__img{display:block;width:100%;height:auto;aspect-ratio:454/531;user-select:none;pointer-events:none}
         /* background:#000 (como no exemplo original): nas zonas transparentes a máscara multiply dá
            preto → color-dodge não altera nada → sem "sangrar" o gradiente para os cantos. */
@@ -3788,7 +3801,17 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         /* Máscara interna = luminância do medalhão (substitui o spec map): só as zonas claras "acendem". */
         .cdiHolo__mask{mix-blend-mode:multiply;background-size:100% 100%}
         @keyframes cdiHoloSweep{from{background-position:center 0%}to{background-position:center 100%}}
-        @media(prefers-reduced-motion:reduce){.cdiHolo__spec{animation:none}.cdiHolo{animation:none}}
+        /* Brilho do pódio (1º/2º/3º): risca diagonal branca a varrer, recortada à silhueta do medalhão.
+           Delay ≈ duração da entrada → só brilha "depois de estar colado"; no hover fica mais rápido. */
+        .cdiHolo__shine{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;
+          background-image:linear-gradient(115deg,transparent 42%,rgba(255,255,255,0.6) 50%,transparent 58%);
+          background-repeat:no-repeat;background-size:220% 100%;background-position:-30% 0;
+          -webkit-mask-size:100% 100%;mask-size:100% 100%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
+          -webkit-mask-position:center;mask-position:center;
+          mix-blend-mode:screen;animation:cdiStickerShine 4.2s ease-in-out .82s infinite}
+        .cdiHolo:hover .cdiHolo__shine{animation-duration:1.6s}
+        @keyframes cdiStickerShine{0%{background-position:-30% 0}55%,100%{background-position:130% 0}}
+        @media(prefers-reduced-motion:reduce){.cdiHolo__spec,.cdiHolo__shine{animation:none}.cdiHolo{animation:none}.cdiHolo__inner{transition:none}}
         /* Linha do cabeçalho: título (esq.) · toggle (centro EXATO da página) · 1v1 (dir.).
            1fr auto 1fr → o toggle fica sempre no centro, independentemente de o título ser
            "Ranking Geral" ou "Ranking Mensal" (larguras diferentes não o mexem). */
