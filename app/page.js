@@ -2876,8 +2876,14 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
       shown.forEach(p=>{ if(!Number.isFinite(a[p.name])) a[p.name]=0; });
       byT[t0]=a;
     }
-    // Benchmark S&P 500 ancorado a 0 no t0. Período: base = SPY no início; senão = spyInitialPrice.
-    const spyBase=t0Base?(spy&&spy.priceAt?spy.priceAt(t0Base):null):(()=>{ for(const p of shown){ const b=p.spyInitialPrice; if(Number.isFinite(b)&&b>0) return b; } return null; })();
+    // Benchmark S&P 500 ancorado a 0 no t0. Base do S&P = MESMA data-base das ações: total + mês de
+    // ARRANQUE → lock de 30-jun (spyInitialPrice); meses/semanas seguintes → SPY no início do período (t0).
+    const useLockSpy=!periodStart||(gameStartDate&&periodStart===String(gameStartDate).slice(0,10));
+    const spyBase=(()=>{
+      if(!useLockSpy){ const b=(spy&&spy.priceAt&&t0)?spy.priceAt(t0):null; if(Number.isFinite(b)&&b>0) return b; }
+      for(const p of shown){ const s=p.spyInitialPrice; if(Number.isFinite(s)&&s>0) return s; }
+      const b=(spy&&spy.priceAt&&t0)?spy.priceAt(t0):null; return (Number.isFinite(b)&&b>0)?b:null;
+    })();
     if(spy&&spyBase>0&&!preLaunch){
       for(const t of Object.keys(byT)){
         if(t===t0){ byT[t]["S&P 500"]=0; continue; }
@@ -3191,8 +3197,12 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   const spyMetric=()=>{
     if(!spy) return null;
     if(period==="week"){ if(!hasWeek) return null; const b=spy.priceAt(`${curWk}T00:00:00.000Z`); return (Number.isFinite(b)&&b>0)?spy.now/b-1:null; }
-    if(period==="month"){ const b=spy.priceAt(curMonthStartIso); return (Number.isFinite(b)&&b>0)?spy.now/b-1:null; }
-    return officials.length?spy.returnFor(officials[0]):null; // total (como hoje)
+    // Meses DEPOIS do arranque: S&P desde o início do mês (o baseline do mês é capturado nesse dia).
+    const isLaunchMonth=curMonthYM===String(settings?.gameStartDate||"").slice(0,7);
+    if(period==="month"&&!isLaunchMonth){ const b=spy.priceAt(curMonthStartIso); return (Number.isFinite(b)&&b>0)?spy.now/b-1:null; }
+    // total + mês de ARRANQUE (julho): S&P ancorado ao LOCK dos baselines (30-jun) = spy_initial_price,
+    // a MESMA data em que as ações dos membros foram congeladas → comparação justa e coerente.
+    return officials.length?spy.returnFor(officials[0]):null;
   };
   // Coluna do nome = largura do NOME MAIS COMPRIDO (medido na fonte real) → todas as linhas
   // alinhadas e as sparklines começam todas no MESMO sítio (logo a seguir ao maior nome).
@@ -3482,11 +3492,12 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     off.sort((a,b)=>b.m-a.m);
     const avg=off.reduce((a,x)=>a+x.m,0)/off.length;
     const spyRet=spyMetric();
+    // Batem o mercado = rentabilidade do jogo ativo > S&P do MESMO período (Geral + mês de arranque:
+    // desde o lock de 30-jun; meses seguintes: início do mês; semana: 2ª feira) — mesma âncora dos dois lados.
     let beating=null;
-    if(period==="total"&&spy){ beating=0; for(const x of off){ const s=spy.returnFor(x.p); if(s!=null&&x.m>s) beating++; } } // Geral: S&P por-submissão (como antes)
-    else if(spyRet!=null){ beating=0; for(const x of off) if(x.m>spyRet) beating++; } // mês/semana: S&P único do período
+    if(spyRet!=null){ beating=0; for(const x of off) if(x.m>spyRet) beating++; }
     return { n:off.length, avg, spyRet, beating, leader:off[0].p, leaderM:off[0].m };
-  },[officials,spy,period,monthBase,weekBase,livePrices,hasWeek]);
+  },[officials,spy,period,monthBase,weekBase,livePrices,hasWeek,settings]);
   const topPicks=useMemo(()=>{
     const c={};
     for(const p of officials) for(const s of (p.stocks||[])){ const t=(s.ticker||"").toUpperCase().trim(); if(t) c[t]=(c[t]||0)+1; }
@@ -3995,8 +4006,8 @@ function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarte
   }
   if(typeof currentReturn==="number"&&(!startTs||now>startTs)) byT[now]=currentReturn*100;
   if(startTs) byT[startTs]=0;                     // arranca SEMPRE a 0%
-  // Benchmark S&P 500: rentabilidade do SPY desde a MESMA base do portefólio (spyInitialPrice),
-  // ancorada a 0 no arranque — dá contexto à linha do membro (igual ao gráfico Top 10).
+  // Benchmark S&P 500 ancorado a 0 no arranque. Base = spyInitialPrice (SPY no LOCK de 30-jun), a MESMA
+  // data-base da rentabilidade do membro (total_return conta desde o lock) → comparação coerente.
   const spyBase=(Number.isFinite(spyInitialPrice)&&spyInitialPrice>0)?spyInitialPrice:null;
   const spyAt=(t)=>{ if(!spy||!spyBase) return null; if(t===startTs) return 0; const px=(t===now)?spy.now:(spy.priceAt?spy.priceAt(t):null); return (Number.isFinite(px)&&px>0)?(px/spyBase-1)*100:null; };
   const data=Object.entries(byT).map(([t,r])=>{ const sv=spyAt(t); return sv==null?{t,r}:{t,r,spy:sv}; }).sort((a,b)=>a.t<b.t?-1:1);
