@@ -493,7 +493,7 @@ function BackgroundFade({bg}){
 
 // Glow dourado que SEGUE o cursor (só desktop), recortado pela forma da própria imagem
 // (máscara). Usado no logo da Home e no troféu do #1. Subtil/premium.
-function GoldGlow({src,alt="",maskSrc,wrapStyle,imgStyle,baseFilter="",glow=16}){
+function GoldGlow({src,alt="",maskSrc,wrapStyle,imgStyle,baseFilter="",glow=16,glowRGB="245,158,11",sparkRGB="253,224,71"}){
   const [on,setOn]=useState(false);
   const [pos,setPos]=useState({x:50,y:50});
   const [hov,setHov]=useState(false);
@@ -508,10 +508,10 @@ function GoldGlow({src,alt="",maskSrc,wrapStyle,imgStyle,baseFilter="",glow=16})
   return(
     <span {...handlers} style={{position:"relative",display:"inline-block",lineHeight:0,...wrapStyle}}>
       <img src={src} alt={alt} style={{display:"block",transition:"filter .3s ease",...imgStyle,
-        filter:(hov&&on)?`${baseFilter} drop-shadow(0 0 ${glow}px rgba(245,158,11,0.32))`:baseFilter}}/>
+        filter:(hov&&on)?`${baseFilter} drop-shadow(0 0 ${glow}px rgba(${glowRGB},0.32))`:baseFilter}}/>
       {on&&(
         <span aria-hidden="true" style={{position:"absolute",inset:0,pointerEvents:"none",
-          background:`radial-gradient(circle at ${pos.x}% ${pos.y}%, rgba(253,224,71,0.38), rgba(245,158,11,0.10) 42%, transparent 72%)`,
+          background:`radial-gradient(circle at ${pos.x}% ${pos.y}%, rgba(${sparkRGB},0.38), rgba(${glowRGB},0.10) 42%, transparent 72%)`,
           mixBlendMode:"screen",opacity:hov?1:0,transition:"opacity .35s ease",...mask}}/>
       )}
     </span>
@@ -2738,17 +2738,28 @@ function SeasonRaceTooltip({active,payload,label}){
 const raceColorOf=(p,i)=> p._me?"#ffffff":RACE_COLORS[i%RACE_COLORS.length];
 // Cartão de partilha do Top 10 (fundos SÓLIDOS, sem blur → captura limpa com html-to-image).
 const SNAP_W=1000;
-function SnapshotCard({cardRef,shown,data,raceYMin,raceYMax,dateStr,compDay,dayTicks,hasSpy,valueOf}){
+function SnapshotCard({cardRef,shown,data,raceYMin,raceYMax,dateStr,compDay,dayTicks,hasSpy,valueOf,gamePeriod,periodLabelText}){
   const top10=shown.slice(0,10);
+  // Cada snapshot transmite o JOGO (Geral/Mensal/Semanal) — etiqueta colorida + período no cabeçalho.
+  const g=({
+    month:{label:"Ranking Mensal", fg:"#c4b5fd",bg:"rgba(129,140,248,0.20)",br:"rgba(129,140,248,0.45)"},
+    week: {label:"Ranking Semanal",fg:"#5eead4",bg:"rgba(20,184,166,0.18)",br:"rgba(20,184,166,0.42)"},
+  }[gamePeriod])||{label:"Ranking Geral",fg:"#93c5fd",bg:"rgba(59,130,246,0.18)",br:"rgba(59,130,246,0.42)"};
+  const capLabel=periodLabelText?periodLabelText.charAt(0).toUpperCase()+periodLabelText.slice(1):"";
+  const sub=`${capLabel?`${capLabel} · `:""}Top 10 · ${dateStr}${(gamePeriod==="total"||!gamePeriod)?` · Dia ${compDay}/365`:""}`;
   return(
     <div ref={cardRef} style={{width:SNAP_W,boxSizing:"border-box",padding:34,
       background:"radial-gradient(1200px 700px at 50% -10%, rgba(37,99,235,0.22), transparent 70%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 100%)",
       color:"#e2e8f0",fontFamily:"system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif"}}>
       <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:18}}>
         <img src="/logo.png" alt="" width={52} height={52} style={{display:"block",flexShrink:0}}/>
-        <div style={{display:"flex",flexDirection:"column",lineHeight:1.15}}>
+        <div style={{display:"flex",flexDirection:"column",lineHeight:1.15,gap:7}}>
           <span style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px"}}>CDI PICKER</span>
-          <span style={{fontSize:14,color:"#94a3b8",fontWeight:600}}>Top 10 · {dateStr} · Dia {compDay}/365</span>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <span style={{display:"inline-block",padding:"3px 12px",borderRadius:999,fontSize:12,fontWeight:800,letterSpacing:.6,textTransform:"uppercase",
+              color:g.fg,background:g.bg,border:`1px solid ${g.br}`,whiteSpace:"nowrap"}}>{g.label}</span>
+            <span style={{fontSize:13.5,color:"#94a3b8",fontWeight:600}}>{sub}</span>
+          </div>
         </div>
       </div>
       <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px 10px 4px"}}>
@@ -2778,7 +2789,7 @@ function SnapshotCard({cardRef,shown,data,raceYMin,raceYMax,dateStr,compDay,dayT
     </div>
   );
 }
-function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDate,periodStart,periodLabelText,frameStart,periodRetOf}){
+function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDate,periodStart,periodLabelText,frameStart,periodRetOf,gamePeriod}){
   const [snaps,setSnaps]=useState([]); // [] em vez de null → o gráfico desenha logo (baseline início→agora)
   const nowIso=useMemo(()=>new Date().toISOString(),[]); // "agora" fixo → conteúdo do data estável (não re-anima)
   const [mounted,setMounted]=useState(false);
@@ -2932,7 +2943,7 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
 
   const snapDate=fmtDateShort(nowIso);
   const snapDay=(()=>{ const d=gameStartDate?new Date(gameStartDate):null; if(!d||isNaN(d)) return 1; return Math.max(1,Math.min(365,Math.floor((Date.now()-d.getTime())/86400000)+1)); })();
-  const snapDownload=()=>{ if(!snapUrl) return; const a=document.createElement("a"); a.href=snapUrl; a.download=`cdi-picker-top10-${nowIso.slice(0,10)}.png`; a.click(); };
+  const snapDownload=()=>{ if(!snapUrl) return; const a=document.createElement("a"); a.href=snapUrl; a.download=`cdi-picker-${gamePeriod||"geral"}-top10-${nowIso.slice(0,10)}.png`; a.click(); };
   const snapCopy=async()=>{
     if(!snapBlob) return;
     try{
@@ -3051,7 +3062,7 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
     </div>
     {snapOpen && (<>
       <div aria-hidden="true" style={{position:"fixed",left:-99999,top:0,pointerEvents:"none"}}>
-        <SnapshotCard cardRef={cardRef} shown={shown} data={data} raceYMin={raceYMin} raceYMax={raceYMax} dateStr={snapDate} compDay={snapDay} dayTicks={dayTicks} hasSpy={hasSpy} valueOf={snapValueOf}/>
+        <SnapshotCard cardRef={cardRef} shown={shown} data={data} raceYMin={raceYMin} raceYMax={raceYMax} dateStr={snapDate} compDay={snapDay} dayTicks={dayTicks} hasSpy={hasSpy} valueOf={snapValueOf} gamePeriod={gamePeriod} periodLabelText={periodLabelText}/>
       </div>
       <div onClick={()=>setSnapOpen(false)} style={{position:"fixed",inset:0,zIndex:9998,background:"rgba(3,7,18,0.72)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
         <div onClick={e=>e.stopPropagation()} style={{background:"#0a1428",border:"1px solid rgba(255,255,255,0.12)",borderRadius:16,padding:18,maxWidth:"min(94vw,720px)",width:"100%",maxHeight:"92vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
@@ -3889,9 +3900,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
               border:`1px solid ${cmp?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.12)"}`}}>1v1</button>
         ):<span className="rkHeadV1" aria-hidden="true"/>}
       </div>
-      <p style={{color:"#94a3b8",fontSize:14,margin:"0 0 28px"}}>
-        {period==="week"?"Ranking da semana · 2ª (abertura) a 6ª feira (fecho), ponto de partida reposto todas as segundas":period==="month"?"Ranking do mês · ponto de partida reposto no início do mês (mesma carteira)":"Classificação por rentabilidade total, em tempo real"}{period==="week"?<br/>:" · "}{officials.length} {officials.length===1?"participante":"participantes"}.
-        {pricesLoading?" · A atualizar preços…":(pricesAt?` · Atualizado ${new Date(pricesAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}`:"")}
+      <p style={{color:"#94a3b8",fontSize:14,margin:"0 0 28px",textAlign:"center"}}>
+        {period==="week"?"Início 2ª feira (abertura) a 6ª feira (fecho)":period==="month"?"Início no primeiro dia do mês até ao último.":"Classificação por rentabilidade total, em tempo real"}
+        {period==="total"&&<>{" · "}{officials.length} {officials.length===1?"participante":"participantes"}.</>}
+        {pricesLoading?`${period==="month"?" ":" · "}A atualizar preços…`:(pricesAt?`${period==="month"?" ":" · "}Atualizado ${new Date(pricesAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}`:"")}
       </p>
       {ranking.length>0&&(<>
         {/* Season Race + (demos) + pílula do vencedor — a toda a largura, por cima da grelha */}
@@ -3901,7 +3913,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
           <GlowBehind><SeasonRace ranking={ranking} preLaunch={preLaunch} myNorm={myNorm} spy={spy} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""}
             periodStart={period==="week"?(hasWeek?curWk:null):period==="month"?curMonthDateOnly:null}
             frameStart={period==="week"&&!hasWeek&&!preLaunch?frameWk:null}
-            periodRetOf={metricOf}
+            periodRetOf={metricOf} gamePeriod={period}
             periodLabelText={period==="week"?(hasWeek?weekLabel(curWk):weekLabel(frameWk)):period==="month"?periodLabel(curMonthYM):""}/></GlowBehind>
         </div>
         {preLaunch&&demos.length>0&&(
@@ -4228,12 +4240,20 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
             color={rank===1?"rgba(245,200,80,0.55)":rank===2?"rgba(203,213,225,0.5)":"rgba(217,140,60,0.55)"}
             mid={rank===1?"rgba(245,158,11,0.18)":rank===2?"rgba(226,232,240,0.16)":"rgba(217,119,6,0.18)"}/>
         )}
-        {rank===1&&(
-          <GoldGlow src="/cdi-trophy.png" alt="Troféu de 1º lugar" maskSrc="/cdi-trophy.png" glow={26}
-            baseFilter="drop-shadow(0 12px 22px rgba(0,0,0,0.5)) drop-shadow(0 0 20px rgba(245,158,11,0.4))"
-            wrapStyle={{position:"absolute",top:"clamp(-66px,-7vw,-54px)",left:"50%",transform:"translateX(-50%)",width:"clamp(60px,7vw,72px)",zIndex:5}}
-            imgStyle={{width:"100%",height:"auto"}}/>
-        )}
+        {rank>=1&&rank<=3&&(()=>{
+          // Louros por lugar: 1º ouro, 2º prata (grey), 3º bronze (brown) — com o brilho a condizer.
+          const L={
+            1:{src:"/cdi-louros.webp",       g:"245,158,11", s:"253,224,71", bf:"rgba(245,158,11,0.4)"},
+            2:{src:"/cdi-louros-grey.webp",  g:"148,163,184", s:"241,245,249", bf:"rgba(203,213,225,0.4)"},
+            3:{src:"/cdi-louros-brown.webp", g:"180,83,9",   s:"251,191,36", bf:"rgba(217,119,6,0.4)"},
+          }[rank];
+          return (
+            <GoldGlow src={L.src} alt={`Louros de ${rank}º lugar`} maskSrc={L.src} glow={26} glowRGB={L.g} sparkRGB={L.s}
+              baseFilter={`drop-shadow(0 12px 22px rgba(0,0,0,0.5)) drop-shadow(0 0 20px ${L.bf})`}
+              wrapStyle={{position:"absolute",top:"clamp(-66px,-7vw,-54px)",left:"50%",transform:"translateX(-50%)",width:"clamp(60px,7vw,72px)",zIndex:5}}
+              imgStyle={{width:"100%",height:"auto"}}/>
+          );
+        })()}
       <TiltCard style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:acc?acc.border:"1px solid rgba(255,255,255,0.10)",boxShadow:acc?`${acc.glow}, 0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.16)`:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,zIndex:1}}>
         <div style={{textAlign:"center"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",flexWrap:"wrap",gap:14,marginBottom:16,minWidth:0}}>
