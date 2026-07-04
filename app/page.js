@@ -1441,6 +1441,8 @@ export default function App(){
   },[applyRoute]);
   const slugForKey=useCallback((key)=>{ const pf=portfolios.find(p=>p.key===key); return pf?(slugify(pf.name)||keyToId(key)):keyToId(key); },[portfolios]);
   const nav=useCallback((p)=>{ setRankHighlight(null); goRoute({page:p}); },[goRoute]);
+  // Ir DIRETO a um separador do Ranking (Geral/Mensal/Semanal) a partir do menu de topo.
+  const navRank=useCallback((per)=>{ setRankHighlight(null); setRankPeriod(per); goRoute({page:"ranking"}); },[goRoute]);
   const openDetail=useCallback((k)=>{ setRankHighlight(null); goRoute({page:"detail",detailSlug:slugForKey(k)}); },[goRoute,slugForKey]);
   const openDuel=useCallback((a,b)=>goRoute({page:"duel",duelSlugs:[slugForKey(a),slugForKey(b)]}),[goRoute,slugForKey]);
 
@@ -1719,7 +1721,7 @@ export default function App(){
   // Cor do hover das linhas de ação, a condizer com o tema da página (JS = ganha sempre).
   const rowHover=detailRank===1?"#1d1407":detailRank===2?"#12151c":detailRank===3?"#1a0f06":"#0a1120";
 
-  const sh=(children)=><Shell page={page} rankPeriod={rankPeriod} detailRank={detailRank} detailIsOwn={detailIsOwn} nav={nav} submitted={submitted} toast={toast}
+  const sh=(children)=><Shell page={page} rankPeriod={rankPeriod} detailRank={detailRank} detailIsOwn={detailIsOwn} nav={nav} navRank={navRank} submitted={submitted} toast={toast}
     onMyPortfolio={openMyPortfolio}
     myPortfolioActive={page==="detail" && !!detailPf && !!myPf && detailPf.key===myPf.key}>{children}</Shell>;
 
@@ -1735,7 +1737,7 @@ export default function App(){
 }
 
 /* ---- Shell --------------------------------------------------------------- */
-function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,submitted,toast,onMyPortfolio,myPortfolioActive}){
+function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,submitted,toast,onMyPortfolio,myPortfolioActive}){
   // Premium (ouro/prata/bronze) SÓ no detalhe do Top 3. Tudo o resto — ranking, 4º+,
   // o próprio portefólio (quando fora do pódio), homepage, etc. — fica AZUL original.
   // Mesma lógica de degradê (brilho radial no topo + fade vertical).
@@ -1793,7 +1795,7 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,submitted,to
         <div aria-hidden="true" style={{position:"absolute",inset:0,zIndex:-1,pointerEvents:"none",
           backdropFilter:"blur(18px) saturate(160%)",WebkitBackdropFilter:"blur(18px) saturate(160%)",
           WebkitMaskImage:"linear-gradient(180deg,#000 0%,#000 58%,transparent 100%)",maskImage:"linear-gradient(180deg,#000 0%,#000 58%,transparent 100%)"}}/>
-        <Nav page={page} nav={nav} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} tint={theme.tint} />
+        <Nav page={page} nav={nav} navRank={navRank} rankPeriod={rankPeriod} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} tint={theme.tint} />
         <div className="cdiClock"><MarketStatus/></div>
       </header>
       <main className="cdiMain" style={{position:"relative",zIndex:1}}>{children}</main>
@@ -1852,18 +1854,54 @@ function MarketStatus(){
 }
 
 /* ---- Nav ----------------------------------------------------------------- */
-function Nav({page,nav,submitted,onMyPortfolio,myPortfolioActive,tint}){
+function Nav({page,nav,navRank,rankPeriod,submitted,onMyPortfolio,myPortfolioActive,tint}){
   return(
     <div className="cdiNav" style={{display:"flex",alignItems:"center",gap:6,flexWrap:"nowrap","--nav-tint":tint}}>
       <NavLink label="Início" active={page==="home"} onClick={()=>nav("home")}/>
-      <NavLink label="Ranking" active={page==="ranking"} onClick={()=>nav("ranking")}/>
+      <RankingNav active={page==="ranking"} rankPeriod={rankPeriod} navToRanking={()=>nav("ranking")} navRank={navRank}/>
       <NavLink label="ATH" active={page==="ath"} onClick={()=>nav("ath")}/>
       <NavLink label="Minhas 8" active={submitted?myPortfolioActive:page==="detail"} onClick={onMyPortfolio} locked={!submitted}/>
     </div>
   );
 }
+// "Ranking" com submenu ao passar o rato: Geral / Mensal / Semanal → vai direto a esse separador.
+function RankingNav({active,rankPeriod,navToRanking,navRank}){
+  const [open,setOpen]=useState(false);
+  const items=[["total","Geral"],["month","Mensal"],["week","Semanal"]];
+  return(
+    <div style={{position:"relative"}} onMouseEnter={()=>setOpen(true)} onMouseLeave={()=>setOpen(false)}>
+      {/* Vindo de outra aba → vai direto ao Ranking Geral (e fecha o submenu). Já no Ranking →
+          mantém o separador atual. */}
+      <NavLink label="Ranking" active={active} onClick={()=>{ setOpen(false); active?navToRanking():navRank("total"); }} caret/>
+      {open&&(
+        // paddingTop = ponte invisível entre o botão e o menu → o rato não "sai" no espaço vazio.
+        <div style={{position:"absolute",top:"100%",left:"50%",transform:"translateX(-50%)",paddingTop:8,zIndex:80}}>
+          {/* Mesmo liquid glass do botão "Ranking" (fundo translúcido + blur + realce interior),
+              mas estreito e centrado sob a palavra — lê-se como um submenu. */}
+          <div style={{display:"flex",flexDirection:"column",gap:3,padding:5,borderRadius:16,
+            background:"rgba(255,255,255,0.08)",backdropFilter:"blur(16px) saturate(180%)",WebkitBackdropFilter:"blur(16px) saturate(180%)",
+            border:"1px solid rgba(255,255,255,0.14)",boxShadow:"0 8px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.16)"}}>
+            {items.map(([k,lbl])=>{
+              const sel=active&&rankPeriod===k;
+              return(
+                <button key={k} onClick={()=>{ setOpen(false); navRank(k); }}
+                  onMouseEnter={e=>{ if(!sel) e.currentTarget.style.background="rgba(255,255,255,0.10)"; }}
+                  onMouseLeave={e=>{ if(!sel) e.currentTarget.style.background="transparent"; }}
+                  style={{cursor:"pointer",textAlign:"center",fontSize:13.5,fontWeight:sel?700:600,whiteSpace:"nowrap",
+                    padding:"7px 18px",borderRadius:11,border:"none",transition:"background .12s,color .12s",
+                    color:sel?"#0a0a0a":"#e2e8f0",background:sel?"#4ade80":"transparent"}}>
+                  {lbl}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 // Plain text link; only the page we're on gets the liquid-glass pill.
-function NavLink({label,active,onClick,locked}){
+function NavLink({label,active,onClick,locked,caret}){
   return(
     <button onClick={onClick} className={active?"cdiNavSel":undefined}
       onMouseEnter={e=>{ if(!active) e.currentTarget.style.color="#e2e8f0"; }}
@@ -1876,7 +1914,7 @@ function NavLink({label,active,onClick,locked}){
         border:`1px solid ${active?"rgba(255,255,255,0.14)":"transparent"}`,
         boxShadow:active?"0 4px 18px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.16)":"none",
         transition:"color 0.15s",display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap",flexShrink:0}}>
-      {label}{locked&&<span style={{fontSize:10,opacity:0.5}}>🔒</span>}
+      {label}{caret&&<span style={{fontSize:9,opacity:0.65,marginLeft:1}}>▾</span>}{locked&&<span style={{fontSize:10,opacity:0.5}}>🔒</span>}
     </button>
   );
 }
@@ -2927,11 +2965,8 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
             <XAxis dataKey="t" tickFormatter={raceTick} ticks={frameDays} tick={{fill:"#94a3b8",fontSize:11}} minTickGap={20} axisLine={false} tickLine={false}/>
             <YAxis domain={[-2,2]} ticks={[-2,-1,0,1,2]} tickFormatter={(v)=>`${v>0?"+":""}${v}%`} tick={{fill:"#94a3b8",fontSize:11}} width={46} axisLine={false} tickLine={false}/>
             <ReferenceLine y={0} stroke="rgba(255,255,255,0.30)" strokeDasharray="4 4"/>
-            {shown.map((p,i)=>(
-              <Line key={p.key} type="monotone" dataKey={p.name} name={p._me?`${p.name} (tu)`:p.name}
-                stroke={raceColorOf(p,i)} strokeWidth={p._me?3:2} strokeOpacity={0.85}
-                dot={false} connectNulls isAnimationActive={false}/>
-            ))}
+            {/* Sem linhas nem legenda de nomes antes de a semana arrancar — só a moldura (eixos +
+                grelha + linha dos 0%). As linhas e os nomes entram 2ª feira, com os dados reais. */}
           </LineChart>
         </ResponsiveContainer>
       ):!enoughData?(
@@ -2961,7 +2996,7 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
           </LineChart>
         </ResponsiveContainer>
       )}
-      {mounted&&(enoughData||frameMode)&&(()=>{
+      {mounted&&enoughData&&!frameMode&&(()=>{
         const item=(p,i)=>{
           const dim=hi&&hi!==p.name;
           return(
@@ -3358,7 +3393,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
             </span>
             <span className="rkSpark">
-              <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24}/>
+              {/* Sem sparkline no pré-arranque semanal — ainda não há histórico da semana. */}
+              {!preStartWk&&<MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24}/>}
             </span>
             <span style={{textAlign:"center",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:"clamp(12.5px,3.6vw,15px)",color:(rentVal??0)>=0?"#4ade80":"#f87171"}}>{rentVal==null?"—":<Rolling text={pct(rentVal)}/>}</span>
             <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:"clamp(11px,3vw,13px)",fontWeight:600,
