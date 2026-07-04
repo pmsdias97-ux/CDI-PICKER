@@ -1729,7 +1729,7 @@ export default function App(){
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} pickCounts={compStats.counts} compTickers={compStats.tickers} showToast={showToast}/>);
-  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} monthBase={monthBase} pastBaselines={pastBaselines} weekBase={weekBase} weekOpens={weekOpens} weekCloses={weekCloses} period={rankPeriod} setPeriod={setRankPeriod} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)} showToast={showToast}/>);
+  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} monthBase={monthBase} pastBaselines={pastBaselines} weekBase={weekBase} weekOpens={weekOpens} weekCloses={weekCloses} period={rankPeriod} setPeriod={setRankPeriod} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)} winners={winners} showToast={showToast}/>);
   if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} dayChange={dayChange} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} winners={winners} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
@@ -3109,7 +3109,26 @@ function InfoTip({text,children}){
     </span>
   );
 }
-function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunch,settings,monthBase,pastBaselines,weekBase,weekOpens,weekCloses,period,setPeriod,onSelect,onCompare,highlightKey,clearHighlight,showToast}){
+// Medalhas de vencedor (mini-épocas). w = winners[pf.key] = {monthly:[labels], weekly:[labels]}.
+// Um ícone por tipo (mensal/semanal), com contador ×N. Ao passar o rato mostra uma etiqueta flutuante
+// (HoverName, o MESMO estilo dos logos das ações na linha) — ex.: "Vencedor Semana 1" — não é tooltip
+// nativo. Reutiliza as imagens dos medalhões; preserva o rácio (454×531) para não "esmagar".
+function WinnerMedals({w,size=20}){
+  if(!w) return null;
+  const badge=(src,alt,label,arr)=> arr.length>0?(
+    <HoverName key={src} label={label}>
+      <span style={{position:"relative",display:"inline-flex",flexShrink:0}}>
+        <img src={src} alt={alt} style={{height:size,width:"auto",display:"block",filter:"drop-shadow(0 1px 3px rgba(0,0,0,0.5))"}}/>
+        {arr.length>1&&<span style={{position:"absolute",bottom:-3,right:-5,fontSize:Math.max(8,Math.round(size*0.42)),fontWeight:800,color:"#0a0a0a",background:"#facc15",borderRadius:999,padding:"0 3px",lineHeight:1.25,minWidth:12,textAlign:"center",boxShadow:"0 1px 3px rgba(0,0,0,0.4)"}}>×{arr.length}</span>}
+      </span>
+    </HoverName>
+  ):null;
+  return <>
+    {badge("/cdi-mensal-winner.webp","Vencedor mensal",`Campeão de ${w.monthly.join(", ")}`,w.monthly)}
+    {badge("/cdi-semana-winner.webp","Vencedor semanal",`Vencedor ${w.weekly.join(", ")}`,w.weekly)}
+  </>;
+}
+function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunch,settings,monthBase,pastBaselines,weekBase,weekOpens,weekCloses,period,setPeriod,onSelect,onCompare,highlightKey,clearHighlight,winners,showToast}){
   const [cmp,setCmp]=useState(false);
   const [sel,setSel]=useState([]);
   // Mini-curva por linha: snapshots por portefólio (histórico). Recarrega só quando o
@@ -3390,6 +3409,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
             </span>
             <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
               <span style={{overflowWrap:"normal",wordBreak:"normal",lineHeight:1.2}}>{p.name}</span>
+              <WinnerMedals w={winners&&winners[p.key]} size={20}/>
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
             </span>
             <span className="rkSpark">
@@ -3619,7 +3639,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
           if(best) out.push({period:per,...best}); }
         return out.reverse(); },
       info:"Melhor rentabilidade do mês, com o ponto de partida reposto no início de cada mês.\nO campeão mensal só é apurado no último dia do mês." },
-    week:{ liveOf:weekOf, fmt:weekLabel, title:"Vencedor da Semana",
+    week:{ liveOf:weekOf, fmt:weekLabel, title:`Vencedor da ${weekLabel(hasWeek?curWk:frameWk)}`,
       pendHead:"Por apurar", pendSub:"Apura 6ª feira ao fecho", emptyMsg:hasWeek?"Sem participantes ainda.":"Arranca 2ª feira.",
       done:hasWeek&&weekTradingDone(new Date()), wonLabel:`🏆 ${weekLabel(curWk)}`, listTitle:"Vencedores anteriores",
       champs:()=>{ const out=[]; // semana fechada = open→close (6ª feira). Congelado e exato.
@@ -3836,7 +3856,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         ):<span className="rkHeadV1" aria-hidden="true"/>}
       </div>
       <p style={{color:"#94a3b8",fontSize:14,margin:"0 0 28px"}}>
-        {period==="week"?"Ranking da semana · 2ª (abertura) a 6ª feira (fecho), ponto de partida reposto todas as segundas":period==="month"?"Ranking do mês · ponto de partida reposto no início do mês (mesma carteira)":"Classificação por rentabilidade total, em tempo real"} · {officials.length} {officials.length===1?"participante":"participantes"}.
+        {period==="week"?"Ranking da semana · 2ª (abertura) a 6ª feira (fecho), ponto de partida reposto todas as segundas":period==="month"?"Ranking do mês · ponto de partida reposto no início do mês (mesma carteira)":"Classificação por rentabilidade total, em tempo real"}{period==="week"?<br/>:" · "}{officials.length} {officials.length===1?"participante":"participantes"}.
         {pricesLoading?" · A atualizar preços…":(pricesAt?` · Atualizado ${new Date(pricesAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}`:"")}
       </p>
       {ranking.length>0&&(<>
@@ -4190,15 +4210,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
                   fontSize:18,fontWeight:800,color:"#94a3b8",border:"2px solid rgba(255,255,255,0.12)"}}>{rank}</span>
             )}
             <h1 style={{fontSize:"clamp(22px,5vw,26px)",fontWeight:800,letterSpacing:"-0.5px",margin:0,minWidth:0,lineHeight:1.2,overflowWrap:"anywhere"}}>{pf.name}</h1>
-            {(()=>{ const w=winners&&winners[pf.key]; if(!w) return null;
-              const badge=(src,alt,arr)=> arr.length>0?(
-                <span key={src} title={`${alt}: ${arr.join(", ")}`} style={{position:"relative",display:"inline-flex",flexShrink:0}}>
-                  <img src={src} alt={alt} style={{width:36,height:36,display:"block",filter:"drop-shadow(0 2px 6px rgba(0,0,0,0.45))"}}/>
-                  {arr.length>1&&<span style={{position:"absolute",bottom:-3,right:-6,fontSize:9.5,fontWeight:800,color:"#0a0a0a",background:"#facc15",borderRadius:999,padding:"0 4px",lineHeight:"14px",minWidth:14,textAlign:"center",boxShadow:"0 1px 3px rgba(0,0,0,0.4)"}}>×{arr.length}</span>}
-                </span>
-              ):null;
-              return <>{badge("/cdi-mensal-winner.webp","Vencedor mensal",w.monthly)}{badge("/cdi-semana-winner.webp","Vencedor semanal",w.weekly)}</>;
-            })()}
+            <WinnerMedals w={winners&&winners[pf.key]} size={36}/>
           </div>
           <div style={{fontSize:"clamp(34px,9vw,42px)",fontWeight:800,fontFamily:"monospace",lineHeight:1,
             color:st.total>=0?"#4ade80":"#f87171"}}><Tri up={st.total>=0} size="0.78em"/> <Rolling text={pct(Math.abs(st.total)).replace(/[+-]/,"")}/></div>
