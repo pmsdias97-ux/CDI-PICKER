@@ -3175,6 +3175,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   const railBadgeRef=useRef(null), badgeStickyRef=useRef(null);
   const [champTop,setChampTop]=useState(0);
   const [badgeTop,setBadgeTop]=useState(0);
+  // Altura das células laterais (linha do cabeçalho) = do TOPO da linha até ao FUNDO da box do gráfico.
+  // Como o cartão é sticky, cede (sai de cena) exatamente quando o seu fundo encontra o fundo do
+  // gráfico → é aí que "descolam" e sobem com o gráfico. null = ainda não medido / rail escondido.
+  const [railH,setRailH]=useState(null);
   useIsoLayoutEffect(()=>{
     if(typeof window==="undefined") return;
     const measure=()=>{
@@ -3183,6 +3187,11 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       const r=race.getBoundingClientRect();
       if(r.height<=0) return;
       const mid=r.top+r.height/2; // centro vertical do gráfico (a "linha rosa" da guia)
+      // As duas células estão na mesma linha (mesmo topo). Mede a partir do campeão (sempre presente).
+      const champA=railChampRef.current;
+      if(champA && champA.offsetParent!==null){
+        setRailH(Math.max(0, Math.round(r.bottom - champA.getBoundingClientRect().top)));
+      }
       const place=(aside,card,set)=>{
         if(!aside||!card) return;
         if(aside.offsetParent===null){ set(0); return; } // rail escondido (<1440px)
@@ -3631,7 +3640,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   // medalhão (não é uma época com vencedor apurado). Só visual (não clicável).
   const badgeSrc=period==="week"?"/cdi-semana-winner.webp":"/cdi-mensal-winner.webp";
   const wBadge=period==="total"?null:(
-    <div className="cdiHolo">
+    // key={period} → remonta ao trocar de aba (Mensal↔Semanal) para a entrada "cunhagem" repetir.
+    <div className="cdiHolo" key={period}>
       <img className="cdiHolo__img"
         src={badgeSrc}
         alt={period==="week"?"Vencedor da semana":"Vencedor do mês"}
@@ -3675,23 +3685,31 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         .rkRail{position:sticky;top:84px;display:flex;flex-direction:column;gap:16px}
         .railL{grid-area:left}
         .railR{grid-area:rail}
-        /* "Campeão do mês" ISOLADO na linha do cabeçalho, coluna direita (na horizontal do 1v1). A
-           célula estica à altura do cabeçalho e o cartão fica sticky: pina no topo e CEDE quando a
-           linha da tabela sobe (aí os widgets de baixo, .railR, tomam o topo). Sem sobreposição:
-           por baixo do campeão, na sua célula, só há espaço vazio. */
-        .railChamp{grid-area:champ;align-self:stretch;min-width:0}
+        /* "Campeão do mês" ISOLADO na linha do cabeçalho, coluna direita (na horizontal do 1v1). O
+           cartão fica sticky (pina no topo) e a célula tem altura fixa (medida) = do topo da linha
+           até ao FUNDO da box do gráfico → o cartão CEDE (sai de cena, sobe com o gráfico) exatamente
+           quando o seu fundo encontra o fundo do gráfico. */
+        .railChamp{grid-area:champ;align-self:start;min-width:0}
         /* z-index:10 → o cartão (e a etiqueta "i", que transborda para cima do gráfico) fica ACIMA
            do GlowBehind do SeasonRace (que é position:relative;z-index:1). */
         .railChamp > *{position:sticky;top:84px;z-index:10}
         /* Medalhão de vencedor: espelho do campeão na coluna ESQUERDA (célula 'badge', linha do
            cabeçalho). Mesma dinâmica: pina no topo e cede quando a tabela sobe. Centrado no meio
            do gráfico via marginTop medido em runtime (badgeTop). */
-        .railBadge{grid-area:badge;align-self:stretch;min-width:0}
+        .railBadge{grid-area:badge;align-self:start;min-width:0}
         .railBadge > *{position:sticky;top:84px;z-index:10}
         /* --- Efeito holograma do medalhão (color-dodge specular + máscara multiply) --- */
         /* filter+isolation isolam o blend ao medalhão (não "sangra" para o fundo da página). */
         .cdiHolo{position:relative;display:block;width:100%;max-width:240px;margin:0 auto;isolation:isolate;
-          backface-visibility:hidden;filter:drop-shadow(0 10px 26px rgba(0,0,0,0.5))}
+          backface-visibility:hidden;filter:drop-shadow(0 10px 26px rgba(0,0,0,0.5));
+          transform-origin:center;animation:cdiStamp .5s cubic-bezier(.2,.9,.25,1) both}
+        /* Entrada "cunhagem": entra grande e translúcido, encolhe e CRAVA com um ligeiro ressalto. */
+        @keyframes cdiStamp{
+          0%{opacity:0;transform:scale(1.35)}
+          50%{opacity:1;transform:scale(.95)}   /* impacto: compressão abaixo do tamanho final */
+          72%{transform:scale(1.03)}            /* ressalto */
+          100%{opacity:1;transform:scale(1)}
+        }
         .cdiHolo__img{display:block;width:100%;height:auto;aspect-ratio:454/531;user-select:none;pointer-events:none}
         /* background:#000 (como no exemplo original): nas zonas transparentes a máscara multiply dá
            preto → color-dodge não altera nada → sem "sangrar" o gradiente para os cantos. */
@@ -3707,7 +3725,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         /* Máscara interna = luminância do medalhão (substitui o spec map): só as zonas claras "acendem". */
         .cdiHolo__mask{mix-blend-mode:multiply;background-size:100% 100%}
         @keyframes cdiHoloSweep{from{background-position:center 0%}to{background-position:center 100%}}
-        @media(prefers-reduced-motion:reduce){.cdiHolo__spec{animation:none}}
+        @media(prefers-reduced-motion:reduce){.cdiHolo__spec{animation:none}.cdiHolo{animation:none}}
         /* Linha do cabeçalho: título (esq.) · toggle (centro EXATO da página) · 1v1 (dir.).
            1fr auto 1fr → o toggle fica sempre no centro, independentemente de o título ser
            "Ranking Geral" ou "Ranking Mensal" (larguras diferentes não o mexem). */
@@ -3752,9 +3770,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       {/* Grelha de 2 linhas: campeão isolado em cima-direita (linha do cabeçalho, à altura do 1v1);
           rail esquerdo, tabela e rail direito na linha de baixo (onde sempre estiveram). */}
       <div className="rkLayout">
-      <aside className="railBadge" ref={railBadgeRef}><div ref={badgeStickyRef} style={{marginTop:badgeTop}}>{wBadge}</div></aside>
+      <aside className="railBadge" ref={railBadgeRef} style={railH!=null?{height:railH}:undefined}><div ref={badgeStickyRef} style={{marginTop:badgeTop}}>{wBadge}</div></aside>
       <aside className="rkRail railL">{leftRail}</aside>
-      <aside className="railChamp" ref={railChampRef}><div ref={champStickyRef} style={{marginTop:champTop}}>{wChamp}</div></aside>
+      <aside className="railChamp" ref={railChampRef} style={railH!=null?{height:railH}:undefined}><div ref={champStickyRef} style={{marginTop:champTop}}>{wChamp}</div></aside>
       <div className="cHeader">
       <div className="rkHeadRow">
         <h1 className="rkHeadTitle" style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px",margin:0,whiteSpace:"nowrap"}}>{period==="week"?"Ranking Semanal":period==="month"?"Ranking Mensal":"Ranking Geral"}</h1>
