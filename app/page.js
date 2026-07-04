@@ -2740,7 +2740,7 @@ function SnapshotCard({cardRef,shown,data,raceYMin,raceYMax,dateStr,compDay,dayT
     </div>
   );
 }
-function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDate,periodStart,periodLabelText,frameStart}){
+function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDate,periodStart,periodLabelText,frameStart,periodRetOf}){
   const [snaps,setSnaps]=useState([]); // [] em vez de null → o gráfico desenha logo (baseline início→agora)
   const nowIso=useMemo(()=>new Date().toISOString(),[]); // "agora" fixo → conteúdo do data estável (não re-anima)
   const [mounted,setMounted]=useState(false);
@@ -2795,16 +2795,23 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
     return()=>{ cancel=true; };
   },[ids]);
 
-  // MODO PERÍODO (mês OU semana): re-baseia ao início do período. ref[nome] = total_return no 1º
-  // snapshot do período (âncora → 0%). Elevado para reutilizar no snapshot partilhável (snapValueOf).
+  // MODO PERÍODO (mês OU semana): re-baseia ao início do período. A âncora de cada membro é o total
+  // "trancado" no início do período = total_atual − rentabilidade_do_período (pfMonthRet/pfWeekRet, o
+  // MESMO valor da coluna da tabela). Assim o ponto "agora" do gráfico iguala EXATAMENTE a tabela.
+  // No mês de arranque (baseline do mês = preço de submissão → rentab. do mês = total) a âncora dá 0
+  // → o gráfico Mensal fica = ao Geral (correto). Em agosto, a âncora = ganho submissão→1-ago, logo
+  // as timelines divergem do Geral. (Antes ancorava ao 1.º snapshot do período — ex.: +7% — e
+  // subvalorizava; era diferença-de-snapshots, o método injusto.)
   const rebase=useMemo(()=>{
-    const nameById={}; shown.forEach(p=>{ nameById[p.id]=p.name; });
     const t0Base=periodStart?`${periodStart}T00:00:00.000Z`:null;
     const ref={};
-    if(t0Base){ for(const s of (snaps||[])){ const nm=nameById[s.portfolio_id]; if(!nm) continue;
-      const t=s.captured_at; if(!t||t<t0Base) continue; if(ref[nm]===undefined) ref[nm]=Number(s.total_return); } }
+    if(t0Base&&periodRetOf){ shown.forEach(p=>{
+      if(!Number.isFinite(p.total)) return;
+      const pr=periodRetOf(p);
+      if(Number.isFinite(pr)) ref[p.name]=p.total-pr; // âncora = total no início do período
+    }); }
     return {t0Base,ref};
-  },[snaps,shown,periodStart]);
+  },[shown,periodStart,periodRetOf]);
   const snapValueOf=(p)=> rebase.t0Base?(p.total-(rebase.ref[p.name]??0)):p.total; // valor por membro no snapshot
   const dataRaw=useMemo(()=>{
     const nameById={}; shown.forEach(p=>{ nameById[p.id]=p.name; });
@@ -3804,6 +3811,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
           <GlowBehind><SeasonRace ranking={ranking} preLaunch={preLaunch} myNorm={myNorm} spy={spy} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""}
             periodStart={period==="week"?(hasWeek?curWk:null):period==="month"?curMonthDateOnly:null}
             frameStart={period==="week"&&!hasWeek&&!preLaunch?frameWk:null}
+            periodRetOf={metricOf}
             periodLabelText={period==="week"?(hasWeek?weekLabel(curWk):weekLabel(frameWk)):period==="month"?periodLabel(curMonthYM):""}/></GlowBehind>
         </div>
         {preLaunch&&demos.length>0&&(
