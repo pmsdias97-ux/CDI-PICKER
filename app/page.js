@@ -635,13 +635,24 @@ function Aurora({page}){
 }
 // Só marca as posições SHORT — long é o normal, não precisa de badge.
 // Círculo com seta diagonal para baixo (aposta na queda), junto ao ticker.
-function SideBadge({side}){
+function SideBadge({side,label}){
   if(side!=="short") return null;
-  return(
+  const circle=(
     <span title="Posição short (aposta na queda)" style={{display:"inline-flex",alignItems:"center",justifyContent:"center",
       width:"clamp(15px,4.2vw,18px)",height:"clamp(15px,4.2vw,18px)",borderRadius:"50%",flexShrink:0,
       background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.4)"}}>
       <svg style={{width:"clamp(8px,2.3vw,10px)",height:"clamp(8px,2.3vw,10px)"}} viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M7 7L17 17"/><path d="M17 10V17H10"/>
+      </svg>
+    </span>
+  );
+  if(!label) return circle;
+  // Lista de ações do portefólio. DESKTOP: pill âmbar com "SHORT" + seta. MOBILE: só "SHORT" minúsculo
+  // (sem seta/pill). Texto com largura fixa ~25px → não empurra a coluna do lado. Estilos em globals.css.
+  return(
+    <span className="sideShort" title="Posição short (aposta na queda)">
+      <span className="sideShortTxt">Short</span>
+      <svg className="sideShortArrow" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M7 7L17 17"/><path d="M17 10V17H10"/>
       </svg>
     </span>
@@ -1785,6 +1796,7 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
              o conteúdo passa de desfocado a nítido ao deslizar por baixo. Relógio por baixo. */
           .cdiClock{position:static;display:flex;justify-content:center;margin-top:10px}
           .cdiNav{
+            position:relative;z-index:3; /* acima do relógio (cdiClock) → o submenu do Ranking fica por cima */
             width:max-content;max-width:calc(100% - 16px);margin:0 auto;
             justify-content:center;align-items:center;gap:4px;padding:3px 5px;border-radius:22px;flex-wrap:nowrap;
             background-color:var(--nav-tint,rgba(255,255,255,0.06));
@@ -4284,7 +4296,7 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast}){
       {loggedIn?(
         <div style={{marginBottom:18}}>
           <textarea value={draft} onChange={e=>setDraft(e.target.value.slice(0,500))} rows={2}
-            placeholder={isOwn?"Responde aos comentários…":"Ainda sem comentários. Sê o primeiro"}
+            placeholder={isOwn?"Responde aos comentários…":"Escreve aqui..."}
             style={{width:"100%",boxSizing:"border-box",resize:"vertical",minHeight:52,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,padding:"10px 12px",color:"#e2e8f0",fontSize:14,outline:"none",fontFamily:"inherit",lineHeight:1.5}}/>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:8,gap:10}}>
             <span style={{fontSize:12,color:"#64748b"}}>{draft.length}/500</span>
@@ -4455,7 +4467,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
                 <StockLogo ticker={s.ticker} size={32}/>
                 <span style={{display:"inline-flex",alignItems:"center",gap:2,minWidth:0}}>
                   <span style={{fontWeight:800,fontSize:14,color:"#e2e8f0"}}>{s.ticker}</span>
-                  <SideBadge side={s.side}/>
+                  <SideBadge side={s.side} label/>
                 </span>
               </div>
               <div style={{fontSize:13,color:"#94a3b8",marginTop:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.companyName}</div>

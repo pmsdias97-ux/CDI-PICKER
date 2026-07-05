@@ -69,6 +69,13 @@ body {
 .rankBreathe { animation: cdiRankBreathe 3.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .rankBreathe { animation: none; } }
 
+/* Etiqueta SHORT nas listas de ações do portefólio: só "SHORT" minúsculo (sem seta/pill), largura fixa
+   ~25px para não empurrar a coluna do lado. Igual em desktop e mobile. */
+.sideShort { display: inline-flex; align-items: center; flex-shrink: 0; }
+.sideShortTxt { width: 25px; text-align: center; white-space: nowrap; line-height: 1;
+  font-weight: 800; text-transform: uppercase; color: #fbbf24; font-size: 7px; letter-spacing: 0; }
+.sideShortArrow { display: none; }
+
 /* Skeletons (placeholders de carregamento) — shimmer subtil; só durante o load */
 @keyframes cdiShimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
 .cdiSkeleton {
