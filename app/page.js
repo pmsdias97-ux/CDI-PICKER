@@ -1718,6 +1718,25 @@ export default function App(){
     return{ok:true};
   }
 
+  // detailPf + "Nos 3 jogos" ANTES do guard de loading (o useMemo é um HOOK → tem de correr sempre,
+  // na mesma ordem; se ficasse depois do return, era saltado quando loading=true → Rules of Hooks).
+  const detailPf=findBySlug(portfolios,detailSlug)||myPf;
+  const detailStandings=useMemo(()=>{
+    if(!detailPf||!detailPf.official) return null;
+    const offs=ranking.filter(p=>p.official);
+    const rankBy=(metric)=>{ const s=offs.map(p=>({p,m:metric(p)})).filter(x=>Number.isFinite(x.m)).sort((a,b)=>b.m-a.m);
+      const i=s.findIndex(x=>x.p.key===detailPf.key); return i>=0?{rank:i+1,n:s.length,ret:s[i].m}:null; };
+    const hasMonth=!!(monthBase&&Object.keys(monthBase).length);
+    const hasWeek=!!(weekBase&&Object.keys(weekBase).length);
+    const monthLabel=(()=>{ const n=new Date().toLocaleDateString("pt-PT",{month:"long"}); return n.charAt(0).toUpperCase()+n.slice(1); })();
+    return {
+      geral: rankBy(p=>p.total),
+      mensal: hasMonth?rankBy(p=>pfMonthRet(p,monthBase,livePrices)):null,
+      semanal: hasWeek?rankBy(p=>pfWeekRet(p,weekBase,livePrices)):null,
+      monthLabel, weeklyWins:(winners?.[detailPf.key]?.weekly)||[],
+    };
+  },[detailPf,ranking,monthBase,weekBase,livePrices,winners]);
+
   if(loading) return(
     <div style={{minHeight:"100vh",
       background:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",
@@ -1731,7 +1750,6 @@ export default function App(){
 
   // Lugar (rank) do portefólio em detalhe — ao vivo, dentro do grupo (demo/oficial).
   // 0 = sem classificação ("em espera"). Usado para o tema da página e pelo <Detail>.
-  const detailPf=findBySlug(portfolios,detailSlug)||myPf;
   const detailRank=(()=>{
     if(!detailPf) return 0;
     if(detailPf.official&&isPreLaunch(settings)) return 0;
@@ -1753,7 +1771,7 @@ export default function App(){
   if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} pickCounts={compStats.counts} compTickers={compStats.tickers} showToast={showToast}/>);
   if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} monthBase={monthBase} pastBaselines={pastBaselines} weekBase={weekBase} weekOpens={weekOpens} weekCloses={weekCloses} period={rankPeriod} setPeriod={setRankPeriod} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)} winners={winners} showToast={showToast}/>);
   if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} dayChange={dayChange} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
-  if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} myUserId={myPf?.userId||null} adminPw={adminPw} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} winners={winners} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} myUserId={myPf?.userId||null} adminPw={adminPw} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} winners={winners} standings={detailStandings} monthBase={monthBase} weekBase={weekBase} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast} adminPw={adminPw} setAdminPw={setAdminPw}/>);
   return null;
 }
@@ -4277,11 +4295,11 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast}){
     }catch{ setComments(prev); showToast&&showToast("Falha de ligação.","error"); }
   };
 
-  const card={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,marginTop:16};
+  const card={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24};
   const canSend=!busy&&!!draft.trim();
   return(
     <div style={card}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,minHeight:34,marginBottom:16,flexWrap:"wrap"}}>
         <h3 style={{fontSize:15,fontWeight:700,margin:0,color:"#e2e8f0"}}>Comentários</h3>
         {!isOwn&&(
           <button onClick={toggleLike} disabled={likeBusy}
@@ -4338,7 +4356,98 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast}){
     </div>
   );
 }
-function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,myNorm,myUserId,adminPw,preLaunch,competitionStarted,gameStartDate,winners,reload,showToast}){
+// Gráfico "líderes e atrasados": as 8 ações da carteira ordenadas por rentabilidade, em barras
+// DIVERGENTES (verde à direita = ganho da POSIÇÃO, vermelho à esquerda = perda; short = espelho),
+// com toggle Dia/Semana/Mês. Enche o espaço vazio da coluna de análises (flex:1). Só desktop.
+function SlotChart({pf,livePrices,dayChange,monthBase,weekBase}){
+  const [period,setPeriod]=useState("day");
+  const rows=useMemo(()=>{
+    const out=(pf.stocks||[]).map(s=>{
+      const init=s.initialPrice, cur=curPrice(s.ticker,init,livePrices);
+      const mir=(v)=> s.side==="short"?-v:v; // short = espelho (a posição ganha quando a ação cai)
+      let ret=null;
+      if(period==="day"){ const d=dayChange&&dayChange[s.ticker]; if(Number.isFinite(d)) ret=mir(d); }
+      else if(period==="week"){ const wb=weekBase&&weekBase[s.ticker]; if(wb>0&&Number.isFinite(cur)&&cur>0) ret=mir(cur/wb-1); }
+      else { const mb=monthBase&&monthBase[s.ticker]; const b=(mb>0)?mb:init; if(b>0&&Number.isFinite(cur)&&cur>0) ret=mir(cur/b-1); }
+      return {ticker:s.ticker,ret};
+    }).filter(x=>x.ret!=null);
+    out.sort((a,b)=>b.ret-a.ret);
+    return out;
+  },[pf.stocks,period,livePrices,dayChange,monthBase,weekBase]);
+  const maxAbs=Math.max(0.0001,...rows.map(r=>Math.abs(r.ret)));
+  const card={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"18px 20px",flex:1,minHeight:0,display:"flex",flexDirection:"column"};
+  const tog=(k,lbl)=>(
+    <button key={k} onClick={()=>setPeriod(k)} style={{cursor:"pointer",fontSize:11.5,fontWeight:700,borderRadius:999,padding:"5px 11px",border:"none",whiteSpace:"nowrap",transition:"all .15s",color:period===k?"#0a0a0a":"#cbd5e1",background:period===k?"#4ade80":"transparent"}}>{lbl}</button>
+  );
+  return(
+    <div style={card}>
+      {/* Sem título; toggle centrado. marginBottom = padding do cartão (18) → mesma margem em cima e em baixo. */}
+      <div style={{display:"flex",justifyContent:"center",marginBottom:18}}>
+        <div style={{display:"inline-flex",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:999,padding:2}}>
+          {tog("day","Dia")}{tog("week","Semana")}{tog("month","Mês")}
+        </div>
+      </div>
+      {rows.length?(
+        <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column"}}>
+          {rows.map(r=>{ const w=(Math.abs(r.ret)/maxAbs)*50, up=r.ret>=0; return(
+            <div key={r.ticker} style={{display:"flex",alignItems:"center",gap:12,flex:1,minHeight:0}}>
+              <span style={{width:50,flexShrink:0,fontSize:12.5,fontWeight:700,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.ticker}</span>
+              <div style={{flex:1,position:"relative",height:14,minWidth:0}}>
+                <div style={{position:"absolute",left:"50%",top:-3,bottom:-3,width:1,background:"rgba(255,255,255,0.14)"}}/>
+                <div style={{position:"absolute",top:0,bottom:0,width:`${w}%`,...(up?{left:"50%",background:"linear-gradient(90deg,#16a34a,#4ade80)",borderRadius:"0 4px 4px 0"}:{right:"50%",background:"linear-gradient(270deg,#dc2626,#f87171)",borderRadius:"4px 0 0 4px"})}}/>
+              </div>
+              <span style={{width:66,flexShrink:0,textAlign:"right",fontFamily:"ui-monospace, monospace",fontSize:12.5,fontWeight:800,color:up?"#4ade80":"#f87171"}}>{pct(r.ret)}</span>
+            </div>
+          ); })}
+        </div>
+      ):(
+        <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:13,textAlign:"center"}}>
+          {period==="week"?"O ranking semanal arranca 2ª feira.":"Sem dados disponíveis."}
+        </div>
+      )}
+    </div>
+  );
+}
+// Cartão "Nos 3 jogos": posição do membro em Geral / Mensal / Semanal. standings vem do App.
+function GameStandings({standings}){
+  if(!standings) return null;
+  const card={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24};
+  const posColor=(r)=> r===1?"#facc15":r===2?"#e2e8f0":r===3?"#d97706":"#94a3b8";
+  const games=[
+    {label:"Geral",   dot:"#60a5fa", sub:null,                 data:standings.geral},
+    {label:"Mensal",  dot:"#a78bfa", sub:standings.monthLabel, data:standings.mensal},
+    {label:"Semanal", dot:"#2dd4bf", sub:null,                 data:standings.semanal, isWeek:true},
+  ];
+  return(
+    <div style={card}>
+      {/* Cabeçalho com a MESMA altura do dos "Comentários" (minHeight 34) → os títulos "Overview" e
+          "Comentários" ficam alinhados na mesma linha (ambos os cartões arrancam ao mesmo Y). */}
+      <div style={{display:"flex",alignItems:"center",minHeight:34,marginBottom:6}}>
+        <h3 style={{fontSize:15,fontWeight:700,margin:0,color:"#e2e8f0"}}>Overview</h3>
+      </div>
+      {games.map((g,i)=>(
+        <div key={g.label} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 0",borderTop:i===0?"none":"1px solid rgba(255,255,255,0.07)"}}>
+          <span style={{width:8,height:8,borderRadius:"50%",background:g.dot,flexShrink:0}}/>
+          <div style={{minWidth:0,flex:1,fontSize:13.5,fontWeight:700,color:"#e2e8f0"}}>
+            {g.label}{g.sub&&<span style={{fontWeight:500,fontSize:12.5,color:"#64748b",marginLeft:7}}>{g.sub}</span>}
+          </div>
+          <div style={{display:"flex",alignItems:"baseline",gap:8,flexShrink:0}}>
+            {g.data?(<>
+              <span style={{fontSize:16,fontWeight:800,color:posColor(g.data.rank),lineHeight:1}}>{g.data.rank}º</span>
+              <span style={{fontSize:11,color:"#64748b"}}>/ {g.data.n}</span>
+              <span style={{fontFamily:"ui-monospace, monospace",fontWeight:800,fontSize:13,color:g.data.ret>=0?"#4ade80":"#f87171",minWidth:58,textAlign:"right"}}>{pct(g.data.ret)}</span>
+            </>):g.isWeek&&standings.weeklyWins.length?(
+              <span style={{fontSize:12.5,fontWeight:700,color:"#facc15"}}>🏆 {standings.weeklyWins.join(", ")}</span>
+            ):(
+              <span style={{fontSize:12.5,color:"#64748b"}}>{g.isWeek?"Arranca 2ª feira":"—"}</span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,myNorm,myUserId,adminPw,preLaunch,competitionStarted,gameStartDate,winners,standings,monthBase,weekBase,reload,showToast}){
   const goBack=onBack||(()=>nav("ranking")); // voltar ao ranking (com destaque da linha, via onBack)
   // Coluna de rentabilidade da lista: "total" (desde a compra) ↔ "day" (diário).
   const [retMode,setRetMode]=useState("total");
@@ -4384,7 +4493,20 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
     <div style={{maxWidth:1320,margin:"0 auto",padding:"40px 20px 80px"}}>
       {rail.active&&<LeftBackRail gap={rail.gap} onBack={goBack}/>}
       {rank===1&&<Confetti key={pf.key} intense={!!myNorm && pf.normName===myNorm}/>}
-      <style>{`.cdiDetail{display:grid;gap:16px;grid-template-columns:1fr}@media(min-width:1000px){.cdiDetail{grid-template-columns:minmax(0,1fr) minmax(0,1.12fr);align-items:start}}`}</style>
+      <style>{`
+        .cdiDetail{display:grid;gap:16px;grid-template-columns:1fr;grid-template-areas:"left" "right" "stats" "comments"}
+        .detLeft{grid-area:left;min-width:0}.detRight{grid-area:right;min-width:0}.detStats{grid-area:stats;min-width:0}.detComments{grid-area:comments;min-width:0}
+        .detSlot{display:none}   /* gráfico só em desktop */
+        /* Desktop: 2 colunas × 2 linhas. LINHA 2 = "Nos 3 jogos" (col 1) + Comentários (col 2), ambos a
+           começar por baixo da lista de ações (col 1, mais alta, define a linha 1). align-items:start.
+           A coluna direita ESTICA à altura da linha (align-self:stretch) e é flex-column → o gráfico
+           "detSlot" (flex:1) enche exatamente o espaço vazio que sobra por baixo dos cartões do dia. */
+        @media(min-width:1000px){
+          .cdiDetail{grid-template-columns:minmax(0,1fr) minmax(0,1.12fr);align-items:start;grid-template-areas:"left right" "stats comments"}
+          .detRight{align-self:stretch;display:flex;flex-direction:column}
+          .detSlot{display:flex;flex:1;min-height:200px;margin-top:16}
+        }
+      `}</style>
       {!rail.active&&(
       <button onClick={goBack} className="backLink"
         style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:14,marginBottom:24,
@@ -4394,7 +4516,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
       )}
 
       <div className="cdiDetail">
-      <div>{/* coluna esquerda: portefólio */}
+      <div className="detLeft">{/* coluna esquerda: portefólio */}
       <div style={{position:"relative",marginBottom:16}}>
         {rank>=1&&rank<=3&&(
           <BreatheGlow inset="-16% -10%" base={0.4}
@@ -4497,7 +4619,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
       </div>
       </div>{/* /coluna esquerda */}
 
-      <div>{/* coluna direita: análises */}
+      <div className="detRight">{/* coluna direita: análises */}
       {/* Evolução (#5) + Exposição por setor */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16,marginBottom:16}}>
         <TiltCard style={{...GLASS,borderRadius:16,padding:24}}>
@@ -4510,33 +4632,41 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
         </TiltCard>
       </div>
 
-      {/* Destaques — melhor/pior performance DO DIA. A pill "Performance de hoje"
-          fica POR BAIXO das boxes (desktop) ou ENTRE elas (mobile), via grid-areas. */}
+      {/* Destaques — melhores/piores DO DIA. Cabeçalho: texto à ESQUERDA + seta à direita. */}
       <style>{`
-        .dayGrid{display:grid;gap:16px;align-items:start;grid-template-columns:1fr 1fr;grid-template-areas:"best worst" "pill pill"}
-        .dayPill{grid-area:pill;justify-self:center;position:relative;display:inline-flex;align-items:center;font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#cbd5e1;border-radius:999px;padding:6px 18px;background:rgba(255,255,255,0.05)}
-        .dayPill::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;background:linear-gradient(90deg,rgba(74,222,128,0.8),rgba(248,113,113,0.8));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
-        @media(max-width:560px){.dayGrid{grid-template-columns:1fr;grid-template-areas:"best" "pill" "worst"}.dayPill::before{background:linear-gradient(180deg,rgba(74,222,128,0.8),rgba(248,113,113,0.8))}}
+        .dayGrid{display:grid;gap:16px;align-items:start;grid-template-columns:1fr 1fr;grid-template-areas:"best worst"}
+        .dayLblBest{right:0}   /* desktop: "Melhores do dia" à direita (lado interior) */
+        @media(max-width:560px){.dayGrid{grid-template-columns:1fr;grid-template-areas:"best" "worst"}
+          .dayLblBest{right:auto;left:0}}   /* mobile (empilhado): à esquerda, igual a "Piores do dia" */
       `}</style>
       <div className="dayGrid">
         <TiltCard style={{...GLASS,gridArea:"best",minWidth:0,borderRadius:16,padding:24,
           background:"linear-gradient(160deg, rgba(34,197,94,0.12), rgba(34,197,94,0.03))",
           border:"1px solid rgba(34,197,94,0.20)"}}>
-          <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><DayChip up/></div>
+          <div style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center",minHeight:26,marginBottom:14}}>
+            <DayChip up/>
+            <span className="dayLblBest" style={{position:"absolute",top:"50%",transform:"translateY(-50%)",fontSize:6,fontWeight:700,letterSpacing:".5px",textTransform:"uppercase",color:"#4ade80",whiteSpace:"nowrap"}}>Melhores do dia</span>
+          </div>
           {byDay.length?<TopList items={byDay.slice(0,3)}/>:<p style={{fontSize:13,color:"#6b7280",textAlign:"center",margin:0}}>Sem variação do dia disponível.</p>}
         </TiltCard>
         <TiltCard style={{...GLASS,gridArea:"worst",minWidth:0,borderRadius:16,padding:24,
           background:"linear-gradient(160deg, rgba(239,68,68,0.12), rgba(239,68,68,0.03))",
           border:"1px solid rgba(239,68,68,0.20)"}}>
-          <div style={{display:"flex",justifyContent:"center",marginBottom:14}}><DayChip/></div>
+          <div style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center",minHeight:26,marginBottom:14}}>
+            <DayChip/>
+            <span style={{position:"absolute",left:0,top:"50%",transform:"translateY(-50%)",fontSize:6,fontWeight:700,letterSpacing:".5px",textTransform:"uppercase",color:"#f87171",whiteSpace:"nowrap"}}>Piores do dia</span>
+          </div>
           {byDay.length?<TopList items={[...byDay].reverse().slice(0,3)}/>:<p style={{fontSize:13,color:"#6b7280",textAlign:"center",margin:0}}>Sem variação do dia disponível.</p>}
         </TiltCard>
-        <div className="dayPill">Performance de hoje</div>
       </div>
-      </div>{/* /coluna direita */}
+      {/* Gráfico "líderes e atrasados" — só desktop; enche o espaço vazio que sobra na coluna direita
+          (a coluna estica à altura da lista de ações e este cartão ocupa o resto via flex:1). */}
+      <div className="detSlot"><SlotChart pf={pf} livePrices={livePrices} dayChange={dayChange} monthBase={monthBase} weekBase={weekBase}/></div>
+      </div>{/* /coluna direita (análises) */}
+      {/* Linha 2 da grelha (por baixo da lista de ações): "Nos 3 jogos" (col 1) + Comentários (col 2). */}
+      <div className="detStats"><GameStandings standings={standings}/></div>
+      <div className="detComments"><PortfolioReactions pf={pf} myNorm={myNorm} myUserId={myUserId} adminPw={adminPw} showToast={showToast}/></div>
       </div>{/* /cdiDetail */}
-      {/* Mural social: gostos + comentários/roasts, à largura toda por baixo das colunas. */}
-      <PortfolioReactions pf={pf} myNorm={myNorm} myUserId={myUserId} adminPw={adminPw} showToast={showToast}/>
     </div>
   );
 }
@@ -4573,7 +4703,7 @@ function TopList({items}){
           <span style={{fontSize:12,fontWeight:700,color:"#4b5563",minWidth:16}}>{i+1}</span>
           <StockLogo ticker={s.ticker} size={26}/>
           <div style={{minWidth:0,flex:1}}>
-            <div style={{fontSize:13,fontWeight:800,color:"#e2e8f0",display:"flex",alignItems:"center",gap:6}}>{s.ticker}{s.side==="short"&&<SideBadge side="short"/>}</div>
+            <div style={{fontSize:13,fontWeight:800,color:"#e2e8f0",display:"flex",alignItems:"center",gap:6}}>{s.ticker}{s.side==="short"&&<SideBadge side="short" label/>}</div>
             <div style={{fontSize:11,color:"#6b7280",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.companyName}</div>
           </div>
           <span style={{fontFamily:"monospace",fontSize:14,fontWeight:700,color:s.ret>=0?"#4ade80":"#f87171"}}>{pct(s.ret)}</span>
