@@ -52,7 +52,7 @@ export async function POST(request) {
 
   try {
     const { data: pfs } = await supabase.from("portfolios")
-      .select("id, official, portfolio_stocks(ticker, initial_price), users(id)");
+      .select("id, official, portfolio_stocks(ticker, initial_price), users!portfolios_user_id_fkey(id)");
     const list = pfs || [];
     const tickers = new Set();
     let stocksNoBase = 0, officialEmpty = 0;

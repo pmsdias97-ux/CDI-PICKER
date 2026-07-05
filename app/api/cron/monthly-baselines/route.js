@@ -58,7 +58,7 @@ export async function GET(request) {
   // Tickers em competição = portefólios OFICIAIS de utilizadores que submeteram.
   const { data: rows, error } = await supabase
     .from("portfolios")
-    .select("official, users!inner(has_submitted_portfolio), portfolio_stocks(ticker)");
+    .select("official, users!portfolios_user_id_fkey!inner(has_submitted_portfolio), portfolio_stocks(ticker)");
   if (error) return Response.json({ error: error.message }, { status: 500 });
   const tickers = [...new Set(
     (rows || [])

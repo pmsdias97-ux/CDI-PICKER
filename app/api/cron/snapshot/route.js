@@ -52,7 +52,7 @@ export async function GET(request) {
   // Only portfolios whose user has submitted.
   const { data: rows, error } = await supabase
     .from("portfolios")
-    .select("id, official, users!inner(has_submitted_portfolio), portfolio_stocks(ticker, initial_price, side)");
+    .select("id, official, users!portfolios_user_id_fkey!inner(has_submitted_portfolio), portfolio_stocks(ticker, initial_price, side)");
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
   const portfolios = (rows || []).filter(

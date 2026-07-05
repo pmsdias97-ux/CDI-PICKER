@@ -22,7 +22,7 @@ export async function POST(request) {
     .from("portfolios")
     .select(`
       id, user_id, created_at, locked, initial_value, spy_initial_price, official,
-      users ( telegram_name, has_submitted_portfolio ),
+      users!portfolios_user_id_fkey ( telegram_name, has_submitted_portfolio ),
       portfolio_stocks ( ticker, company_name, initial_price, current_price, initial_weight, side, currency )
     `);
   if (error) return Response.json({ error: error.message }, { status: 500 });

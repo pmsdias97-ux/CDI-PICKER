@@ -1260,6 +1260,16 @@ function fmtDateShort(iso){
   try{ return new Intl.DateTimeFormat("pt-PT",{day:"2-digit",month:"2-digit",year:"numeric"}).format(new Date(iso)); }
   catch{ return ""; }
 }
+// Tempo relativo curto (pt-PT) para comentários: "agora", "há 5 min", "há 2 h", "há 3 d", senão data.
+function timeAgo(iso){
+  const t=Date.parse(iso); if(!Number.isFinite(t)) return "";
+  const s=Math.max(0,Math.floor((Date.now()-t)/1000));
+  if(s<60) return "agora";
+  const m=Math.floor(s/60); if(m<60) return `há ${m} min`;
+  const h=Math.floor(m/60); if(h<24) return `há ${h} h`;
+  const d=Math.floor(h/24); if(d<7) return `há ${d} d`;
+  return fmtDateShort(iso);
+}
 // Contador da competição: antes do arranque conta até ao fim das submissões;
 // depois mostra a data do vencedor + contagem decrescente. Elegante e responsivo.
 function CompetitionTimer({settings,period,hasWeek}){
@@ -1424,6 +1434,7 @@ export default function App(){
   const [duelSlugs,setDuelSlugs]=useState(null); // [slugA, slugB] para o duelo 1v1
   const [toast,setToast]=useState(null);
   const [rankHighlight,setRankHighlight]=useState(null); // key da linha a destacar ao VOLTAR de um detalhe
+  const [adminPw,setAdminPw]=useState(""); // password de admin verificada (memória de sessão) → moderar comentários inline
   const rankHighlightRef=useRef(null); rankHighlightRef.current=rankHighlight;
 
   const showToast=useCallback((msg,kind="ok")=>{ setToast({msg,kind}); setTimeout(()=>setToast(null),3500); },[]);
@@ -1478,7 +1489,7 @@ export default function App(){
         initial_value,
         spy_initial_price,
         official,
-        users (
+        users!portfolios_user_id_fkey (
           telegram_name,
           has_submitted_portfolio
         ),
@@ -1731,8 +1742,8 @@ export default function App(){
   if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} pickCounts={compStats.counts} compTickers={compStats.tickers} showToast={showToast}/>);
   if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} monthBase={monthBase} pastBaselines={pastBaselines} weekBase={weekBase} weekOpens={weekOpens} weekCloses={weekCloses} period={rankPeriod} setPeriod={setRankPeriod} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)} winners={winners} showToast={showToast}/>);
   if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} dayChange={dayChange} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
-  if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} winners={winners} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
-  if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast}/>);
+  if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} myUserId={myPf?.userId||null} adminPw={adminPw} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} winners={winners} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast} adminPw={adminPw} setAdminPw={setAdminPw}/>);
   return null;
 }
 
@@ -4177,7 +4188,145 @@ function OwnLockedGate({pf,nav,reload,showToast}){
     </div>
   );
 }
-function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,myNorm,preLaunch,competitionStarted,gameStartDate,winners,reload,showToast}){
+// Mural social do portefólio: gostos (1 por pessoa) + comentários/roasts. Leitura pública; escrita só
+// para quem submeteu (name+pin via authOwner). Apaga: o autor o seu, o admin qualquer (adminPw presente).
+function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast}){
+  const [comments,setComments]=useState(null); // null = a carregar
+  const [likeCount,setLikeCount]=useState(0);
+  const [liked,setLiked]=useState(false);
+  const [draft,setDraft]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [likeBusy,setLikeBusy]=useState(false);
+  const loggedIn=!!myUserId;
+  const isOwn=!!myNorm && pf.normName===myNorm;
+  const creds=()=>({ name:sget(K.MYNAME), pin:sget(K.MYPIN) });
+
+  useEffect(()=>{
+    let cancel=false;
+    (async()=>{
+      const { data:cm }=await supabase
+        .from("portfolio_comments")
+        .select("id, content, created_at, user_id, users(telegram_name)")
+        .eq("portfolio_id",pf.id).order("created_at",{ascending:false}).limit(100);
+      if(!cancel) setComments(cm||[]);
+      const { count }=await supabase
+        .from("portfolio_likes").select("portfolio_id",{count:"exact",head:true}).eq("portfolio_id",pf.id);
+      if(!cancel) setLikeCount(count||0);
+      if(myUserId){
+        const { data:mine }=await supabase
+          .from("portfolio_likes").select("portfolio_id").eq("portfolio_id",pf.id).eq("user_id",myUserId).maybeSingle();
+        if(!cancel) setLiked(!!mine);
+      }else if(!cancel){ setLiked(false); }
+    })();
+    return()=>{ cancel=true; };
+  },[pf.id,myUserId]);
+
+  const toggleLike=async()=>{
+    if(!loggedIn){ showToast&&showToast("Submete um portefólio para reagir.","error"); return; }
+    if(likeBusy) return; setLikeBusy(true);
+    const prev=liked, prevN=likeCount;
+    setLiked(!prev); setLikeCount(prevN+(prev?-1:1)); // otimista
+    try{
+      const { name,pin }=creds();
+      const res=await fetch("/api/likes/toggle",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,pin,portfolioId:pf.id})});
+      const j=await res.json().catch(()=>({}));
+      if(!res.ok){ setLiked(prev); setLikeCount(prevN); showToast&&showToast(j.error||"Falha ao gostar.","error"); }
+      else setLiked(!!j.liked);
+    }catch{ setLiked(prev); setLikeCount(prevN); showToast&&showToast("Falha de ligação.","error"); }
+    finally{ setLikeBusy(false); }
+  };
+
+  const submit=async()=>{
+    const text=draft.trim();
+    if(!loggedIn){ showToast&&showToast("Submete um portefólio para comentar.","error"); return; }
+    if(!text||busy) return;
+    if(text.length>500){ showToast&&showToast("Máx. 500 caracteres.","error"); return; }
+    setBusy(true);
+    try{
+      const { name,pin }=creds();
+      const res=await fetch("/api/comments/save",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,pin,portfolioId:pf.id,content:text})});
+      const j=await res.json().catch(()=>({}));
+      if(!res.ok||!j.comment){ showToast&&showToast(j.error||"Falha ao publicar.","error"); }
+      else { setComments(cs=>[{...j.comment,users:{telegram_name:name}},...(cs||[])]); setDraft(""); }
+    }catch{ showToast&&showToast("Falha de ligação.","error"); }
+    finally{ setBusy(false); }
+  };
+
+  const del=async(c)=>{
+    const mine=myUserId&&c.user_id===myUserId;
+    const asAdmin=!mine&&!!adminPw;
+    if(!mine&&!asAdmin) return;
+    const prev=comments;
+    setComments(cs=>(cs||[]).filter(x=>x.id!==c.id)); // otimista
+    try{
+      const body=asAdmin?{commentId:c.id,adminPassword:adminPw}:{commentId:c.id,...creds()};
+      const res=await fetch("/api/comments/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      if(!res.ok){ const j=await res.json().catch(()=>({})); setComments(prev); showToast&&showToast(j.error||"Falha ao apagar.","error"); }
+    }catch{ setComments(prev); showToast&&showToast("Falha de ligação.","error"); }
+  };
+
+  const card={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,marginTop:16};
+  const canSend=!busy&&!!draft.trim();
+  return(
+    <div style={card}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+        <h3 style={{fontSize:15,fontWeight:700,margin:0,color:"#e2e8f0"}}>Comentários</h3>
+        {!isOwn&&(
+          <button onClick={toggleLike} disabled={likeBusy}
+            title={loggedIn?(liked?"Remover gosto":"Dar gosto"):"Submete para reagir"}
+            style={{display:"inline-flex",alignItems:"center",gap:8,cursor:loggedIn?"pointer":"not-allowed",
+              border:`1px solid ${liked?"rgba(244,63,94,0.5)":"rgba(255,255,255,0.14)"}`,borderRadius:999,padding:"7px 14px",
+              background:liked?"rgba(244,63,94,0.14)":"rgba(255,255,255,0.05)",color:liked?"#fb7185":"#cbd5e1",fontWeight:700,fontSize:14,opacity:loggedIn?1:0.65,transition:"all .15s"}}>
+            <span style={{fontSize:16,lineHeight:1}}>{liked?"❤️":"🤍"}</span>{likeCount}
+          </button>
+        )}
+      </div>
+      {loggedIn?(
+        <div style={{marginBottom:18}}>
+          <textarea value={draft} onChange={e=>setDraft(e.target.value.slice(0,500))} rows={2}
+            placeholder={isOwn?"Responde aos comentários…":"Ainda sem comentários. Sê o primeiro"}
+            style={{width:"100%",boxSizing:"border-box",resize:"vertical",minHeight:52,background:"rgba(0,0,0,0.22)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,padding:"10px 12px",color:"#e2e8f0",fontSize:14,outline:"none",fontFamily:"inherit",lineHeight:1.5}}/>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:8,gap:10}}>
+            <span style={{fontSize:12,color:"#64748b"}}>{draft.length}/500</span>
+            <button onClick={submit} disabled={!canSend}
+              style={{cursor:canSend?"pointer":"not-allowed",border:"none",borderRadius:10,padding:"8px 18px",fontSize:14,fontWeight:700,
+                background:canSend?"linear-gradient(180deg,#3b82f6,#2563eb)":"rgba(255,255,255,0.08)",color:canSend?"#fff":"#64748b"}}>
+              {busy?"A publicar…":"Publicar"}
+            </button>
+          </div>
+        </div>
+      ):(
+        <div style={{marginBottom:18,padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.04)",border:"1px dashed rgba(255,255,255,0.12)",fontSize:13.5,color:"#94a3b8",textAlign:"center"}}>
+          Submete um portefólio para dar gosto e comentar.
+        </div>
+      )}
+      {comments===null?(
+        <div style={{fontSize:13,color:"#64748b",padding:"8px 0"}}>A carregar…</div>
+      ):comments.length===0?null:(
+        <div>
+          {comments.map(c=>{
+            const author=c.users?.telegram_name||"Anónimo";
+            const canDel=(myUserId&&c.user_id===myUserId)||!!adminPw;
+            return(
+              <div key={c.id} style={{display:"flex",gap:11,padding:"11px 0",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+                <div style={{width:34,height:34,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)",fontWeight:800,fontSize:14,color:"#cbd5e1"}}>{author.slice(0,1).toUpperCase()}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontWeight:700,fontSize:13.5,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{author}</span>
+                    <span style={{fontSize:11.5,color:"#64748b",flexShrink:0}}>{timeAgo(c.created_at)}</span>
+                    {canDel&&<button onClick={()=>del(c)} title="Apagar" style={{marginLeft:"auto",background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:12,padding:2,flexShrink:0}}>apagar</button>}
+                  </div>
+                  <div style={{fontSize:14,color:"#cbd5e1",lineHeight:1.5,marginTop:2,whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{c.content}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,myNorm,myUserId,adminPw,preLaunch,competitionStarted,gameStartDate,winners,reload,showToast}){
   const goBack=onBack||(()=>nav("ranking")); // voltar ao ranking (com destaque da linha, via onBack)
   // Coluna de rentabilidade da lista: "total" (desde a compra) ↔ "day" (diário).
   const [retMode,setRetMode]=useState("total");
@@ -4374,6 +4523,8 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
       </div>
       </div>{/* /coluna direita */}
       </div>{/* /cdiDetail */}
+      {/* Mural social: gostos + comentários/roasts, à largura toda por baixo das colunas. */}
+      <PortfolioReactions pf={pf} myNorm={myNorm} myUserId={myUserId} adminPw={adminPw} showToast={showToast}/>
     </div>
   );
 }
@@ -4632,9 +4783,11 @@ function Duel({a,b,livePrices,spy,dayChange,nav}){
 }
 
 /* ---- Admin --------------------------------------------------------------- */
-function Admin({settings,setSettings,portfolios,ranking,livePrices,reload,showToast}){
-  const [authed,setAuthed]=useState(false);
-  const [pw,setPw]=useState("");
+function Admin({settings,setSettings,portfolios,ranking,livePrices,reload,showToast,adminPw,setAdminPw}){
+  // authed derivado da password de admin ELEVADA ao App (persiste entre páginas na sessão → permite
+  // moderar comentários inline nos perfis). pw = input local, inicializado a partir de adminPw.
+  const authed=!!adminPw;
+  const [pw,setPw]=useState(adminPw||"");
   const [checking,setChecking]=useState(false);
   // The password is validated server-side; on success we keep it in memory only
   // to authorize subsequent admin actions (it is sent with each request).
@@ -4643,7 +4796,7 @@ function Admin({settings,setSettings,portfolios,ranking,livePrices,reload,showTo
     setChecking(true);
     try{
       const res=await fetch("/api/admin/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
-      if(res.ok) setAuthed(true);
+      if(res.ok) setAdminPw(pw);
       else showToast("Palavra-passe incorreta.","error");
     }catch{ showToast("Falha de ligação.","error"); }
     finally{ setChecking(false); }
