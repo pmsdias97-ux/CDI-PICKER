@@ -116,6 +116,43 @@ const SECTORS = {
   SPCX:"Industrial",RTX:"Industrial",LMT:"Industrial",
   // ETFs
   VOO:"ETF / Índice",SPY:"ETF / Índice",QQQ:"ETF / Índice",VTI:"ETF / Índice",
+  // ── Backfill: todos os tickers em uso nos portefólios, classificados 1×
+  //    (evita o "A identificar…" — a mesma carteira abre sempre resolvida).
+  // Tecnologia
+  AAOI:"Tecnologia",ACN:"Tecnologia",AKAM:"Tecnologia",AMAT:"Tecnologia",AMBA:"Tecnologia",
+  AMKR:"Tecnologia",APLD:"Tecnologia",APP:"Tecnologia",CGNX:"Tecnologia",CLS:"Tecnologia",
+  COHR:"Tecnologia",CRDO:"Tecnologia",CRWD:"Tecnologia",CRWV:"Tecnologia",CTM:"Tecnologia",
+  DSGX:"Tecnologia",DUOL:"Tecnologia",FORM:"Tecnologia",FTNT:"Tecnologia",GLW:"Tecnologia",
+  GRRR:"Tecnologia",INFQ:"Tecnologia",INOD:"Tecnologia",INTU:"Tecnologia",IONQ:"Tecnologia",
+  KLAC:"Tecnologia",LRCX:"Tecnologia",MRVL:"Tecnologia",NBIS:"Tecnologia",NET:"Tecnologia",
+  NTSK:"Tecnologia",NVTS:"Tecnologia",P:"Tecnologia",QBTS:"Tecnologia",QLYS:"Tecnologia",
+  QUBT:"Tecnologia",RGTI:"Tecnologia",RZLV:"Tecnologia",SNDK:"Tecnologia",SNOW:"Tecnologia",
+  SNPS:"Tecnologia",SOUN:"Tecnologia",TEAM:"Tecnologia",TSEM:"Tecnologia",WDC:"Tecnologia",
+  ZS:"Tecnologia",HIVE:"Tecnologia",IREN:"Tecnologia",NXTS:"Tecnologia",
+  // Comunicação
+  ASTS:"Comunicação",LUMN:"Comunicação",RDDT:"Comunicação",TTWO:"Comunicação",U:"Comunicação",
+  WBD:"Comunicação",
+  // Consumo
+  AZO:"Consumo",BABA:"Consumo",BKNG:"Consumo",CELH:"Consumo",CPRT:"Consumo",DPZ:"Consumo",
+  ELF:"Consumo",FLUT:"Consumo",HLT:"Consumo",MELI:"Consumo",POOL:"Consumo",RACE:"Consumo",
+  SONY:"Consumo",
+  // Financeiro
+  DLO:"Financeiro",FICO:"Financeiro",FOUR:"Financeiro",HOOD:"Financeiro",
+  IBKR:"Financeiro",SPGI:"Financeiro",
+  // Saúde
+  CVS:"Saúde",HIMS:"Saúde",ISRG:"Saúde",NVO:"Saúde",OSCR:"Saúde",SIGA:"Saúde",
+  SLS:"Saúde",TEM:"Saúde",VEEV:"Saúde",XRAY:"Saúde",
+  // Industrial
+  AMPX:"Industrial",ATLN:"Industrial",AVAV:"Industrial",BE:"Industrial",FPS:"Industrial",
+  GEV:"Industrial",GRAB:"Industrial",LUNR:"Industrial",ONDS:"Industrial",OPTX:"Industrial",
+  PL:"Industrial",PSIG:"Industrial",QS:"Industrial",QXO:"Industrial",RDW:"Industrial",
+  RKLB:"Industrial",RR:"Industrial",SMR:"Industrial",TE:"Industrial",VRT:"Industrial",
+  // Serviços Públicos (utilities)
+  CEG:"Serviços Públicos",VST:"Serviços Públicos",
+  // Materiais (metais / químicos / commodities)
+  AAAU:"Materiais",ADUR:"Materiais",ASPI:"Materiais",
+  // Cripto (BTC + tesourarias/mineração)
+  BMNP:"Cripto",BMNR:"Cripto",BTC:"Cripto",MSTR:"Cripto",STRC:"Cripto",
 };
 const SECTOR_COLORS=["#3b82f6","#22c55e","#fbbf24","#a855f7","#f87171","#06b6d4","#f97316","#94a3b8"];
 
@@ -4117,38 +4154,30 @@ function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarte
 
 /* ---- Sector exposure donut ----------------------------------------------- */
 function SectorDonut({stocks}){
-  // Tickers fora do mapa curado são resolvidos via /api/stocks/sector (que
-  // aprende e guarda na BD). Até resolverem, ficam em "A identificar…".
-  const [learned,setLearned]=useState({});
+  // Setores 100% do mapa curado (SECTORS) — sem APIs nem "A identificar…".
+  // Cobre todos os tickers em uso; um ticker novo (raro) cai em "Outros".
   const [hi,setHi]=useState(null); // setor em destaque (hover)
-  useEffect(()=>{
-    const unknown=[...new Set(stocks.map(s=>s.ticker).filter(t=>!SECTORS[String(t).toUpperCase()]))];
-    if(!unknown.length) return;
-    let cancel=false;
-    (async()=>{
-      const updates={};
-      for(const t of unknown){
-        try{
-          const r=await fetch(`/api/stocks/sector?ticker=${encodeURIComponent(t)}`);
-          const d=await r.json();
-          if(d&&d.sector) updates[t]=d.sector;
-        }catch{}
-      }
-      if(!cancel&&Object.keys(updates).length) setLearned(prev=>({...prev,...updates}));
-    })();
-    return()=>{ cancel=true; };
-  },[stocks]);
-  const sec=t=>SECTORS[String(t).toUpperCase()]||learned[t]||"A identificar…";
+  const sec=t=>SECTORS[String(t).toUpperCase()]||"Outros";
   const counts={};
   stocks.forEach(s=>{ const k=sec(s.ticker); counts[k]=(counts[k]||0)+1; });
   const total=stocks.length||1;
-  const segs=Object.entries(counts).sort((a,b)=>b[1]-a[1])
-    .map(([name,n],i)=>({name,n,pct:n/total,color:SECTOR_COLORS[i%SECTOR_COLORS.length]}));
+  // Ordena por peso e agrupa a cauda em "Outros" (máx. ~6 fatias). Assim o card
+  // não cresce com o nº de setores — mantém a altura ≈ a do gráfico de Evolução
+  // ao lado, para a coluna direita não passar por baixo da lista de ações.
+  let entries=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  const MAX=6;
+  if(entries.length>MAX){
+    const head=entries.slice(0,MAX-1);
+    const rest=entries.slice(MAX-1).reduce((a,[,n])=>a+n,0);
+    entries=[...head,["Outros",rest]];
+  }
+  const segs=entries.map(([name,n],i)=>({name,n,pct:n/total,
+    color:name==="Outros"?"#64748b":SECTOR_COLORS[i%SECTOR_COLORS.length]}));
   const R=32.5,SW=26,C=2*Math.PI*R;
   let off=0;
   return(
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:14}}>
-      <svg viewBox="0 0 100 100" style={{width:"clamp(110px,32vw,140px)",height:"auto",flexShrink:0,overflow:"visible",transform:"rotate(-90deg)"}}>
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12}}>
+      <svg viewBox="0 0 100 100" style={{width:"clamp(104px,28vw,128px)",height:"auto",flexShrink:0,overflow:"visible",transform:"rotate(-90deg)"}}>
         {segs.map((s,i)=>{ const len=s.pct*C; const el=(
           <circle key={i} cx="50" cy="50" r={R} fill="none" stroke={s.color}
             strokeWidth={hi===i?SW+4:SW} opacity={hi==null||hi===i?1:0.28}
@@ -4157,13 +4186,13 @@ function SectorDonut({stocks}){
             strokeDasharray={`${len.toFixed(2)} ${(C-len).toFixed(2)}`} strokeDashoffset={(-off).toFixed(2)}/>
         ); off+=len; return el; })}
       </svg>
-      <div style={{width:"100%",display:"flex",flexDirection:"column",gap:6}}>
+      <div style={{width:"100%",display:"flex",flexDirection:"column",gap:3,maxHeight:132,overflowY:"auto"}}>
         {segs.map((s,i)=>(
           <div key={i} onMouseEnter={()=>setHi(i)} onMouseLeave={()=>setHi(null)}
-            style={{display:"flex",alignItems:"center",gap:10,fontSize:13,padding:"2px 6px",borderRadius:7,cursor:"pointer",
+            style={{display:"flex",alignItems:"center",gap:9,fontSize:12.5,padding:"1px 6px",borderRadius:7,cursor:"pointer",
               opacity:hi==null||hi===i?1:0.4,background:hi===i?"rgba(255,255,255,0.05)":"transparent",transition:"opacity .15s, background .15s"}}>
             <span style={{width:10,height:10,borderRadius:3,background:s.color,flexShrink:0}}/>
-            <span style={{flex:1,minWidth:0,color:"#cbd5e1",overflowWrap:"break-word"}}>{s.name}</span>
+            <span style={{flex:1,minWidth:0,color:"#cbd5e1",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{s.name}</span>
             <span style={{color:"#e2e8f0",fontWeight:700,fontFamily:"monospace"}}>{s.n}</span>
             <span style={{color:"#6b7280",fontFamily:"monospace",minWidth:38,textAlign:"right"}}>{Math.round(s.pct*100)}%</span>
           </div>
@@ -4375,7 +4404,8 @@ function SlotChart({pf,livePrices,dayChange,monthBase,weekBase}){
     return out;
   },[pf.stocks,period,livePrices,dayChange,monthBase,weekBase]);
   const maxAbs=Math.max(0.0001,...rows.map(r=>Math.abs(r.ret)));
-  const card={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"18px 20px",flex:1,minHeight:0,display:"flex",flexDirection:"column"};
+  // justifyContent:center → o bloco [toggle + barras] fica centrado na vertical: margem igual em cima e em baixo.
+  const card={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px",flex:1,minHeight:0,display:"flex",flexDirection:"column",justifyContent:"center"};
   const tog=(k,lbl)=>(
     <button key={k} onClick={()=>setPeriod(k)} style={{cursor:"pointer",fontSize:11.5,fontWeight:700,borderRadius:999,padding:"5px 11px",border:"none",whiteSpace:"nowrap",transition:"all .15s",color:period===k?"#0a0a0a":"#cbd5e1",background:period===k?"#4ade80":"transparent"}}>{lbl}</button>
   );
@@ -4388,9 +4418,9 @@ function SlotChart({pf,livePrices,dayChange,monthBase,weekBase}){
         </div>
       </div>
       {rows.length?(
-        <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column"}}>
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
           {rows.map(r=>{ const w=(Math.abs(r.ret)/maxAbs)*50, up=r.ret>=0; return(
-            <div key={r.ticker} style={{display:"flex",alignItems:"center",gap:12,flex:1,minHeight:0}}>
+            <div key={r.ticker} style={{display:"flex",alignItems:"center",gap:12}}>
               <span style={{width:50,flexShrink:0,fontSize:12.5,fontWeight:700,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.ticker}</span>
               <div style={{flex:1,position:"relative",height:14,minWidth:0}}>
                 <div style={{position:"absolute",left:"50%",top:-3,bottom:-3,width:1,background:"rgba(255,255,255,0.14)"}}/>
@@ -4401,7 +4431,7 @@ function SlotChart({pf,livePrices,dayChange,monthBase,weekBase}){
           ); })}
         </div>
       ):(
-        <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:13,textAlign:"center"}}>
+        <div style={{padding:"48px 0",textAlign:"center",color:"#64748b",fontSize:13}}>
           {period==="week"?"O ranking semanal arranca 2ª feira.":"Sem dados disponíveis."}
         </div>
       )}
@@ -4504,7 +4534,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
         @media(min-width:1000px){
           .cdiDetail{grid-template-columns:minmax(0,1fr) minmax(0,1.12fr);align-items:start;grid-template-areas:"left right" "stats comments"}
           .detRight{align-self:stretch;display:flex;flex-direction:column}
-          .detSlot{display:flex;flex:1;min-height:200px;margin-top:16}
+          .detSlot{display:flex;flex:1;min-height:200px;margin-top:16px}
         }
       `}</style>
       {!rail.active&&(
