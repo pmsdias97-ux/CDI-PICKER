@@ -1332,20 +1332,26 @@ function CompetitionTimer({settings,period,hasWeek}){
   const dayDiff=(a,b)=>Math.floor((Date.UTC(a.getUTCFullYear(),a.getUTCMonth(),a.getUTCDate())-Date.UTC(b.getUTCFullYear(),b.getUTCMonth(),b.getUTCDate()))/86400000);
   let label, d;
   if(started&&period==="week"){
-    // Mini-época semanal: 2ª (abertura) → 6ª (fecho). Vencedor apurado 6ª ao fecho; fim de semana = fechada.
+    // Mini-época semanal: arranca 2ª feira (abertura US) → fecha 6ª (fecho US); só ao fecho de 6ª é
+    // apurado o vencedor. A mensagem segue o CALENDÁRIO (não só o hasWeek): na 2ª de manhã, antes da
+    // abertura, a semana JÁ é a desta 2ª — nunca deve apontar para a 2ª seguinte.
     const nd=new Date(now);
-    const wk=weekKey(nd); // 2ª feira desta semana (UTC)
-    if(!hasWeek){
-      const todayYMD=nd.toISOString().slice(0,10);
-      const startStr=(todayYMD<WEEK_LIVE_FROM)?WEEK_LIVE_FROM:nextWeek(wk); // pré-arranque → 13-jul; depois → próxima 2ª
-      const start=new Date(startStr+"T00:00:00Z");
-      d=dayDiff(start,nd);
-      label=`Arranca 2ª feira, ${fmtDateShort(startStr)}`;
+    const wk=weekKey(nd);          // 2ª feira (UTC) desta semana
+    const dowUTC=nd.getUTCDay();   // 0=dom … 6=sáb
+    // "Arranca": conta até uma 2ª feira; se essa 2ª for hoje, mostra "Arranca hoje" (sem contagem).
+    const arranca=(mon)=>{ const dd=dayDiff(new Date(mon+"T00:00:00Z"),nd);
+      if(dd>0){ d=dd; label=`Arranca 2ª feira, ${fmtDateShort(mon)}`; } else { d=null; label=`Arranca hoje, ${fmtDateShort(mon)}`; } };
+    if(wk<WEEK_LIVE_FROM){
+      arranca(WEEK_LIVE_FROM);                    // antes do 1º arranque semanal (Semana 2, 06-jul)
     }else if(weekTradingDone(nd)){
-      label=`${weekLabel(wk)} · vencedor apurado`;
-      d=null; // semana fechada → sem contagem
+      // Trading da semana terminou (hora US): 6ª pós-fecho → vencedor apurado; fim de semana → próxima 2ª.
+      const nyWd=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",weekday:"short"}).format(nd);
+      if(nyWd==="Fri"){ label=`${weekLabel(wk)} · vencedor apurado`; d=null; }
+      else arranca(dowUTC===1?wk:nextWeek(wk));   // fim de semana → 2ª seguinte (madrugada 2ª UTC = ainda hoje)
+    }else if(!hasWeek&&dowUTC===1){
+      d=null; label=`Arranca hoje, ${fmtDateShort(wk)}`; // 2ª de manhã, antes da abertura (baseline por capturar)
     }else{
-      const fri=weekFriday(wk);
+      const fri=weekFriday(wk);                   // semana a rolar → vencedor apura-se 6ª ao fecho
       d=dayDiff(new Date(fri+"T00:00:00Z"),nd);
       label=`Vencedor a ${fmtDateShort(fri)}`;
     }
@@ -1821,11 +1827,11 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
   const GOLD={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(250,204,21,0.32) 0%, rgba(245,158,11,0.13) 38%, transparent 72%), linear-gradient(180deg,#261c0a 0%,#1c150b 55%,#120d08 80%,#0c0905 100%)",color:"#0c0905",tint:"rgba(250,204,21,0.16)",hover:"#33260a"};
   const SILVER={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(226,232,240,0.16) 0%, rgba(203,213,225,0.06) 38%, transparent 72%), linear-gradient(180deg,#1e222a 0%,#171b22 55%,#0f1216 80%,#0a0c0f 100%)",color:"#0a0c0f",tint:"rgba(203,213,225,0.15)",hover:"#161a22"};
   const BRONZE={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(217,119,6,0.26) 0%, rgba(180,83,9,0.10) 38%, transparent 72%), linear-gradient(180deg,#241608 0%,#1b1109 55%,#120c07 80%,#0c0805 100%)",color:"#0c0805",tint:"rgba(217,119,6,0.18)",hover:"#2e1a0a"};
-  const BLUE={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",color:"#070d1c",tint:"rgba(59,130,246,0.16)",hover:"#0a1120"};
+  const BLUE={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",color:"#070d1c",tint:"rgba(59,130,246,0.16)",hover:"#0a1120",panel:"rgba(26,41,74,0.9)"};
   // Tema ROXO da mini-época mensal (fundo muda em modo "Mensal") — escuro e sóbrio (deep indigo-purple).
-  const PURPLE={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(88,60,160,0.24) 0%, rgba(67,42,130,0.10) 42%, transparent 72%), linear-gradient(180deg,#1e1640 0%,#181230 52%,#110c24 80%,#0c0819 100%)",color:"#0c0819",tint:"rgba(109,80,200,0.16)",hover:"#140e2a"};
+  const PURPLE={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(88,60,160,0.24) 0%, rgba(67,42,130,0.10) 42%, transparent 72%), linear-gradient(180deg,#1e1640 0%,#181230 52%,#110c24 80%,#0c0819 100%)",color:"#0c0819",tint:"rgba(109,80,200,0.16)",hover:"#140e2a",panel:"rgba(44,36,82,0.9)"};
   // Tema TEAL da mini-época SEMANAL (fundo muda em modo "Semanal") — deep teal/esmeralda escuro e sóbrio.
-  const TEAL={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(20,160,150,0.22) 0%, rgba(13,120,120,0.09) 42%, transparent 72%), linear-gradient(180deg,#0c2e2e 0%,#0a2626 52%,#071c1d 80%,#051315 100%)",color:"#051315",tint:"rgba(45,212,191,0.15)",hover:"#0a2422"};
+  const TEAL={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(20,160,150,0.22) 0%, rgba(13,120,120,0.09) 42%, transparent 72%), linear-gradient(180deg,#0c2e2e 0%,#0a2626 52%,#071c1d 80%,#051315 100%)",color:"#051315",tint:"rgba(45,212,191,0.15)",hover:"#0a2422",panel:"rgba(24,56,56,0.9)"};
   // TESTE: azul-petróleo/teal (referência) — só no ranking.
   const BLUE_REF={bg:"radial-gradient(1600px 1000px at 50% -6%, rgba(64,170,205,0.20) 0%, rgba(44,130,170,0.07) 40%, transparent 72%), linear-gradient(180deg,#16526a 0%,#123f52 50%,#0d2d3c 78%,#091e29 100%)",color:"#091e29",tint:"rgba(64,170,205,0.17)",hover:"#0a2430"};
   // ATH: brilho lavanda no canto superior direito + toque roxo à direita, azul-marinho a escurecer para quase preto.
@@ -1837,7 +1843,7 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
   // (homepage, ranking, duel, "Minhas 8" e os restantes portefólios) = o mesmo azul-marinho.
   const theme=medal||(page==="ath"?ATHBG:(page==="ranking"&&rankPeriod==="week"?TEAL:page==="ranking"&&rankPeriod==="month"?PURPLE:BLUE));
   return(
-    <div style={{minHeight:"100vh",position:"relative","--row-hover":theme.hover||"#0a1120",
+    <div style={{minHeight:"100vh",position:"relative","--row-hover":theme.hover||"#0a1120","--cdi-panel":theme.panel||"rgba(26,41,74,0.9)",
       backgroundColor:theme.color,transition:"background-color .6s ease",
       color:"#e2e8f0",fontFamily:"var(--font-app), system-ui, -apple-system, sans-serif",overflowX:"clip"}}>
       <BackgroundFade bg={theme.bg}/>
@@ -1873,6 +1879,14 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
         <div aria-hidden="true" style={{position:"absolute",inset:0,zIndex:-1,pointerEvents:"none",
           backdropFilter:"blur(18px) saturate(160%)",WebkitBackdropFilter:"blur(18px) saturate(160%)",
           WebkitMaskImage:"linear-gradient(180deg,#000 0%,#000 58%,transparent 100%)",maskImage:"linear-gradient(180deg,#000 0%,#000 58%,transparent 100%)"}}/>
+        {/* SÓ no Ranking: 2ª camada de blur PURO (sem saturate) na zona inferior translúcida da
+            nav, para desfocar as linhas de membros que espreitam por cima da toolbar fixa. Blur
+            de gradiente vazio ≈ invisível (não cria "faixa de cor"); só frosta o que passa atrás. */}
+        {page==="ranking" && (
+          <div aria-hidden="true" style={{position:"absolute",inset:0,zIndex:-1,pointerEvents:"none",
+            backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",
+            WebkitMaskImage:"linear-gradient(180deg,transparent 38%,#000 62%,#000 100%)",maskImage:"linear-gradient(180deg,transparent 38%,#000 62%,#000 100%)"}}/>
+        )}
         <Nav page={page} nav={nav} navRank={navRank} rankPeriod={rankPeriod} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} tint={theme.tint} />
         <div className="cdiClock"><MarketStatus/></div>
       </header>
@@ -3425,8 +3439,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       if(!q&&!pq) shown=shown.slice(0,shownRows);
     }
     return(
-    <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
-      <div className="rkRow" style={{padding:"10px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",
+    <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"clip"}}>
+      <div className="rkRow rkStickyHead" style={{padding:"10px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",
         fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,alignItems:"center"}}>
         {searchable ? (
           <>
@@ -3844,6 +3858,14 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         .rkNarrowHd{display:none}   /* cabeçalhos simples #/Membro: só aparecem no mobile */
         @keyframes rkHiFlash{0%{background-color:rgba(59,130,246,0.30)}60%{background-color:rgba(59,130,246,0.15)}100%{background-color:rgba(59,130,246,0)}}
         .rkHiFlash{animation:rkHiFlash 2.6s ease-out}
+        /* Toolbar do ranking pinada no topo ao fazer scroll — SÓ desktop (>1000px).
+           Vidro fosco na cor do tema (--cdi-panel) + blur forte: as linhas passam por
+           baixo desfocadas e a barra não fica mais escura (usa o tom do próprio tema). */
+        @media(min-width:1001px){
+          .rkStickyHead{position:sticky;top:73px;z-index:15;
+            background:var(--cdi-panel,rgba(26,41,74,0.9));
+            backdrop-filter:blur(42px) saturate(180%);-webkit-backdrop-filter:blur(42px) saturate(180%)}
+        }
         /* Grelha de 2 LINHAS: linha 1 = cabeçalho (centro) + campeão (direita, à altura do 1v1);
            linha 2 = rail esquerdo + tabela + rail direito (widgets onde sempre estiveram). */
         .rkLayout{display:grid;grid-template-columns:minmax(240px,1fr) minmax(0,900px) minmax(240px,1fr);
