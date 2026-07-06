@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
+import { usMarketOpen } from "../../../lib/marketHours";
 
 export const maxDuration = 30;
 
@@ -26,8 +27,11 @@ export async function GET(request){
   const now=new Date();
   const period=url.searchParams.get("period")||weekKey(now); // 2ª feira UTC da semana a fechar
 
-  // Só à 6ª feira (após o fecho; o agendamento garante a hora). getUTCDay: 5 = 6ª feira.
+  // Só à 6ª feira. getUTCDay: 5 = 6ª feira.
   if(!force&&now.getUTCDay()!==5) return Response.json({ok:true,period,captured:0,skipped:"só à 6ª feira"});
+  // Só DEPOIS do fecho do mercado US (senão gravaria preços intradiários como "fecho"). Como o
+  // agendamento tem dois horários (verão/inverno), este guard garante que só o de após o fecho grava.
+  if(!force&&usMarketOpen(now)) return Response.json({ok:true,period,captured:0,skipped:"mercado ainda aberto"});
 
   let supabase; try{ supabase=getSupabaseAdmin(); } catch(e){ return Response.json({error:e.message},{status:500}); }
 
