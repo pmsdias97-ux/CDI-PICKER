@@ -89,17 +89,24 @@ export async function POST(request) {
       affectedPfs.add(h.portfolio_id);
     }
 
-    // Aplica as correções.
-    let adjusted = 0, updFail = false;
+    // IDEMPOTÊNCIA (ledger-first): regista o split no ledger ANTES de dividir os baselines.
+    // Se dividíssemos primeiro e o registo do ledger falhasse, o retry não seria travado pelo
+    // `done` e voltaria a dividir os baselines JÁ corrigidos (÷factor a dobrar -> corrupção
+    // PERMANENTE do baseline, rentabilidade fantasma). Marcando primeiro, qualquer
+    // reprocessamento do mesmo symbol|data é bloqueado pelo `done` -> nunca há dupla divisão.
+    // holdings_adjusted = nº que TENCIONAMOS corrigir (pode ser 0 num split sem holdings afetados).
+    const { error: insErr } = await supabase.from("applied_stock_splits")
+      .upsert({ symbol, split_date: date, factor, holdings_adjusted: updates.length }, { onConflict: "symbol,split_date", ignoreDuplicates: true });
+    if (insErr) { skipped.push({ symbol, date, reason: "ledger falhou (nada dividido) — retry seguro" }); continue; }
+
+    // Aplica as correções. Como o split já está no ledger, uma falha aqui NÃO se repete no
+    // próximo ciclo (sem risco de dupla divisão); a holding que falhar fica por corrigir e é
+    // reportada em `skipped.failed` para correção manual (best-effort: não paramos na 1ª falha).
+    let adjusted = 0; const failed = [];
     for (const u of updates) {
       const { error: uErr } = await supabase.from("portfolio_stocks").update(u.patch).eq("id", u.id);
-      if (uErr) { updFail = true; break; }
-      adjusted++;
+      if (uErr) failed.push(u.id); else adjusted++;
     }
-    // Se alguma atualização falhou a meio, NÃO regista no ledger -> tenta de novo no próximo ciclo
-    // (o guard de data + o valor já corrigido evitam dupla divisão nas linhas já feitas... por isso
-    // é mais seguro só registar quando TODAS passaram; as já feitas ficam corretas na mesma).
-    if (updFail) { skipped.push({ symbol, date, reason: `falha a meio (${adjusted} feitas) — retry` }); continue; }
 
     // Limpa os snapshots de HOJE dos afetados (evita uma cratera fantasma no gráfico;
     // o próximo snapshot horário reconstrói o ponto com o baseline já corrigido).
@@ -108,12 +115,8 @@ export async function POST(request) {
         .in("portfolio_id", [...affectedPfs]).gte("captured_at", todayStartIso);
     }
 
-    // Regista no ledger (idempotência). holdings_adjusted pode ser 0 (ex.: split antigo).
-    const { error: insErr } = await supabase.from("applied_stock_splits")
-      .upsert({ symbol, split_date: date, factor, holdings_adjusted: adjusted }, { onConflict: "symbol,split_date", ignoreDuplicates: true });
-    if (insErr) { skipped.push({ symbol, date, reason: "ledger falhou — retry" }); continue; }
-
-    applied.push({ symbol, date, factor, adjusted });
+    if (failed.length) skipped.push({ symbol, date, reason: `ledger ok, ${failed.length} holding(s) por corrigir — correção manual`, failed });
+    applied.push({ symbol, date, factor, adjusted, intended: updates.length });
   }
 
   return Response.json({ ok: true, applied, skipped });
