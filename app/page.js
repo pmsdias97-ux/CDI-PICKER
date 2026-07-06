@@ -2881,7 +2881,7 @@ function SnapshotCard({cardRef,shown,data,raceYMin,raceYMax,dateStr,compDay,dayT
     </div>
   );
 }
-function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDate,periodStart,periodLabelText,frameStart,periodRetOf,gamePeriod}){
+function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDate,periodStart,periodLabelText,frameStart,periodRetOf,gamePeriod,hist}){
   const [snaps,setSnaps]=useState([]); // [] em vez de null → o gráfico desenha logo (baseline início→agora)
   const nowIso=useMemo(()=>new Date().toISOString(),[]); // "agora" fixo → conteúdo do data estável (não re-anima)
   const [mounted,setMounted]=useState(false);
@@ -2914,6 +2914,8 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
   // Pré-1jul: linhas dos DEMOS (pré-visualização). Depois: Top 10 oficiais.
   // O próprio é SEMPRE incluído (mesmo fora do Top 10), com a linha destacada.
   const shown=useMemo(()=>{
+    // Histórico: o Top 10 do período FECHADO vem já calculado do pai (não recomputa por p.total).
+    if(hist&&Array.isArray(hist.shown)) return hist.shown.map(p=>({...p,_me:!!(myNorm&&p.normName===myNorm)}));
     const pool=preLaunch
       ? ranking.filter(p=>!p.official&&Number.isFinite(p.total))
       : ranking.filter(p=>p.official&&Number.isFinite(p.total));
@@ -2921,7 +2923,7 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
     const me=myNorm?pool.find(p=>p.normName===myNorm):null; // só se estiver no mesmo grupo (tem dados)
     if(me&&!list.some(p=>p.id===me.id)) list=[...list,{...me,_me:true}];
     return list.map(p=>({...p,_me:p._me||(myNorm&&p.normName===myNorm)}));
-  },[ranking,preLaunch,myNorm]);
+  },[ranking,preLaunch,myNorm,hist]);
   const ids=shown.map(p=>p.id).join(",");
   useEffect(()=>{
     const idList=ids?ids.split(","):[];
@@ -2999,12 +3001,37 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
   // Referência estável: se o conteúdo não mudou (ex.: snapshots vazios a chegar no dia 1),
   // devolve o array anterior → o Recharts não re-desenha/re-anima a linha.
   const dataStable=useRef(null);
-  const data=useMemo(()=>{
+  const liveData=useMemo(()=>{
     const key=JSON.stringify(dataRaw);
     if(dataStable.current&&dataStable.current.key===key) return dataStable.current.val;
     dataStable.current={key,val:dataRaw};
     return dataRaw;
   },[dataRaw]);
+  // MODO HISTÓRICO: reconstrói a corrida de um período FECHADO a partir dos snapshots dentro da
+  // janela [periodStart, periodEnd]. Âncora-no-fim: o último ponto de cada linha = a rentab. oficial
+  // do período (hist.retOf, a MESMA da tabela). Sem ponto "agora", sem S&P.
+  const histData=useMemo(()=>{
+    if(!hist||!hist.periodStart) return null;
+    const t0=`${hist.periodStart}T00:00:00.000Z`;
+    const t1=`${hist.periodEnd||hist.periodStart}T23:59:59.999Z`;
+    const nameById={}; shown.forEach(p=>{ nameById[p.id]=p.name; });
+    const byT={}, lastByName={};
+    for(const s of (snaps||[])){
+      const nm=nameById[s.portfolio_id]; if(!nm) continue;
+      const t=s.captured_at; if(!t||t<t0||t>t1||!isMktOpen(t)) continue;
+      const v=Number(s.total_return); if(!Number.isFinite(v)) continue;
+      (byT[t]=byT[t]||{t})[nm]=v; lastByName[nm]=v; // snaps asc → fica o último da janela
+    }
+    const off={}; shown.forEach(p=>{ const rp=typeof hist.retOf==="function"?hist.retOf(p):null;
+      if(Number.isFinite(lastByName[p.name])&&Number.isFinite(rp)) off[p.name]=lastByName[p.name]-rp; });
+    const rows=Object.values(byT).map(row=>{ const out={t:row.t};
+      shown.forEach(p=>{ if(Number.isFinite(row[p.name])&&(p.name in off)) out[p.name]=(row[p.name]-off[p.name])*100; }); return out; });
+    const zero={t:t0}; shown.forEach(p=>{ if(p.name in off) zero[p.name]=0; }); // arranque comum a 0%
+    return [zero,...rows].sort((a,b)=>a.t<b.t?-1:1);
+  },[hist,snaps,shown]);
+  const data=hist?(histData||[]):liveData;
+  // Valor por membro (cabeçalho/legenda): histórico → rentab. do período; senão → total ao vivo.
+  const valOf=(p)=> (hist&&typeof hist.retOf==="function") ? hist.retOf(p) : p.total;
 
   // MODO "GRELHA DE PARTIDA" (semana ainda não arrancou): desenha o gráfico VAZIO já com as
   // proporções certas — eixo X = 2ª→6ª feira da semana que vai começar, todos a 0%. Quando chegar
@@ -3048,7 +3075,7 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
   return(<>
     <style>{`.raceLegendV{display:none;flex-direction:column;gap:2px}@media(max-width:640px){.snapBtn{display:none}.raceLegendH{display:none}.raceLegendV{display:flex}}`}</style>
     <div style={{position:"relative",background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px 16px 12px"}}>
-      {!frameMode&&(
+      {!frameMode&&!hist&&(
       <button className="snapBtn" onClick={()=>setSnapOpen(true)} title="Guardar imagem do Top 10"
         style={{position:"absolute",top:12,right:12,zIndex:2,display:"inline-flex",alignItems:"center",justifyContent:"center",width:32,height:32,borderRadius:9,cursor:"pointer",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",color:"#cbd5e1"}}>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -3056,12 +3083,13 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
       <p style={{fontSize:12,margin:"0 0 12px",textAlign:"center",minHeight:17,lineHeight:1.4}}>
         {(()=>{
           const hp=hi&&shown.find(p=>p.name===hi);
-          if(hp&&Number.isFinite(hp.total)) return(<>
+          const v=hp?valOf(hp):null;
+          if(hp&&Number.isFinite(v)) return(<>
             <span style={{color:"#e2e8f0",fontWeight:700}}>{hp._me?`${hp.name} (tu)`:hp.name}</span>
             {" · "}
-            <span style={{fontFamily:"ui-monospace, monospace",fontWeight:800,color:hp.total>=0?"#4ade80":"#f87171"}}>{hp.total>=0?"+":""}{(hp.total*100).toFixed(2)}%</span>
+            <span style={{fontFamily:"ui-monospace, monospace",fontWeight:800,color:v>=0?"#4ade80":"#f87171"}}>{v>=0?"+":""}{(v*100).toFixed(2)}%</span>
           </>);
-          return <span style={{color:"#94a3b8"}}>{preLaunch?"Pré-visualização com os portefólios demo. A partir de 1 de julho mostrará o Top 10 oficial":(periodStart||frameMode)?`Top 10 — ${periodLabelText}`:"Top 10 — rentabilidade ao longo da competição"}</span>;
+          return <span style={{color:"#94a3b8"}}>{preLaunch?"Pré-visualização com os portefólios demo. A partir de 1 de julho mostrará o Top 10 oficial":(periodStart||frameMode||hist)?`Top 10 — ${periodLabelText}`:"Top 10 — rentabilidade ao longo da competição"}</span>;
         })()}
       </p>
       {!mounted?(
@@ -3136,7 +3164,7 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
                 <div key={p.key} style={{display:"flex",alignItems:"center",gap:9,padding:"5px 2px",borderTop:i===0?"none":"1px solid rgba(255,255,255,0.06)"}}>
                   <span style={{width:8,height:8,borderRadius:"50%",background:raceColorOf(p,i),flexShrink:0}}/>
                   <span style={{flex:1,minWidth:0,fontSize:13.5,color:p._me?"#f1f5f9":"#cbd5e1",fontWeight:p._me?700:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p._me?`${p.name} (tu)`:p.name}</span>
-                  <span style={{fontFamily:"ui-monospace, monospace",fontSize:13.5,fontWeight:800,color:(frameMode||!Number.isFinite(p.total))?"#64748b":(p.total>=0?"#4ade80":"#f87171")}}>{frameMode?"—":(Number.isFinite(p.total)?`${p.total>=0?"+":""}${(p.total*100).toFixed(2)}%`:"—")}</span>
+                  <span style={{fontFamily:"ui-monospace, monospace",fontSize:13.5,fontWeight:800,color:(frameMode||!Number.isFinite(valOf(p)))?"#64748b":(valOf(p)>=0?"#4ade80":"#f87171")}}>{frameMode?"—":(Number.isFinite(valOf(p))?`${valOf(p)>=0?"+":""}${(valOf(p)*100).toFixed(2)}%`:"—")}</span>
                 </div>
               ))}
             </div>
@@ -3237,6 +3265,36 @@ function WinnerMedals({w,size=20}){
     {badge("/cdi-semana-winner.webp","Vencedor semanal",`Vencedor ${w.weekly.join(", ")}`,w.weekly)}
   </>;
 }
+// Seletor de período (dropdown glass) — escolher a semana/mês a ver (Atual + históricos).
+function PeriodPicker({options,value,onPick,accent="#4ade80"}){
+  const [open,setOpen]=useState(false);
+  const wrapRef=useRef(null);
+  useEffect(()=>{ if(!open) return; const h=(e)=>{ if(wrapRef.current&&!wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown",h); return()=>document.removeEventListener("mousedown",h); },[open]);
+  const cur=options.find(o=>o.key===value)||options[0];
+  return(
+    <div ref={wrapRef} style={{position:"relative",display:"inline-block"}}>
+      <button onClick={()=>setOpen(o=>!o)} style={{cursor:"pointer",display:"inline-flex",alignItems:"center",gap:8,fontSize:13,fontWeight:700,
+        color:"#e2e8f0",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:999,padding:"6px 14px",textTransform:"capitalize"}}>
+        {cur?.label}
+        <span aria-hidden="true" style={{fontSize:9,color:"#94a3b8",transform:open?"rotate(180deg)":"none",transition:"transform .15s"}}>▾</span>
+      </button>
+      {open&&(
+        <div style={{position:"absolute",top:"calc(100% + 6px)",left:"50%",transform:"translateX(-50%)",zIndex:60,minWidth:170,maxHeight:300,overflowY:"auto",
+          background:"rgba(15,23,42,0.96)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",
+          border:"1px solid rgba(255,255,255,0.14)",borderRadius:12,padding:6,boxShadow:"0 12px 34px rgba(0,0,0,0.5)"}}>
+          {options.map(o=>(
+            <button key={o.key||"cur"} onClick={()=>{ onPick(o.key); setOpen(false); }}
+              style={{display:"block",width:"100%",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:o.key===value?800:500,textTransform:"capitalize",
+                color:o.key===value?"#0a0a0a":"#cbd5e1",background:o.key===value?accent:"transparent",border:"none",borderRadius:8,padding:"8px 12px",whiteSpace:"nowrap"}}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunch,settings,monthBase,pastBaselines,weekBase,weekOpens,weekCloses,period,setPeriod,onSelect,onCompare,highlightKey,clearHighlight,winners,showToast}){
   const [cmp,setCmp]=useState(false);
   const [sel,setSel]=useState([]);
@@ -3307,6 +3365,45 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     // a MESMA data em que as ações dos membros foram congeladas → comparação justa e coerente.
     return officials.length?spy.returnFor(officials[0]):null;
   };
+  // ── HISTÓRICO: escolher uma semana/mês PASSADO e ver o Top 10 + vencedor desse período.
+  const [histKey,setHistKey]=useState(null);
+  useEffect(()=>{ setHistKey(null); },[period]); // trocar de aba limpa a seleção histórica
+  const gameStartYMD=String(settings?.gameStartDate||"").slice(0,10);
+  const seedWeeks=WEEK_SEED_CHAMPS.map(s=>s.period).filter(w=>w<curWk); // semanas semeadas passadas (Semana 1)
+  const pastWeeks=useMemo(()=>{ const base=Object.keys(weekCloses||{}).filter(w=>w<curWk&&weekOpens[w]&&weekCloses[w]);
+    return [...new Set([...base,...seedWeeks])].sort().reverse(); },[weekCloses,weekOpens,curWk]);
+  const pastMonths=useMemo(()=>Object.keys(pastBaselines||{}).filter(m=>/^\d{4}-\d{2}$/.test(m)&&m<curMonthYM&&pastBaselines[nextPeriod(m)]).sort().reverse(),[pastBaselines,curMonthYM]);
+  const histAvail=period==="week"?pastWeeks:period==="month"?pastMonths:[];
+  const histActive=(period==="week"||period==="month")&&!!histKey;
+  const histSeedWk=histActive&&period==="week"&&!(weekOpens[histKey]&&weekCloses[histKey]); // semana sem baselines → snapshots
+  const histLabel=period==="week"?weekLabel(histKey||curWk):periodLabel(histKey||curMonthYM);
+  const histWindow=histActive?(period==="week"
+    ?{periodStart:(gameStartYMD&&gameStartYMD>histKey)?gameStartYMD:histKey,periodEnd:weekFriday(histKey)} // arranque: janela do 1º dia de jogo
+    :(()=>{ const [y,m]=histKey.split("-").map(Number); return {periodStart:`${histKey}-01`,periodEnd:new Date(Date.UTC(y,m,0)).toISOString().slice(0,10)}; })()):null;
+  // Semana de ARRANQUE (semeada, sem baselines): rentab. = total_return no fim da janela (o baseline
+  // É o próprio arranque → sem subtração). Lê por captured_at (fiável); o campo `date` está desalinhado.
+  const [seedRet,setSeedRet]=useState({});
+  useEffect(()=>{
+    if(!histSeedWk||!histWindow) return;
+    let cancel=false;
+    (async()=>{
+      const { data }=await supabase.from("portfolio_snapshots").select("portfolio_id,total_return")
+        .gte("captured_at",`${histWindow.periodStart}T00:00:00.000Z`).lte("captured_at",`${histWindow.periodEnd}T23:59:59.999Z`)
+        .order("captured_at",{ascending:true});
+      if(cancel) return;
+      const last={}; (data||[]).forEach(r=>{ last[r.portfolio_id]=Number(r.total_return); }); // asc → último por portefólio
+      setSeedRet(last);
+    })();
+    return()=>{ cancel=true; };
+  },[histSeedWk,histKey]);
+  const histFromTo=(histActive&&!histSeedWk)?(period==="week"?{from:weekOpens[histKey],to:weekCloses[histKey]}:{from:pastBaselines[histKey],to:pastBaselines[nextPeriod(histKey)]}):null;
+  const histRetOf=(p)=>{ if(!histActive) return null;
+    if(histSeedWk) return Number.isFinite(seedRet[p.id])?seedRet[p.id]:null;
+    return histFromTo?pfPeriodRet(p,histFromTo.from,histFromTo.to):null; };
+  const histTop=useMemo(()=>{ if(!histActive) return [];
+    return [...officials].map(p=>({p,r:histRetOf(p)})).filter(x=>Number.isFinite(x.r)).sort((a,b)=>b.r-a.r).slice(0,10); },[histActive,histKey,officials,period,seedRet]);
+  const weekOpts=[{key:null,label:`${weekLabel(curWk)} (atual)`},...pastWeeks.map(w=>({key:w,label:weekLabel(w)}))];
+  const monthOpts=[{key:null,label:`${periodLabel(curMonthYM)} (atual)`},...pastMonths.map(m=>({key:m,label:periodLabel(m)}))];
   // Coluna do nome = largura do NOME MAIS COMPRIDO (medido na fonte real) → todas as linhas
   // alinhadas e as sparklines começam todas no MESMO sítio (logo a seguir ao maior nome).
   const [nameW,setNameW]=useState(190);
@@ -3812,6 +3909,33 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   };
   // Context-aware: segue o toggle; em "Geral" mostra o do mês (mini-época principal).
   const wChamp=champCard(period==="week"?"week":"month");
+  // Cartão de vencedor do período HISTÓRICO selecionado (substitui o wChamp em modo histórico).
+  const wChampHist=histActive?railCard(`Vencedor · ${histLabel}`,(
+    histTop.length?(
+      <div>
+        <div onClick={()=>histTop[0].p.key&&onSelect(histTop[0].p.key)} title="Ver portefólio" style={{cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:24,lineHeight:1}}>🏆</span>
+          <div style={{minWidth:0,flex:1}}>
+            <div style={{fontSize:9.5,color:"#facc15",fontWeight:800,textTransform:"uppercase",letterSpacing:".4px"}}>{histLabel}</div>
+            <div style={{fontSize:14,fontWeight:700,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{histTop[0].p.name}</div>
+          </div>
+          <span style={{fontFamily:"monospace",fontSize:13,fontWeight:800,color:histTop[0].r>=0?"#4ade80":"#f87171",flexShrink:0}}>{pct(histTop[0].r)}</span>
+        </div>
+        {histTop.length>1&&(
+          <div style={{marginTop:10,borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:8}}>
+            <div style={{fontSize:10,color:"#64748b",fontWeight:800,textTransform:"uppercase",letterSpacing:".4px",marginBottom:6}}>Pódio</div>
+            {histTop.slice(1,3).map(({p,r},i)=>(
+              <div key={p.key} onClick={()=>onSelect(p.key)} title="Ver portefólio" style={{cursor:"pointer",display:"flex",justifyContent:"space-between",gap:8,padding:"4px 0",fontSize:12.5}}>
+                <span style={{color:"#94a3b8",flexShrink:0}}>{i+2}º</span>
+                <span style={{color:"#e2e8f0",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,textAlign:"right"}}>{p.name}</span>
+                <span style={{fontFamily:"monospace",fontWeight:800,color:r>=0?"#4ade80":"#f87171",flexShrink:0}}>{pct(r)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    ):<div style={{fontSize:12.5,color:"#94a3b8"}}>Sem dados para este período.</div>
+  ),period==="week"?"Vencedor da semana (2ª→6ª), apurado ao fecho de 6ª feira.":"Campeão do mês, apurado no fim do mês."):null;
   // Medalhão decorativo de vencedor à ESQUERDA do gráfico (espelha o campeão da direita). Só nas
   // mini-épocas: Mensal → "Vencedor do Mês"; Semanal → "Vencedor da Semana". No "Geral" não há
   // medalhão (não é uma época com vencedor apurado). Só visual (não clicável).
@@ -3842,6 +3966,49 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   // O campeão sai do rail direito e vai, isolado, para a linha do cabeçalho (célula .railChamp,
   // à altura do 1v1). Os restantes ficam no rail direito (.railR), à altura da tabela — onde sempre estiveram.
   const rightRail=<>{wVsSp}{wHi}{wPicks}</>;
+  // Tabela histórica: só o Top 10 do período fechado (rentab. do período; sem Diário/🟢🔴/sparkline,
+  // que são de "hoje"). Reaproveita a grelha .rkRow para alinhar com o resto.
+  const histTableEl=()=>(
+    <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"clip"}}>
+      <div style={{padding:"12px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+        <span style={{fontSize:12,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:".5px"}}>Top 10 — {histLabel}</span>
+        <span style={{fontSize:11,color:"#64748b"}}>período fechado</span>
+      </div>
+      {histTop.length===0
+        ? <div style={{padding:"28px 20px",textAlign:"center",color:"#64748b",fontSize:13}}>Sem dados para este período.</div>
+        : histTop.map(({p,r},idx)=>{
+            const barColor=idx<3?["#facc15","#e2e8f0","#d97706"][idx]:idx<10?"#22c55e":null;
+            return(
+              <div key={p.key} onClick={()=>onSelect(p.key)} className="rkRow rkDataRow"
+                style={{padding:"14px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",cursor:"pointer",background:"transparent",
+                  boxShadow:barColor?`inset 3px 0 0 ${barColor}`:"none",transition:"background 0.15s"}}
+                onMouseEnter={e=>{ e.currentTarget.style.background="rgba(255,255,255,0.05)"; }}
+                onMouseLeave={e=>{ e.currentTarget.style.background="transparent"; }}>
+                <span style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  {idx<3
+                    ? <span className="rankShine rankBreathe" style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0,...RANK_BADGE[idx+1],"--shine-delay":`${idx*1.2}s`}}>{idx+1}</span>
+                    : <span style={{fontSize:13,color:"#94a3b8",fontWeight:700}}>{idx+1}</span>}
+                </span>
+                <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
+                  <span style={{overflowWrap:"normal",wordBreak:"normal",lineHeight:1.2}}>{p.name}</span>
+                  {idx===0&&<span title="Vencedor" style={{fontSize:14,lineHeight:1}}>🏆</span>}
+                  <WinnerMedals w={winners&&winners[p.key]} size={20}/>
+                  {p.normName===myNorm&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
+                </span>
+                <span className="rkSpark"/>
+                <span style={{textAlign:"center",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:"clamp(12.5px,3.6vw,15px)",color:r>=0?"#4ade80":"#f87171"}}>{pct(r)}</span>
+                <span style={{textAlign:"center",alignSelf:"center",color:"#4b5563"}}>—</span>
+                <span style={{textAlign:"center",alignSelf:"center",color:"#4b5563"}}>—</span>
+                <span className="rkHide" style={{display:"flex",alignItems:"center",justifyContent:"flex-start",gap:2,flexWrap:"nowrap",overflow:"hidden"}}>
+                  {(p.stocks||[]).map(s=>({s,rr:histFromTo?pfPeriodRet({stocks:[s]},histFromTo.from,histFromTo.to):null})).sort((a,b)=>(b.rr??-9)-(a.rr??-9)).map(({s,rr})=>(
+                    <HoverName key={s.ticker} label={`${s.companyName||s.ticker}${rr!=null?` · ${pct(rr)}`:""}`}><StockLogo ticker={s.ticker} size={16}/></HoverName>
+                  ))}
+                </span>
+              </div>
+            );
+          })}
+    </div>
+  );
 
   return(
     <div style={{maxWidth:1520,margin:"0 auto",padding:"40px 20px 120px","--rk-name-w":`${nameW}px`}}>
@@ -3979,8 +4146,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
           rail esquerdo, tabela e rail direito na linha de baixo (onde sempre estiveram). */}
       <div className="rkLayout">
       <aside className="railBadge" ref={railBadgeRef} style={railH!=null?{height:railH}:undefined}><div ref={badgeStickyRef} style={{marginTop:badgeTop}}>{wBadge}</div></aside>
-      <aside className="rkRail railL">{leftRail}</aside>
-      <aside className="railChamp" ref={railChampRef} style={railH!=null?{height:railH}:undefined}><div ref={champStickyRef} style={{marginTop:champTop}}>{wChamp}</div></aside>
+      <aside className="rkRail railL">{histActive?null:leftRail}</aside>
+      <aside className="railChamp" ref={railChampRef} style={railH!=null?{height:railH}:undefined}><div ref={champStickyRef} style={{marginTop:champTop}}>{histActive?wChampHist:wChamp}</div></aside>
       <div className="cHeader">
       <div className="rkHeadRow">
         <h1 className="rkHeadTitle" style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px",margin:0,whiteSpace:"nowrap"}}>{period==="week"?"Ranking Semanal":period==="month"?"Ranking Mensal":"Ranking Geral"}</h1>
@@ -4000,21 +4167,31 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
               border:`1px solid ${cmp?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.12)"}`}}>1v1</button>
         ):<span className="rkHeadV1" aria-hidden="true"/>}
       </div>
-      <p style={{color:"#94a3b8",fontSize:14,margin:"0 0 28px",textAlign:"center"}}>
-        {period==="week"?"Início 2ª feira (abertura) a 6ª feira (fecho)":period==="month"?"Início no primeiro dia do mês até ao último.":"Classificação por rentabilidade total, em tempo real"}
-        {period==="total"&&<>{" · "}{officials.length} {officials.length===1?"participante":"participantes"}.</>}
-        {pricesLoading?`${period==="month"?" ":" · "}A atualizar preços…`:(pricesAt?`${period==="month"?" ":" · "}Atualizado ${new Date(pricesAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}`:"")}
+      <p style={{color:"#94a3b8",fontSize:14,margin:histActive||histAvail.length>0?"0 0 12px":"0 0 28px",textAlign:"center"}}>
+        {histActive
+          ? <>{histLabel} · {period==="week"
+              ? `${new Date(histWindow.periodStart+"T00:00:00Z").toLocaleDateString("pt-PT",{day:"2-digit",month:"2-digit"})}–${new Date(histWindow.periodEnd+"T00:00:00Z").toLocaleDateString("pt-PT",{day:"2-digit",month:"2-digit"})}`
+              : "mês fechado"}{histSeedWk?" · semana de arranque (4ª→6ª)":""} · resultados finais</>
+          : <>{period==="week"?"Início 2ª feira (abertura) a 6ª feira (fecho)":period==="month"?"Início no primeiro dia do mês até ao último.":"Classificação por rentabilidade total, em tempo real"}
+            {period==="total"&&<>{" · "}{officials.length} {officials.length===1?"participante":"participantes"}.</>}
+            {pricesLoading?`${period==="month"?" ":" · "}A atualizar preços…`:(pricesAt?`${period==="month"?" ":" · "}Atualizado ${new Date(pricesAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}`:"")}</>}
       </p>
+      {(period==="week"||period==="month")&&!preLaunch&&histAvail.length>0&&(
+        <div style={{display:"flex",justifyContent:"center",margin:"0 0 22px"}}>
+          <PeriodPicker options={period==="week"?weekOpts:monthOpts} value={histKey} onPick={setHistKey} accent={period==="week"?"#2dd4bf":"#a78bfa"}/>
+        </div>
+      )}
       {ranking.length>0&&(<>
         {/* Season Race + (demos) + pílula do vencedor — a toda a largura, por cima da grelha */}
         <div style={{marginBottom:16}} ref={raceWrapRef}>
           {/* Semanal pré-arranque → grelha de partida (frameStart); ao vivo/mês/geral → gráfico normal.
               Quando 2ª feira o cron captura os baselines, hasWeek fica true e entra o gráfico ao vivo. */}
           <GlowBehind><SeasonRace ranking={ranking} preLaunch={preLaunch} myNorm={myNorm} spy={spy} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""}
-            periodStart={period==="week"?(hasWeek?curWk:null):period==="month"?curMonthDateOnly:null}
-            frameStart={period==="week"&&!hasWeek&&!preLaunch?frameWk:null}
+            periodStart={histActive?null:(period==="week"?(hasWeek?curWk:null):period==="month"?curMonthDateOnly:null)}
+            frameStart={histActive?null:(period==="week"&&!hasWeek&&!preLaunch?frameWk:null)}
             periodRetOf={metricOf} gamePeriod={period}
-            periodLabelText={period==="week"?(hasWeek?weekLabel(curWk):weekLabel(frameWk)):period==="month"?periodLabel(curMonthYM):""}/></GlowBehind>
+            periodLabelText={histActive?`${histLabel} (histórico)`:(period==="week"?(hasWeek?weekLabel(curWk):weekLabel(frameWk)):period==="month"?periodLabel(curMonthYM):"")}
+            hist={histActive?{periodStart:histWindow.periodStart,periodEnd:histWindow.periodEnd,retOf:histRetOf,shown:histTop.map(x=>x.p)}:undefined}/></GlowBehind>
         </div>
         {preLaunch&&demos.length>0&&(
           <div style={{marginBottom:32}}>
@@ -4022,16 +4199,17 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
             {tableFor(demos)}
           </div>
         )}
+        {!histActive&&(
         <div style={{margin:"0 0 16px"}}>
           <CompetitionTimer settings={settings} period={period} hasWeek={hasWeek}/>
-        </div>
+        </div>)}
       </>)}
       </div>{/* /cHeader */}
       <div className="rkCenter" style={{minWidth:0}}>
       {ranking.length===0
         ? <div style={{textAlign:"center",padding:80,color:"#4b5563"}}>Ainda não há portefólios submetidos.</div>
         : officials.length>0
-          ? (preLaunch?pendingList([...officials].sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||"")))):tableFor(officials,{searchable:true}))
+          ? (histActive?histTableEl():(preLaunch?pendingList([...officials].sort((a,b)=>String(b.submittedAt||"").localeCompare(String(a.submittedAt||"")))):tableFor(officials,{searchable:true})))
           : <div style={{background:"rgba(255,255,255,0.04)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:16,padding:40,textAlign:"center",color:"#64748b",fontSize:14}}>Ainda sem inscrições. Os portefólios submetidos a partir de agora entram aqui — admissão oficial a 1 de julho.</div>}
       {cmp&&(
         <p style={{marginTop:12,fontSize:12,color:"#1f2937",textAlign:"right"}}>
@@ -4056,7 +4234,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         </div>
       )}
       </div>{/* /rkCenter */}
-      <aside className="rkRail railR">{rightRail}</aside>
+      <aside className="rkRail railR">{histActive?null:rightRail}</aside>
       </div>{/* /rkLayout */}
     </div>
   );
