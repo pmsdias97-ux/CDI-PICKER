@@ -3057,11 +3057,12 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
     return [zero,...rows].sort((a,b)=>a.t<b.t?-1:1);
   },[hist,snaps,shown]);
   const data=hist?(histData||[]):liveData;
+  const frameMode=!!frameStart;
   // Espera a animação de "crescimento" das linhas terminar antes de mostrar as bolinhas live.
   useEffect(()=>{
     setAnimDone(false);
     if(frameMode||!(data&&data.length>=2)) return;
-    const t=setTimeout(()=>setAnimDone(true),1150+shown.length*30);
+    const t=setTimeout(()=>setAnimDone(true),820+shown.length*20);
     return()=>clearTimeout(t);
   },[data,frameMode,shown.length]);
   // Valor por membro (cabeçalho/legenda): histórico → rentab. do período fechado; período ao vivo
@@ -3073,7 +3074,6 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
   // proporções certas — eixo X = 2ª→6ª feira da semana que vai começar, todos a 0%. Quando chegar
   // 2ª feira e o cron capturar os baselines, o pai passa a NÃO enviar frameStart → entra o gráfico
   // ao vivo com os dados reais (transição automática, mesmo componente).
-  const frameMode=!!frameStart;
   const frameDays=useMemo(()=>{
     if(!frameStart) return null;
     const base=Date.parse(`${frameStart}T00:00:00.000Z`);
