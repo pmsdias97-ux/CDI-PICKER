@@ -16,6 +16,7 @@ function weekKey(d){
   const dow=t.getUTCDay(); t.setUTCDate(t.getUTCDate()+(dow===0?-6:1-dow));
   return t.toISOString().slice(0,10);
 }
+function nextWeek(key){ const t=new Date(key+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+7); return t.toISOString().slice(0,10); }
 
 export async function GET(request){
   const secret=process.env.CRON_SECRET;
@@ -64,5 +65,13 @@ export async function GET(request){
   const {error:upErr}=await supabase
     .from("weekly_baselines").upsert(upserts,{onConflict:"period,ticker"});
   if(upErr) return Response.json({error:upErr.message},{status:500});
-  return Response.json({ok:true,period,captured:upserts.length,skippedTickers});
+
+  // Adianta o BASELINE da próxima semana = este fecho (o "fecho anterior" a 2ª feira). Assim o jogo
+  // semanal fica ao vivo logo à abertura de 2ª feira, sem esperar pelo cron de 2ª. Idempotente.
+  const next=nextWeek(period);
+  const nextBaselines=upserts.map(u=>({period:next,ticker:u.ticker,price:u.close_price,captured_at:capturedAt}));
+  const {error:nErr}=await supabase
+    .from("weekly_baselines").upsert(nextBaselines,{onConflict:"period,ticker",ignoreDuplicates:true});
+
+  return Response.json({ok:true,period,captured:upserts.length,nextSeeded:nErr?0:nextBaselines.length,skippedTickers});
 }

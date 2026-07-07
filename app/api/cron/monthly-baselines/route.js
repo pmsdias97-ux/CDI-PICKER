@@ -1,5 +1,4 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
-import { usMarketOpen } from "../../../lib/marketHours";
 
 export const maxDuration = 30;
 
@@ -31,10 +30,9 @@ export async function GET(request) {
   if (!force && now.getUTCDate() > 5) {
     return Response.json({ ok: true, captured: 0, skipped: "fora da janela de captura (dias 1–5)" });
   }
-  // Só com o mercado aberto → os preços do sp500_ath estão frescos (o pipeline corre em pregão).
-  if (!force && !usMarketOpen(now)) {
-    return Response.json({ ok: true, captured: 0, skipped: "mercado fechado" });
-  }
+  // NB: baseline mensal = FECHO do último dia do mês ANTERIOR (o "fecho antes do dia 1") → a rentab.
+  // mensal = soma dos retornos diários do mês (dia 1 = igual ao diário). Por isso este cron corre
+  // PRÉ-ABERTURA do 1º dia útil: aí o sp500_ath ainda tem o fecho do mês anterior (sem usMarketOpen).
 
   let supabase;
   try { supabase = getSupabaseAdmin(); }

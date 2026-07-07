@@ -2916,14 +2916,19 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
   const shown=useMemo(()=>{
     // Histórico: o Top 10 do período FECHADO vem já calculado do pai (não recomputa por p.total).
     if(hist&&Array.isArray(hist.shown)) return hist.shown.map(p=>({...p,_me:!!(myNorm&&p.normName===myNorm)}));
-    const pool=preLaunch
+    let pool=preLaunch
       ? ranking.filter(p=>!p.official&&Number.isFinite(p.total))
       : ranking.filter(p=>p.official&&Number.isFinite(p.total));
+    // Modo período (semana/mês): ordena pelo retorno do PERÍODO → o Top 10 do gráfico = o Top 10 do
+    // ranking semanal/mensal (não o total). Em "Geral" mantém a ordem por total.
+    if(periodStart&&typeof periodRetOf==="function"){
+      pool=[...pool].map(p=>({p,r:periodRetOf(p)})).filter(x=>Number.isFinite(x.r)).sort((a,b)=>b.r-a.r).map(x=>x.p);
+    }
     let list=pool.slice(0,10);
     const me=myNorm?pool.find(p=>p.normName===myNorm):null; // só se estiver no mesmo grupo (tem dados)
     if(me&&!list.some(p=>p.id===me.id)) list=[...list,{...me,_me:true}];
     return list.map(p=>({...p,_me:p._me||(myNorm&&p.normName===myNorm)}));
-  },[ranking,preLaunch,myNorm,hist]);
+  },[ranking,preLaunch,myNorm,hist,periodStart,periodRetOf]);
   const ids=shown.map(p=>p.id).join(",");
   useEffect(()=>{
     const idList=ids?ids.split(","):[];
@@ -3623,8 +3628,14 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
               {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
             </span>
             <span className="rkSpark">
-              {/* Sem sparkline no pré-arranque semanal — ainda não há histórico da semana. */}
-              {!preStartWk&&<MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24}/>}
+              {/* Sem sparkline no pré-arranque semanal — ainda não há histórico da semana.
+                  Em mini-época (semana/mês) a série e a cor seguem a rentab. DO PERÍODO (rebaseada
+                  ao período: r − (total − rentab_período)), para bater certo com o nº da linha. */}
+              {!preStartWk&&(()=>{
+                const off=(perActive&&Number.isFinite(rentVal)&&Number.isFinite(p.total))?(p.total-rentVal):0;
+                const ser=off?(seriesById[p.id]||[]).map(s=>({date:s.date,r:s.r-off})):(seriesById[p.id]||[]);
+                return <MiniSparkline series={ser} current={rentVal} height={24}/>;
+              })()}
             </span>
             <span style={{textAlign:"center",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:"clamp(12.5px,3.6vw,15px)",color:(rentVal??0)>=0?"#4ade80":"#f87171"}}>{rentVal==null?"—":<Rolling text={pct(rentVal)}/>}</span>
             <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:"clamp(11px,3vw,13px)",fontWeight:600,
