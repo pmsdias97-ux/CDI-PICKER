@@ -2811,6 +2811,19 @@ function isMktOpen(iso){
   const m=h*60+parseInt(v("minute"),10);
   return m>=570&&m<=975;
 }
+// Ponto "live" pulsante no fim de uma linha do gráfico race (cor da linha). Halo a pulsar (SMIL).
+function RaceLiveDot({cx,cy,color}){
+  if(!Number.isFinite(cx)||!Number.isFinite(cy)) return null;
+  return(
+    <g style={{pointerEvents:"none"}}>
+      <circle cx={cx} cy={cy} r={3.5} fill={color} opacity={0.5}>
+        <animate attributeName="r" values="3.5;11" dur="1.6s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.5;0" dur="1.6s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx={cx} cy={cy} r={3.2} fill={color}/>
+    </g>
+  );
+}
 function SeasonRaceTooltip({active,payload,label}){
   if(!active||!payload||!payload.length) return null;
   const rows=[...payload].filter(p=>p.value!=null).sort((a,b)=>b.value-a.value);
@@ -2886,6 +2899,14 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
   const nowIso=useMemo(()=>new Date().toISOString(),[]); // "agora" fixo → conteúdo do data estável (não re-anima)
   const [mounted,setMounted]=useState(false);
   const [hi,setHi]=useState(null); // portefólio em destaque (hover no nome ou na linha)
+  // "Live": ponto pulsante no fim das linhas só com o mercado US aberto (e só desktop).
+  const [mktLive,setMktLive]=useState(false);
+  useEffect(()=>{
+    const ck=()=>setMktLive(isMktOpen(new Date())&&typeof window!=="undefined"&&window.matchMedia("(min-width:861px)").matches);
+    ck(); const id=setInterval(ck,30000);
+    if(typeof window!=="undefined") window.addEventListener("resize",ck);
+    return()=>{ clearInterval(id); if(typeof window!=="undefined") window.removeEventListener("resize",ck); };
+  },[]);
   const [snapOpen,setSnapOpen]=useState(false); // modal do snapshot (desktop)
   const [snapUrl,setSnapUrl]=useState("");      // data-URL (pré-visualização + descarregar)
   const [snapBlob,setSnapBlob]=useState(null);  // blob (copiar — sem fetch, seguro com o CSP)
@@ -3125,17 +3146,18 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
             <YAxis domain={[raceYMin,raceYMax]} tickFormatter={(v)=>`${v>0?"+":""}${v}%`} tick={{fill:"#94a3b8",fontSize:11}} width={46} axisLine={false} tickLine={false}/>
             <ReferenceLine y={0} stroke="rgba(255,255,255,0.30)" strokeDasharray="4 4"/>
             <Tooltip content={<SeasonRaceTooltip/>}/>
-            {shown.map((p,i)=>{
+            {(()=>{ const lastIdx=data.length-1; const live=mktLive&&!frameMode&&!hist; return shown.map((p,i)=>{
               const dim=hi&&hi!==p.name;
               return(
                 <Line key={p.key} type="monotone" dataKey={p.name} name={p._me?`${p.name} (tu)`:p.name}
                   stroke={raceColorOf(p,i)}
                   strokeWidth={hi===p.name?(p._me?4.5:3.2):(p._me?3.5:2)}
                   strokeOpacity={dim?0.15:1}
-                  dot={false} connectNulls isAnimationActive={true} animationDuration={1000} animationEasing="ease-out" animationBegin={i*30}
+                  dot={(live&&!dim)?((dp)=> dp&&dp.index===lastIdx?<RaceLiveDot key={`ld-${p.key}`} cx={dp.cx} cy={dp.cy} color={raceColorOf(p,i)}/>:null):false}
+                  connectNulls isAnimationActive={true} animationDuration={1000} animationEasing="ease-out" animationBegin={i*30}
                   activeDot={hi===p.name?{r:4}:(p._me?{r:3.5}:false)}/>
               );
-            })}
+            }); })()}
             {hasSpy&&<Line type="monotone" dataKey="S&P 500" name="S&P 500" stroke="#ffffff" strokeWidth={1.8} strokeDasharray="6 5" strokeOpacity={0.75} dot={false} connectNulls isAnimationActive={true} animationDuration={1000} animationEasing="ease-out"/>}
           </LineChart>
         </ResponsiveContainer>
