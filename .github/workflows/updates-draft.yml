@@ -1,0 +1,48 @@
+name: Updates — rascunho dos commits
+
+# A cada push para main, recolhe os ASSUNTOS dos commits desse push e junta-os ao rascunho do dia
+# (platform_updates.draft_lines) via POST /api/cron/updates/draft (Bearer CRON_SECRET). Serve de
+# semente: ao fim do dia o admin reescreve conciso/não-técnico no painel e publica. Segredo: CRON_SECRET.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: updates-draft-${{ github.ref }}
+  cancel-in-progress: false   # cada push deve contar; não cancelar o anterior a meio
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # precisa do histórico para o range before..sha
+      - name: Recolher assuntos e enviar rascunho
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          DAY=$(date -u +%F)
+          # Range do push; no 1º push (before = zeros) usa só o commit do topo.
+          if [ -z "${BEFORE}" ] || [ "${BEFORE}" = "0000000000000000000000000000000000000000" ]; then
+            RANGE="${SHA} -n 1"
+          else
+            RANGE="${BEFORE}..${SHA}"
+          fi
+          # Assuntos (1ª linha) dos commits, sem merges; descarta linhas de ruído (Co-Authored-By etc.).
+          SUBJECTS=$(git log --no-merges --format=%s ${RANGE} | grep -viE '^(Co-Authored-By|Merge|Revert "Merge)' || true)
+          if [ -z "${SUBJECTS}" ]; then echo "Sem assuntos a enviar."; exit 0; fi
+          # Monta JSON {day, lines:[...]} com jq (-R linha crua, -s junta em array).
+          LINES=$(printf '%s\n' "${SUBJECTS}" | jq -R . | jq -s .)
+          PAYLOAD=$(jq -n --arg day "${DAY}" --argjson lines "${LINES}" '{day:$day, lines:$lines}')
+          echo "Enviar rascunho (${DAY}):"; echo "${SUBJECTS}"
+          curl -sS -X POST "https://cdi-picker.vercel.app/api/cron/updates/draft" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d "${PAYLOAD}"

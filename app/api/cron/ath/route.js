@@ -43,9 +43,10 @@ export async function POST(request) {
   catch (e) { return Response.json({ error: e.message }, { status: 500 }); }
 
   // ATH AO VIVO: o modo "prices" (hora a hora) só traz o preço, não o ath. Se o preço de agora
-  // ultrapassar o ath guardado, faz-se novo máximo — bumpa aqui (senão o ATH só atualizaria no
+  // ultrapassar o ath JÁ CONHECIDO, é um novo máximo → bumpa aqui (senão o ATH só atualizaria no
   // "full" diário das 06:00 UTC, ANTES da abertura US → novos ATHs intradiários ficavam de fora).
-  // Só para linhas SEM ath explícito (o "full" manda ath autoritativo do histórico → não se mexe).
+  // NB: só SOBE um ath existente (nunca inventa: se o ath for null, deixa null — quem estabelece o
+  // máximo histórico é o "full"; fabricar ath=preço marcaria a ação "no máximo" mesmo estando abaixo).
   const bumpSyms = clean.filter((r) => !("ath" in r) && r.price != null).map((r) => r.symbol);
   if (bumpSyms.length) {
     const athMap = new Map();
@@ -57,7 +58,7 @@ export async function POST(request) {
     for (const r of clean) {
       if ("ath" in r || r.price == null) continue;
       const cur = athMap.get(r.symbol);
-      if (cur == null || r.price > cur) { r.ath = r.price; r.ath_ts = now; }
+      if (cur != null && r.price > cur) { r.ath = r.price; r.ath_ts = now; } // só sobe um máximo conhecido
     }
   }
 

@@ -1808,7 +1808,7 @@ export default function App(){
     onMyPortfolio={openMyPortfolio}
     myPortfolioActive={page==="detail" && !!detailPf && !!myPf && detailPf.key===myPf.key}>{children}</Shell>;
 
-  if(page==="home")   return sh(<Home nav={nav} submitted={submitted} settings={settings} ranking={ranking} livePrices={livePrices} onMyPortfolio={openMyPortfolio}/>);
+  if(page==="home")   return sh(<Home nav={nav} submitted={submitted} settings={settings} ranking={ranking} livePrices={livePrices} onMyPortfolio={openMyPortfolio} myName={myName}/>);
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} pickCounts={compStats.counts} compTickers={compStats.tickers} showToast={showToast}/>);
@@ -2166,7 +2166,101 @@ function MiniSparkline({series,current,height=48,fill=true,flat=false}){
 function CountUp({to=0}){
   return <span>{Number(to||0).toLocaleString("pt-PT")}</span>;
 }
-function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio}){
+/* ---- Updates e feedbacks (homepage, área do membro) ---------------------- */
+// Recap diário do que a plataforma levou (escrito pelo admin) + feedback dos membros.
+// O feedback é PÚBLICO mas ANÓNIMO: mostra-se o texto, nunca o autor (o admin vê o autor no painel).
+function UpdatesFeedback({myName}){
+  const [updates,setUpdates]=useState([]);
+  const [feedback,setFeedback]=useState([]);
+  const [showAll,setShowAll]=useState(false);
+  const [msg,setMsg]=useState("");
+  const [sending,setSending]=useState(false);
+  const [sent,setSent]=useState(false);
+  const [err,setErr]=useState("");
+  const loadFeedback=async()=>{ try{ const r=await fetch("/api/feedback/list"); const j=await r.json(); if(Array.isArray(j.feedback)) setFeedback(j.feedback); }catch{} };
+  useEffect(()=>{ let ok=true;
+    (async()=>{ try{ const r=await fetch("/api/updates/list"); const j=await r.json(); if(ok&&Array.isArray(j.updates)) setUpdates(j.updates); }catch{} })();
+    loadFeedback();
+    return()=>{ ok=false; };
+  },[]);
+  const fmtDay=(d)=>{ try{ return new Date(d+"T00:00:00Z").toLocaleDateString("pt-PT",{day:"numeric",month:"short",timeZone:"UTC"}); }catch{ return d; } };
+  const bodyLines=(t)=>String(t||"").split("\n").map(s=>s.replace(/^\s*[-•]\s*/,"").trim()).filter(Boolean);
+  const submit=async()=>{ const m=msg.trim(); if(!m||sending) return; setSending(true); setErr("");
+    try{
+      const r=await fetch("/api/feedback/submit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:m,name:myName||""})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok){ setErr(j.error||"Não foi possível enviar."); }
+      else { setMsg(""); setSent(true); setTimeout(()=>setSent(false),3200); loadFeedback(); }
+    }catch{ setErr("Não foi possível enviar."); }
+    finally{ setSending(false); }
+  };
+  const shownUpdates=showAll?updates:updates.slice(0,5);
+  return(
+    <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"clamp(20px,4vw,32px)"}}>
+      <h2 style={{fontSize:20,fontWeight:700,letterSpacing:"-0.3px",margin:"0 0 4px",display:"flex",alignItems:"center",gap:9}}>
+        <span aria-hidden="true">📣</span> Updates e feedbacks
+      </h2>
+      <p style={{fontSize:13,color:"#6b7280",margin:"0 0 22px"}}>O que vai mudando na plataforma — e o que achas disto.</p>
+
+      {/* Updates */}
+      <div style={{marginBottom:28}}>
+        <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:700,marginBottom:14}}>Novidades</div>
+        {shownUpdates.length===0?(
+          <p style={{fontSize:14,color:"#6b7280",margin:0}}>Ainda sem novidades por aqui. Fica atento. 👀</p>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
+            {shownUpdates.map(u=>(
+              <div key={u.day} style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+                <div style={{flexShrink:0,minWidth:52,fontSize:12,fontWeight:700,color:"#4ade80",paddingTop:2,textTransform:"lowercase"}}>{fmtDay(u.day)}</div>
+                <div style={{minWidth:0,display:"flex",flexDirection:"column",gap:5}}>
+                  {bodyLines(u.body).map((l,i)=>(
+                    <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                      <span style={{color:"#22c55e",fontWeight:700,marginTop:1,flexShrink:0,fontSize:13}}>›</span>
+                      <span style={{fontSize:14,color:"#cbd5e1",lineHeight:1.5}}>{l}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {updates.length>5&&(
+          <button onClick={()=>setShowAll(v=>!v)} style={{marginTop:16,background:"none",border:"none",color:"#60a5fa",fontSize:13,fontWeight:600,cursor:"pointer",padding:0}}>
+            {showAll?"Ver menos":`Ver mais (${updates.length-5})`}
+          </button>
+        )}
+      </div>
+
+      {/* Feedback */}
+      <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:22}}>
+        <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:700,marginBottom:6}}>O teu feedback</div>
+        <p style={{fontSize:12.5,color:"#6b7280",margin:"0 0 12px"}}>Deixa uma sugestão ou opinião. Fica visível para todos, mas <strong style={{color:"#94a3b8"}}>de forma anónima</strong>.</p>
+        <textarea value={msg} onChange={e=>setMsg(e.target.value.slice(0,500))} rows={3}
+          placeholder="O que gostavas de ver, ou o que melhorarias?"
+          style={{width:"100%",boxSizing:"border-box",resize:"vertical",background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"11px 13px",color:"#e2e8f0",fontSize:14,lineHeight:1.5,fontFamily:"inherit"}}/>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginTop:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:sent?"#4ade80":err?"#f87171":"#6b7280"}}>
+            {sent?"Obrigado pelo feedback! 🙌":err?err:`${msg.length}/500`}
+          </span>
+          <Btn onClick={submit} primary disabled={sending||!msg.trim()}>{sending?"A enviar…":"Enviar"}</Btn>
+        </div>
+
+        {feedback.length>0&&(
+          <div style={{marginTop:22,display:"flex",flexDirection:"column",gap:12}}>
+            {feedback.map(f=>(
+              <div key={f.id} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"11px 14px"}}>
+                <div style={{fontSize:14,color:"#cbd5e1",lineHeight:1.5,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{f.message}</div>
+                <div style={{fontSize:11,color:"#64748b",marginTop:6}}>Anónimo · {timeAgo(f.created_at)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
   const officialCount=(ranking||[]).filter(p=>p.official).length;
   const compDay=(()=>{ const d=settings?.gameStartDate?new Date(settings.gameStartDate):null; if(!d||isNaN(d)) return 1; return Math.max(1,Math.min(365,Math.floor((Date.now()-d.getTime())/86400000)+1)); })();
   const iconProps={viewBox:"0 0 24 24",fill:"none",stroke:"#8ea2bf",strokeWidth:1.6,strokeLinecap:"round",strokeLinejoin:"round",width:22,height:22,"aria-hidden":true};
@@ -2307,6 +2401,13 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio}){
           </div>
         </div>
       </section>
+
+      {/* Updates e feedbacks — só para membros autenticados */}
+      {submitted&&(
+        <section style={{maxWidth:980,margin:"0 auto",padding:"0 24px 80px"}}>
+          <UpdatesFeedback myName={myName}/>
+        </section>
+      )}
 
       {/* CTA */}
       {!submitted&&(
@@ -5269,6 +5370,35 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
   const [fullPfs,setFullPfs]=useState(null); // portefólios completos (com ações dos oficiais) via service_role
   const [readiness,setReadiness]=useState(null); // relatório de prontidão para o lançamento
   const [checkingRd,setCheckingRd]=useState(false);
+  const [aUpdates,setAUpdates]=useState(null); // updates (recap diário) — null = por carregar
+  const [aFeedback,setAFeedback]=useState(null); // feedback dos membros (com autor, só admin)
+  const [bodyEdits,setBodyEdits]=useState({}); // { day: texto } em edição
+  async function loadUpdates(){
+    try{
+      const r=await fetch("/api/admin/updates",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,action:"list"})});
+      const j=await r.json(); if(r.ok&&Array.isArray(j.updates)){ setAUpdates(j.updates); setBodyEdits(Object.fromEntries(j.updates.map(u=>[u.day,u.body||""]))); }
+    }catch{}
+  }
+  async function loadAdminFeedback(){
+    try{
+      const r=await fetch("/api/admin/feedback",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,action:"list"})});
+      const j=await r.json(); if(r.ok&&Array.isArray(j.feedback)) setAFeedback(j.feedback);
+    }catch{}
+  }
+  async function updAction(action,day,extra){
+    try{
+      const r=await fetch("/api/admin/updates",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,action,day,...(extra||{})})});
+      const j=await r.json(); if(!r.ok||!j.ok){ showToast(j.error||"Não foi possível.","error"); return; }
+      await loadUpdates(); showToast("Feito.");
+    }catch{ showToast("Falha de ligação.","error"); }
+  }
+  async function fbAction(action,id){
+    try{
+      const r=await fetch("/api/admin/feedback",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,action,id})});
+      const j=await r.json(); if(!r.ok||!j.ok){ showToast(j.error||"Não foi possível.","error"); return; }
+      await loadAdminFeedback();
+    }catch{ showToast("Falha de ligação.","error"); }
+  }
   useEffect(()=>{
     let cancel=false;
     (async()=>{
@@ -5287,6 +5417,7 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
     })();
     return()=>{ cancel=true; };
   },[pw,portfolios]);
+  useEffect(()=>{ if(tab==="updates"&&aUpdates===null) loadUpdates(); if(tab==="feedback"&&aFeedback===null) loadAdminFeedback(); },[tab]);// eslint-disable-line
   // Usa os portefólios completos (admin) se disponíveis; senão, os públicos (prop).
   const apfs = fullPfs||portfolios;
   const aranking = apfs.map(p=>({...p,...pfStats(p,livePrices)}))
@@ -5388,7 +5519,7 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
     dlCSV("detalhe.csv",rows);
   }
 
-  const TABS=[["portfolios","👥 Portefólios"],["game","⚙️ Jogo"],["export","⬇️ Exportar"]];
+  const TABS=[["portfolios","👥 Portefólios"],["game","⚙️ Jogo"],["updates","📣 Updates"],["feedback","💬 Feedback"],["export","⬇️ Exportar"]];
 
   return(
     <div style={{maxWidth:1200,margin:"0 auto",padding:"40px 20px 80px"}}>
@@ -5480,6 +5611,80 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
                 </div>
               ))}
             </>
+          )}
+        </div>
+      )}
+
+      {/* Updates — recap diário */}
+      {tab==="updates"&&(
+        <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24}}>
+          <p style={{fontSize:13,color:"#6b7280",margin:"0 0 20px"}}>Recap por dia. O <strong style={{color:"#94a3b8"}}>rascunho</strong> junta os assuntos dos commits do dia — reescreve em linguagem simples (uma ideia por linha) e <strong style={{color:"#94a3b8"}}>publica</strong>. Só os publicados aparecem na homepage.</p>
+          {aUpdates===null?(
+            <p style={{color:"#4b5563"}}>A carregar…</p>
+          ):aUpdates.length===0?(
+            <p style={{color:"#4b5563"}}>Ainda sem dias. Um push para o repositório cria o rascunho de hoje.</p>
+          ):(
+            <div style={{display:"flex",flexDirection:"column",gap:20}}>
+              {aUpdates.map(u=>(
+                <div key={u.day} style={{borderBottom:"1px solid rgba(255,255,255,0.07)",paddingBottom:20}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                    <strong style={{fontSize:14}}>{u.day}</strong>
+                    <span style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",borderRadius:999,padding:"2px 8px",
+                      background:u.status==="published"?"rgba(34,197,94,0.14)":"rgba(148,163,184,0.14)",
+                      color:u.status==="published"?"#4ade80":"#94a3b8",border:`1px solid ${u.status==="published"?"rgba(34,197,94,0.3)":"rgba(148,163,184,0.3)"}`}}>
+                      {u.status==="published"?"Publicado":"Rascunho"}
+                    </span>
+                  </div>
+                  {Array.isArray(u.draft_lines)&&u.draft_lines.length>0&&(
+                    <details style={{marginBottom:10}}>
+                      <summary style={{fontSize:12,color:"#64748b",cursor:"pointer"}}>Semente (commits do dia · {u.draft_lines.length})</summary>
+                      <ul style={{margin:"8px 0 0",paddingLeft:18,fontSize:12.5,color:"#94a3b8",lineHeight:1.6}}>
+                        {u.draft_lines.map((l,i)=><li key={i}>{l}</li>)}
+                      </ul>
+                    </details>
+                  )}
+                  <textarea value={bodyEdits[u.day]??""} onChange={e=>setBodyEdits(p=>({...p,[u.day]:e.target.value}))} rows={4}
+                    placeholder="Escreve o recap do dia (uma ideia por linha, direto e não-técnico)…"
+                    style={{width:"100%",boxSizing:"border-box",resize:"vertical",background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"10px 12px",color:"#e2e8f0",fontSize:13.5,lineHeight:1.5,fontFamily:"inherit"}}/>
+                  <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+                    <button onClick={()=>updAction("save",u.day,{body:bodyEdits[u.day]??""})} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:8,padding:"7px 14px",fontSize:13,fontWeight:600,color:"#e2e8f0",cursor:"pointer"}}>Guardar</button>
+                    {u.status==="published"?(
+                      <button onClick={()=>updAction("unpublish",u.day)} style={{background:"rgba(148,163,184,0.1)",border:"1px solid rgba(148,163,184,0.3)",borderRadius:8,padding:"7px 14px",fontSize:13,fontWeight:600,color:"#94a3b8",cursor:"pointer"}}>Despublicar</button>
+                    ):(
+                      <button onClick={()=>updAction("publish",u.day,{body:bodyEdits[u.day]??""})} style={{background:"rgba(34,197,94,0.12)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:8,padding:"7px 14px",fontSize:13,fontWeight:700,color:"#4ade80",cursor:"pointer"}}>Guardar e publicar</button>
+                    )}
+                    <button onClick={()=>{ if(confirm(`Apagar o dia ${u.day}?`)) updAction("delete",u.day); }} style={{background:"none",border:"1px solid rgba(239,68,68,0.25)",borderRadius:8,padding:"7px 14px",fontSize:13,fontWeight:600,color:"#f87171",cursor:"pointer",marginLeft:"auto"}}>Apagar</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Feedback — moderação (autor visível só ao admin) */}
+      {tab==="feedback"&&(
+        <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24}}>
+          <p style={{fontSize:13,color:"#6b7280",margin:"0 0 20px"}}>Feedback dos membros. Para eles é <strong style={{color:"#94a3b8"}}>anónimo</strong>; aqui vês o autor. Oculta ou apaga o que não deva aparecer.</p>
+          {aFeedback===null?(
+            <p style={{color:"#4b5563"}}>A carregar…</p>
+          ):aFeedback.length===0?(
+            <p style={{color:"#4b5563"}}>Ainda sem feedback.</p>
+          ):(
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              {aFeedback.map(f=>(
+                <div key={f.id} style={{background:f.hidden?"rgba(239,68,68,0.05)":"rgba(255,255,255,0.03)",border:`1px solid ${f.hidden?"rgba(239,68,68,0.18)":"rgba(255,255,255,0.07)"}`,borderRadius:10,padding:"12px 14px"}}>
+                  <div style={{fontSize:14,color:"#cbd5e1",lineHeight:1.5,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{f.message}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginTop:8,flexWrap:"wrap"}}>
+                    <span style={{fontSize:11.5,color:"#64748b"}}><strong style={{color:"#94a3b8"}}>{f.author||"(sem nome)"}</strong> · {timeAgo(f.created_at)}{f.hidden?" · oculto":""}</span>
+                    <span style={{marginLeft:"auto",display:"flex",gap:6}}>
+                      <button onClick={()=>fbAction(f.hidden?"unhide":"hide",f.id)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:7,padding:"5px 11px",fontSize:12,fontWeight:600,color:"#e2e8f0",cursor:"pointer"}}>{f.hidden?"Mostrar":"Ocultar"}</button>
+                      <button onClick={()=>{ if(confirm("Apagar este feedback?")) fbAction("delete",f.id); }} style={{background:"none",border:"1px solid rgba(239,68,68,0.25)",borderRadius:7,padding:"5px 11px",fontSize:12,fontWeight:600,color:"#f87171",cursor:"pointer"}}>Apagar</button>
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}
