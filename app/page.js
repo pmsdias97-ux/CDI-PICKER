@@ -3641,7 +3641,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
                 const all=seriesById[p.id]||[];
                 const before=all.filter(s=>s.date<ps), inP=all.filter(s=>s.date>=ps);
                 const r0=before.length?before[before.length-1].r:(inP.length?inP[0].r:((p.total??0)-(rentVal??0))); // total no início
-                const ser=inP.map(s=>({date:s.date,r:s.r-r0}));
+                // Arranca a linha a 0% no início do período → o ponto final (rentab. do período) fica
+                // acima do de entrada quando é positivo (e abaixo quando negativo), como deve ser.
+                const ser=[{date:ps,r:0},...inP.map(s=>({date:s.date,r:s.r-r0}))];
                 return <MiniSparkline series={ser} current={rentVal} height={24}/>;
               })()}
             </span>
