@@ -3601,6 +3601,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         const me=p.normName===myNorm;
         const dayRet=pfDayReturn(p);
         const rentVal=perActive?valForPeriod(p):p.total; // valor mostrado na coluna Rentab./Mês/Semana
+        // 🟢/🔴 do PERÍODO: ações em ganho/perda desde o baseline do período (semana/mês), não o total.
+        const stat=perActive?(()=>{ let pos=0,neg=0; for(const s of (p.stocks||[])){ const base=baseForStock(s.ticker,s.initialPrice); const cur=curPrice(s.ticker,s.initialPrice,livePrices); const rr0=base>0?cur/base-1:0; const r=s.side==="short"?-rr0:rr0; if(r>0)pos++; else if(r<0)neg++; } return {pos,neg}; })():{pos:p.pos,neg:p.neg};
         const picked=cmp&&sel.includes(p.key);
         // Top 3: ouro (1º, amarelo vivo) / prata (2º) / bronze-âmbar (3º). 4º-10º: cor geral.
         const rr=(!preStartWk&&i<3)?[
@@ -3631,11 +3633,15 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
             </span>
             <span className="rkSpark">
               {/* Sem sparkline no pré-arranque semanal — ainda não há histórico da semana.
-                  Em mini-época (semana/mês) a série e a cor seguem a rentab. DO PERÍODO (rebaseada
-                  ao período: r − (total − rentab_período)), para bater certo com o nº da linha. */}
+                  Em mini-época (semana/mês): só os snapshots DENTRO do período, rebaseados ao início
+                  (r − total_no_início) → a curva mostra a evolução DA SEMANA/MÊS, não do total. */}
               {!preStartWk&&(()=>{
-                const off=(perActive&&Number.isFinite(rentVal)&&Number.isFinite(p.total))?(p.total-rentVal):0;
-                const ser=off?(seriesById[p.id]||[]).map(s=>({date:s.date,r:s.r-off})):(seriesById[p.id]||[]);
+                if(!perActive) return <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24}/>;
+                const ps=period==="week"?curWk:curMonthDateOnly; // início do período (YYYY-MM-DD)
+                const all=seriesById[p.id]||[];
+                const before=all.filter(s=>s.date<ps), inP=all.filter(s=>s.date>=ps);
+                const r0=before.length?before[before.length-1].r:(inP.length?inP[0].r:((p.total??0)-(rentVal??0))); // total no início
+                const ser=inP.map(s=>({date:s.date,r:s.r-r0}));
                 return <MiniSparkline series={ser} current={rentVal} height={24}/>;
               })()}
             </span>
@@ -3643,7 +3649,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
             <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:"clamp(11px,3vw,13px)",fontWeight:600,
               color:(preStartWk||dayRet==null)?"#4b5563":dayRet>=0?"#4ade80":"#f87171"}}>{(preStartWk||dayRet==null)?"—":<Rolling text={pct(dayRet)}/>}</span>
             <span style={{textAlign:"center",alignSelf:"center",fontFamily:"monospace",fontSize:"clamp(11px,3vw,14px)",fontWeight:700}}>
-              {preStartWk?<span style={{color:"#4b5563"}}>—</span>:<><span style={{color:"#4ade80"}}>{p.pos}</span><span style={{color:"#94a3b8"}}>/</span><span style={{color:"#f87171"}}>{p.neg}</span></>}
+              {preStartWk?<span style={{color:"#4b5563"}}>—</span>:<><span style={{color:"#4ade80"}}>{stat.pos}</span><span style={{color:"#94a3b8"}}>/</span><span style={{color:"#f87171"}}>{stat.neg}</span></>}
             </span>
             <span className="rkHide" style={{display:"flex",alignItems:"center",justifyContent:"flex-start",gap:2,flexWrap:"nowrap",overflow:"hidden"}}>
               {(p.stocks||[]).map(s=>({s,r:stockRet(s,livePrices)})).sort((a,b)=>b.r-a.r).map(({s,r})=>(
