@@ -2198,7 +2198,7 @@ function UpdatesFeedback({myName}){
   return(
     <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"clamp(20px,4vw,32px)"}}>
       <h2 style={{fontSize:20,fontWeight:700,letterSpacing:"-0.3px",margin:"0 0 4px",display:"flex",alignItems:"center",gap:9}}>
-        <span aria-hidden="true">📣</span> Updates e feedbacks
+        Updates e feedbacks
       </h2>
       <p style={{fontSize:13,color:"#6b7280",margin:"0 0 22px"}}>O que vai mudando na plataforma — e o que achas disto.</p>
 
