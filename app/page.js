@@ -2901,6 +2901,7 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
   const [hi,setHi]=useState(null); // portefólio em destaque (hover no nome ou na linha)
   // "Live": ponto pulsante no fim das linhas só com o mercado US aberto (e só desktop).
   const [mktLive,setMktLive]=useState(false);
+  const [animDone,setAnimDone]=useState(false); // bolinhas só depois de as linhas "crescerem"
   useEffect(()=>{
     const ck=()=>setMktLive(isMktOpen(new Date())&&typeof window!=="undefined"&&window.matchMedia("(min-width:861px)").matches);
     ck(); const id=setInterval(ck,30000);
@@ -3056,6 +3057,13 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
     return [zero,...rows].sort((a,b)=>a.t<b.t?-1:1);
   },[hist,snaps,shown]);
   const data=hist?(histData||[]):liveData;
+  // Espera a animação de "crescimento" das linhas terminar antes de mostrar as bolinhas live.
+  useEffect(()=>{
+    setAnimDone(false);
+    if(frameMode||!(data&&data.length>=2)) return;
+    const t=setTimeout(()=>setAnimDone(true),1150+shown.length*30);
+    return()=>clearTimeout(t);
+  },[data,frameMode,shown.length]);
   // Valor por membro (cabeçalho/legenda): histórico → rentab. do período fechado; período ao vivo
   // (semana/mês) → rentab. DESSE período (não o total); "Geral" → total.
   const valOf=(p)=> (hist&&typeof hist.retOf==="function") ? hist.retOf(p)
@@ -3146,7 +3154,10 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
             <YAxis domain={[raceYMin,raceYMax]} tickFormatter={(v)=>`${v>0?"+":""}${v}%`} tick={{fill:"#94a3b8",fontSize:11}} width={46} axisLine={false} tickLine={false}/>
             <ReferenceLine y={0} stroke="rgba(255,255,255,0.30)" strokeDasharray="4 4"/>
             <Tooltip content={<SeasonRaceTooltip/>}/>
-            {(()=>{ const lastIdx=data.length-1; const live=mktLive&&!frameMode&&!hist; return shown.map((p,i)=>{
+            {(()=>{ const lastIdx=data.length-1; const live=mktLive&&!frameMode&&!hist&&animDone;
+              // Render em ordem INVERSA (último lugar primeiro) → o 1º lugar pinta por cima: a sua
+              // bolinha tem prioridade sobre a do 2º, a do 2º sobre a do 3º, etc.
+              return shown.map((p,i)=>({p,i})).reverse().map(({p,i})=>{
               const dim=hi&&hi!==p.name;
               return(
                 <Line key={p.key} type="monotone" dataKey={p.name} name={p._me?`${p.name} (tu)`:p.name}
