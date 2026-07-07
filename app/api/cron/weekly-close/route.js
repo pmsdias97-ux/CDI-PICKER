@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
 import { usMarketOpen } from "../../../lib/marketHours";
+import { fetchQuote } from "../../../lib/marketData";
 
 export const maxDuration = 30;
 
@@ -56,9 +57,14 @@ export async function GET(request){
   const capturedAt=now.toISOString();
   const upserts=[]; const skippedTickers=[];
   for(const r of rows){
-    const close=priceMap.get(norm(r.ticker));
+    let close=priceMap.get(norm(r.ticker));
+    if(!(Number.isFinite(close)&&close>0)){
+      // Fora do sp500_ath (ex.: BTC ETF) → cotação ao vivo (a MESMA fonte do livePrices do cliente),
+      // para o fecho ficar completo (senão o cliente cairia no preço de arranque e mostraria o total).
+      try{ const q=await fetchQuote(r.ticker); if(Number.isFinite(q)&&q>0) close=q; }catch{}
+    }
     if(Number.isFinite(close)&&close>0) upserts.push({period,ticker:r.ticker,price:r.price,close_price:close,captured_at:capturedAt});
-    else skippedTickers.push(r.ticker); // sem preço no pipeline → sem fecho (cliente cai no preço inicial)
+    else skippedTickers.push(r.ticker);
   }
   if(!upserts.length) return Response.json({ok:true,period,captured:0,skipped:"sem preços de fecho"});
 
