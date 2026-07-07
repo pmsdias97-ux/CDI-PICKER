@@ -3062,7 +3062,7 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
   useEffect(()=>{
     setAnimDone(false);
     if(frameMode||!(data&&data.length>=2)) return;
-    const t=setTimeout(()=>setAnimDone(true),820+shown.length*20);
+    const t=setTimeout(()=>setAnimDone(true),1170);
     return()=>clearTimeout(t);
   },[data,frameMode,shown.length]);
   // Valor por membro (cabeçalho/legenda): histórico → rentab. do período fechado; período ao vivo
@@ -3479,6 +3479,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   // "A tua posição": clicar faz scroll suave até à minha linha no ranking + flash subtil.
   const meRowRef=useRef(null);
   const [meFlash,setMeFlash]=useState(false);
+  const [cvOff,setCvOff]=useState(false); // desliga content-visibility durante o scroll → alturas reais à 1ª
   // Cartão do campeão (direita) e medalhão de vencedor (esquerda) alinhados ao CENTRO do gráfico
   // (medido em runtime; a legenda varia). Ambos mantêm o sticky — só desloca a posição inicial para
   // o meio do gráfico. Partilham o mesmo topo de célula (linha 1), só diferem na altura do conteúdo.
@@ -3524,8 +3525,15 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   },[period,hasWeek,preLaunch,officials.length,ranking.length]);
   const scrollToMe=()=>{
     const el=meRowRef.current; if(!el) return;
-    el.scrollIntoView({behavior:"smooth",block:"center"});
     setMeFlash(true); setTimeout(()=>setMeFlash(false),2600);
+    // As linhas acima têm content-visibility:auto (altura estimada a 56px). À 1ª vez nunca foram
+    // pintadas → o scroll usa a altura estimada e aterra desalinhado (à 2ª já têm altura real e acerta).
+    // Solução: desligar o content-visibility, esperar o reflow com alturas REAIS, e só aí centrar.
+    setCvOff(true);
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      const r=meRowRef.current; if(r) r.scrollIntoView({behavior:"smooth",block:"center"});
+      setTimeout(()=>setCvOff(false),900); // repõe o content-visibility após o scroll assentar
+    }));
   };
   useEffect(()=>{
     if(!highlightKey) return;
@@ -3576,7 +3584,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       if(!q&&!pq) shown=shown.slice(0,shownRows);
     }
     return(
-    <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"clip"}}>
+    <div className={cvOff?"rkNoCV":undefined} style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"clip"}}>
       <div className="rkRow rkStickyHead" style={{padding:"10px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",
         fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,alignItems:"center"}}>
         {searchable ? (
@@ -4075,6 +4083,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
            fora do ecrã → scroll fluido (senão saturava o compositor e a pintura ficava atrasada).
            Só no desktop, onde as linhas têm altura fixa de 1 linha (evita saltos). */
         @media(min-width:861px){ .rkDataRow{content-visibility:auto;contain-intrinsic-size:auto 56px} }
+        /* Durante o scroll para "A tua posição": alturas reais em todas as linhas → centra à 1ª. */
+        .rkNoCV .rkDataRow{content-visibility:visible!important}
         .rkSpark{display:flex;align-items:center;align-self:center;height:24px;overflow:hidden;min-width:0}
         .rkNarrowHd{display:none}   /* cabeçalhos simples #/Membro: só aparecem no mobile */
         @keyframes rkHiFlash{0%{background-color:rgba(59,130,246,0.30)}60%{background-color:rgba(59,130,246,0.15)}100%{background-color:rgba(59,130,246,0)}}
