@@ -1,24 +1,14 @@
 {
   "crons": [
-    {
-      "path": "/api/cron/snapshot",
-      "schedule": "0 19 * * 1-5"
-    },
-    {
-      "path": "/api/cron/dispatch-ath",
-      "schedule": "0 6 * * 1-5"
-    },
-    {
-      "path": "/api/cron/monthly-baselines",
-      "schedule": "0 15 1-5 * *"
-    },
-    {
-      "path": "/api/cron/weekly-baselines",
-      "schedule": "0 15 * * 1-5"
-    },
-    {
-      "path": "/api/cron/weekly-close",
-      "schedule": "0 22 * * 5"
-    }
+    { "path": "/api/cron/dispatch-ath", "schedule": "0 6 * * 1-5" },
+
+    { "path": "/api/cron/dispatch-prices", "schedule": "31 13-14 * * 1-5" },
+    { "path": "/api/cron/weekly-baselines", "schedule": "46 13-14 * * 1-5" },
+    { "path": "/api/cron/monthly-baselines", "schedule": "0 13-14 1-5 * *" },
+
+    { "path": "/api/cron/dispatch-prices", "schedule": "5 20-21 * * 5" },
+    { "path": "/api/cron/weekly-close", "schedule": "25 20-21 * * 5" },
+
+    { "path": "/api/cron/snapshot", "schedule": "0 14-21 * * 1-5" }
   ]
 }
