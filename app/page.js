@@ -3035,8 +3035,10 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
     return [zero,...rows].sort((a,b)=>a.t<b.t?-1:1);
   },[hist,snaps,shown]);
   const data=hist?(histData||[]):liveData;
-  // Valor por membro (cabeçalho/legenda): histórico → rentab. do período; senão → total ao vivo.
-  const valOf=(p)=> (hist&&typeof hist.retOf==="function") ? hist.retOf(p) : p.total;
+  // Valor por membro (cabeçalho/legenda): histórico → rentab. do período fechado; período ao vivo
+  // (semana/mês) → rentab. DESSE período (não o total); "Geral" → total.
+  const valOf=(p)=> (hist&&typeof hist.retOf==="function") ? hist.retOf(p)
+    : (periodStart&&typeof periodRetOf==="function") ? periodRetOf(p) : p.total;
 
   // MODO "GRELHA DE PARTIDA" (semana ainda não arrancou): desenha o gráfico VAZIO já com as
   // proporções certas — eixo X = 2ª→6ª feira da semana que vai começar, todos a 0%. Quando chegar
