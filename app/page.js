@@ -4961,7 +4961,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
           </div>
           <div style={{fontSize:"clamp(34px,9vw,42px)",fontWeight:800,fontFamily:"monospace",lineHeight:1,
             color:st.total>=0?"#4ade80":"#f87171"}}><Tri up={st.total>=0} size="0.78em"/> <Rolling text={pct(Math.abs(st.total)).replace(/[+-]/,"")}/></div>
-          <div style={{fontSize:11,color:"#94a3b8",marginTop:6,textTransform:"uppercase",letterSpacing:"0.5px"}}>Rentabilidade média</div>
+          <div style={{fontSize:11,color:"#94a3b8",marginTop:6,textTransform:"uppercase",letterSpacing:"0.5px"}}>Ranking Geral</div>
           <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"10px 24px",marginTop:18,fontSize:13,color:"#94a3b8"}}>
             <span style={{color:"#4ade80"}}><Tri size={11}/> {st.pos} positivas</span>
             <span style={{color:"#f87171"}}><Tri up={false} size={11}/> {st.neg} negativas</span>
@@ -4971,7 +4971,12 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
               </span>
             )}
           </div>
-          <p style={{fontSize:13,color:"#94a3b8",margin:"16px 0 0"}}>Submetido a {dt(pf.submittedAt)}</p>
+          {standings&&(
+            <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"8px 22px",margin:"16px 0 0",fontSize:13,color:"#94a3b8"}}>
+              <span>Mensal <strong style={{color:"#e2e8f0"}}>{standings.mensal?`${standings.mensal.rank}º`:"—"}</strong></span>
+              <span>Semanal <strong style={{color:"#e2e8f0"}}>{standings.semanal?`${standings.semanal.rank}º`:(standings.weeklyWins&&standings.weeklyWins.length?"—":"Arranca 2ª feira")}</strong></span>
+            </div>
+          )}
         </div>
       </TiltCard>
       </div>
