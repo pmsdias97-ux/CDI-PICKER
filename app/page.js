@@ -2187,7 +2187,7 @@ function CountUp({to=0}){
 function UpdatesFeedback({myName}){
   const [updates,setUpdates]=useState([]);
   const [feedback,setFeedback]=useState([]);
-  const [showAll,setShowAll]=useState(false);
+  const [openDays,setOpenDays]=useState({}); // { day: true } — datas anteriores expandidas
   const [msg,setMsg]=useState("");
   const [sending,setSending]=useState(false);
   const [sent,setSent]=useState(false);
@@ -2209,50 +2209,66 @@ function UpdatesFeedback({myName}){
     }catch{ setErr("Não foi possível enviar."); }
     finally{ setSending(false); }
   };
-  const shownUpdates=showAll?updates:updates.slice(0,5);
   return(
     <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"clamp(20px,4vw,32px)"}}>
-      <h2 style={{fontSize:20,fontWeight:700,letterSpacing:"-0.3px",margin:"0 0 4px",display:"flex",alignItems:"center",gap:9}}>
+      <h2 style={{fontSize:20,fontWeight:700,letterSpacing:"-0.3px",margin:"0 0 4px",textAlign:"center"}}>
         Updates e feedbacks
       </h2>
-      <p style={{fontSize:13,color:"#6b7280",margin:"0 0 22px"}}>O que vai mudando na plataforma — e o que achas disto.</p>
+      <p style={{fontSize:13,color:"#6b7280",margin:"0 0 22px",textAlign:"center"}}>O que vai mudando na plataforma — e o que achas disto.</p>
 
       {/* Updates */}
       <div style={{marginBottom:28}}>
         <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:700,marginBottom:14}}>Novidades</div>
-        {shownUpdates.length===0?(
+        {updates.length===0?(
           <p style={{fontSize:14,color:"#6b7280",margin:0}}>Ainda sem novidades por aqui. Fica atento. 👀</p>
-        ):(
-          <div style={{display:"flex",flexDirection:"column",gap:16}}>
-            {shownUpdates.map(u=>(
-              <div key={u.day} style={{display:"flex",gap:14,alignItems:"flex-start"}}>
-                <div style={{flexShrink:0,minWidth:52,fontSize:12,fontWeight:700,color:"#4ade80",paddingTop:2,textTransform:"lowercase"}}>{fmtDay(u.day)}</div>
-                <div style={{minWidth:0,display:"flex",flexDirection:"column",gap:5}}>
-                  {bodyLines(u.body).map((l,i)=>(
-                    <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-                      <span style={{color:"#22c55e",fontWeight:700,marginTop:1,flexShrink:0,fontSize:13}}>›</span>
-                      <span style={{fontSize:14,color:"#cbd5e1",lineHeight:1.5}}>{l}</span>
-                    </div>
-                  ))}
+        ):(()=>{
+          const bodyBlock=(u)=>(
+            <div style={{minWidth:0,display:"flex",flexDirection:"column",gap:5}}>
+              {bodyLines(u.body).map((l,i)=>(
+                <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                  <span style={{color:"#22c55e",fontWeight:700,marginTop:1,flexShrink:0,fontSize:13}}>›</span>
+                  <span style={{fontSize:14,color:"#cbd5e1",lineHeight:1.5}}>{l}</span>
                 </div>
+              ))}
+            </div>
+          );
+          return(
+            <div style={{display:"flex",flexDirection:"column",gap:16}}>
+              {/* Mais recente — sempre à vista, data a verde. */}
+              <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+                <div style={{flexShrink:0,minWidth:52,fontSize:12,fontWeight:700,color:"#4ade80",paddingTop:2,textTransform:"lowercase"}}>{fmtDay(updates[0].day)}</div>
+                {bodyBlock(updates[0])}
               </div>
-            ))}
-          </div>
-        )}
-        {updates.length>5&&(
-          <button onClick={()=>setShowAll(v=>!v)} style={{marginTop:16,background:"none",border:"none",color:"#60a5fa",fontSize:13,fontWeight:600,cursor:"pointer",padding:0}}>
-            {showAll?"Ver menos":`Ver mais (${updates.length-5})`}
-          </button>
-        )}
+              {/* Anteriores — só as DATAS (clicáveis); clicar mostra os updates desse dia. */}
+              {updates.length>1&&(
+                <div style={{display:"flex",flexDirection:"column",gap:10,paddingTop:4}}>
+                  {updates.slice(1).map(u=>{
+                    const open=!!openDays[u.day];
+                    return(
+                      <div key={u.day}>
+                        <button onClick={()=>setOpenDays(p=>({...p,[u.day]:!p[u.day]}))}
+                          style={{display:"inline-flex",alignItems:"center",gap:7,background:"none",border:"none",cursor:"pointer",padding:0,color:"#94a3b8",fontSize:10.5,fontWeight:700,textTransform:"lowercase"}}>
+                          <span aria-hidden="true" style={{display:"inline-block",transform:open?"rotate(90deg)":"none",transition:"transform .15s",fontSize:8,color:"#64748b"}}>▶</span>
+                          {fmtDay(u.day)}
+                        </button>
+                        {open&&<div style={{margin:"8px 0 0 18px"}}>{bodyBlock(u)}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Feedback */}
       <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:22}}>
-        <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:700,marginBottom:6}}>O teu feedback</div>
-        <p style={{fontSize:12.5,color:"#6b7280",margin:"0 0 12px"}}>Deixa uma sugestão ou opinião. Fica visível para todos, mas <strong style={{color:"#94a3b8"}}>de forma anónima</strong>.</p>
+        <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:700,marginBottom:6,textAlign:"center"}}>O teu feedback</div>
+        <p style={{fontSize:12.5,color:"#6b7280",margin:"0 0 12px",textAlign:"center"}}>Deixa uma sugestão ou opinião. Fica visível para todos, mas <strong style={{color:"#94a3b8"}}>de forma anónima</strong>.</p>
         <textarea value={msg} onChange={e=>setMsg(e.target.value.slice(0,500))} rows={3}
           placeholder="O que gostavas de ver, ou o que melhorarias?"
-          style={{width:"100%",boxSizing:"border-box",resize:"vertical",background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"11px 13px",color:"#e2e8f0",fontSize:14,lineHeight:1.5,fontFamily:"inherit"}}/>
+          style={{width:"100%",boxSizing:"border-box",resize:"vertical",background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"11px 13px",color:"#e2e8f0",fontSize:14,lineHeight:1.5,fontFamily:"inherit",textAlign:"center"}}/>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginTop:10,flexWrap:"wrap"}}>
           <span style={{fontSize:12,color:sent?"#4ade80":err?"#f87171":"#6b7280"}}>
             {sent?"Obrigado pelo feedback! 🙌":err?err:`${msg.length}/500`}
