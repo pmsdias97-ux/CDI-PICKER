@@ -7,7 +7,8 @@ name: ATH — preços (hora a hora)
 
 on:
   schedule:
-    - cron: "0 14-21 * * 1-5"
+    - cron: "30 13 * * 1-5"    # abertura US (verão, 09:30 ET) — diário arranca sem delay
+    - cron: "0 14-21 * * 1-5"  # horário durante a sessão (cobre a abertura de inverno às 14:30 no :00 seguinte)
   workflow_dispatch:
 
 # Um trigger novo não empilha com um a meio (cancela o anterior — só interessa o mais recente).

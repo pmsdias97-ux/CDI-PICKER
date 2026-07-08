@@ -1,7 +1,8 @@
 {
   "crons": [
     { "path": "/api/cron/dispatch-ath", "schedule": "0 6 * * 1-5" },
-    { "path": "/api/cron/dispatch-prices", "schedule": "0 14 * * 1-5" },
+    { "path": "/api/cron/dispatch-prices", "schedule": "30 13 * * 1-5" },
+    { "path": "/api/cron/dispatch-prices", "schedule": "30 14 * * 1-5" },
     { "path": "/api/cron/dispatch-prices", "schedule": "0 18 * * 1-5" },
     { "path": "/api/cron/dispatch-prices", "schedule": "0 21 * * 1-5" },
     { "path": "/api/cron/weekly-baselines", "schedule": "0 15 * * 1-5" },
