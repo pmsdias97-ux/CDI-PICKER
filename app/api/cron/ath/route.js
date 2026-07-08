@@ -31,8 +31,12 @@ export async function POST(request) {
     if ("prev_close" in r) row.prev_close = num(r.prev_close);
     if ("marketcap" in r) row.marketcap = num(r.marketcap);
     if ("shares" in r) row.shares = num(r.shares);
-    if ("ath" in r) row.ath = num(r.ath);
-    if ("ath_ts" in r) row.ath_ts = r.ath_ts || null;
+    // ATH: só escreve um valor VÁLIDO (>0). Nunca apaga um máximo já guardado com null/0 — um run
+    // "full" com download falhado (Yahoo a limitar o runner) enviava ath:null e limpava a tabela toda.
+    if ("ath" in r) {
+      const a = num(r.ath);
+      if (a != null && a > 0) { row.ath = a; if ("ath_ts" in r) row.ath_ts = r.ath_ts || null; }
+    }
     if ("in_sp500" in r) row.in_sp500 = r.in_sp500 === true;
     clean.push(row);
   }
