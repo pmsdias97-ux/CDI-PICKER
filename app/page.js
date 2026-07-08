@@ -1852,6 +1852,14 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
         @media(max-width:640px){.navWide{display:none}}
         .cdiNav{justify-content:center}
         .cdiClock{position:absolute;top:12px;right:14px}
+        .cdiUpdatesLink{position:absolute;top:12px;left:14px;display:inline-flex;align-items:center;gap:7px;
+          padding:6px 14px;border-radius:999px;cursor:pointer;color:#cbd5e1;font-size:12px;font-weight:600;letterSpacing:0.2px;
+          background:rgba(255,255,255,0.05);backdrop-filter:blur(18px) saturate(170%);-webkit-backdrop-filter:blur(18px) saturate(170%);
+          border:1px solid rgba(255,255,255,0.10);box-shadow:0 6px 22px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.10);
+          transition:color .15s, border-color .15s}
+        .cdiUpdatesLink:hover{color:#fff;border-color:rgba(255,255,255,0.22)}
+        .cdiUpdatesLink svg{opacity:0.8}
+        @media(max-width:640px){.cdiUpdatesLink{display:none}}
         @media(max-width:640px){
           /* MOBILE: abas numa pílula liquid-glass no TOPO (sticky), com blur forte —
              o conteúdo passa de desfocado a nítido ao deslizar por baixo. Relógio por baixo. */
@@ -1888,6 +1896,13 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
             WebkitMaskImage:"linear-gradient(180deg,transparent 38%,#000 62%,#000 100%)",maskImage:"linear-gradient(180deg,transparent 38%,#000 62%,#000 100%)"}}/>
         )}
         <Nav page={page} nav={nav} navRank={navRank} rankPeriod={rankPeriod} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} tint={theme.tint} />
+        {page==="home"&&submitted&&(
+          <button className="cdiUpdatesLink" title="Ir para Updates e feedbacks"
+            onClick={()=>{ const el=document.getElementById("updates-feedbacks"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); }}>
+            Updates
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+          </button>
+        )}
         <div className="cdiClock"><MarketStatus/></div>
       </header>
       <main className="cdiMain" style={{position:"relative",zIndex:1}}>{children}</main>
@@ -2404,7 +2419,7 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
 
       {/* Updates e feedbacks — só para membros autenticados */}
       {submitted&&(
-        <section style={{maxWidth:980,margin:"0 auto",padding:"0 24px 80px"}}>
+        <section id="updates-feedbacks" style={{maxWidth:980,margin:"0 auto",padding:"0 24px 80px",scrollMarginTop:96}}>
           <UpdatesFeedback myName={myName}/>
         </section>
       )}
