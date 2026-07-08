@@ -3975,7 +3975,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
           ? "Ranking semanal arranca 2ª feira."
           : myRank===1
             ? "És o líder do ranking."
-            : <>{((metricOf(rankedByMetric[myRank-2])-myM)*100).toFixed(2)} pp do lugar acima<br/>{stats&&`${((stats.leaderM-myM)*100).toFixed(2)} pp do 1º`}</>}
+            : <>{((metricOf(rankedByMetric[myRank-2])-myM)*100).toFixed(2)}% do lugar acima<br/>{stats&&`${((stats.leaderM-myM)*100).toFixed(2)}% do 1º`}</>}
       </div>
     </div>
   )):null;
