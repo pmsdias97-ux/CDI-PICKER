@@ -2069,19 +2069,31 @@ function WinnersGrid({top,livePrices,nav}){
           .cdiPeek>div{width:260px}
         }
         @media(max-width:768px){.cdiWinners{grid-template-columns:repeat(2,minmax(0,1fr))}.winMetric{text-align:center}.winMetric>div{justify-content:center}}
+        /* Etiqueta vertical "Desde 1 de julho" à esquerda do pódio — só no desktop (onde é 1 linha). */
+        .winSince{display:none}
+        @media(min-width:769px){
+          .winSinceWrap{display:flex;align-items:stretch;gap:16px}
+          .winSinceWrap .cdiWinners{flex:1;min-width:0}
+          .winSince{display:flex;align-items:center;justify-content:center;flex-shrink:0;
+            writing-mode:vertical-rl;transform:rotate(180deg);
+            font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#64748b;white-space:nowrap}
+        }
       `}</style>
-      <div className={`cdiWinners${peek?" has-peek":""}`}>
-        {main.map((p,i)=>(
-          <WinnerCard key={p.key} p={p} rank={i+1} livePrices={livePrices}
-            series={seriesById[p.id]||[]} onClick={()=>nav("ranking")}/>
-        ))}
-        {peek&&(
-          <div className="cdiPeek" onClick={()=>nav("ranking")} aria-hidden="true">
-            <div>
-              <WinnerCard p={peek} rank={5} livePrices={livePrices} series={seriesById[peek.id]||[]} onClick={()=>nav("ranking")}/>
+      <div className="winSinceWrap">
+        <div className="winSince" aria-hidden="true">Desde 1 de julho</div>
+        <div className={`cdiWinners${peek?" has-peek":""}`}>
+          {main.map((p,i)=>(
+            <WinnerCard key={p.key} p={p} rank={i+1} livePrices={livePrices}
+              series={seriesById[p.id]||[]} onClick={()=>nav("ranking")}/>
+          ))}
+          {peek&&(
+            <div className="cdiPeek" onClick={()=>nav("ranking")} aria-hidden="true">
+              <div>
+                <WinnerCard p={peek} rank={5} livePrices={livePrices} series={seriesById[peek.id]||[]} onClick={()=>nav("ranking")}/>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </>
   );
@@ -2123,7 +2135,6 @@ function WinnerCard({p,rank,livePrices,series,onClick}){
             <Rolling text={pct(Math.abs(p.total)).replace(/[+-]/,"")}/>
           </span>
         </div>
-        <span style={{display:"block",fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.5px",marginTop:2}}>rentab. média</span>
       </div>
       <div style={{display:"flex",gap:4,marginBottom:14}}>
         {p.stocks.map(s=>{ const g=stockRet(s,livePrices)>=0; return(
@@ -2401,13 +2412,15 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
         <h2 style={{textAlign:"center",fontSize:28,fontWeight:700,letterSpacing:"-0.5px",marginBottom:40}}>Como funciona</h2>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16}}>
           {[
-            {n:"01",icon:"✏️",t:"Inscreveram-se",d:"Cada membro entrou com o mesmo nome que tem no grupo de Telegram da comunidade."},
-            {n:"02",icon:"🔍",t:"Escolheram 8 ações",d:"Cada participante selecionou exatamente 8 ações do S&P 500 (peso igual)."},
-            {n:"03",icon:"🚀",t:"Em competição",d:"As submissões estão encerradas e os portefólios bloqueados; a competição arranca a 1 de julho."},
+            {n:"01",icon:(<><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>),t:"Inscreveram-se",d:"Cada membro entrou com o mesmo nome que tem no grupo de Telegram da comunidade."},
+            {n:"02",icon:(<><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></>),t:"Escolheram 8 ações",d:"Cada participante selecionou exatamente 8 posições (peso igual)."},
+            {n:"03",icon:(<><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></>),t:"Em competição",d:"As submissões foram encerradas e os portefólios bloqueados; a competição arrancou a 1 de julho."},
           ].map(c=>(
             <div key={c.n} style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,position:"relative",overflow:"hidden"}}>
               <div style={{position:"absolute",top:16,right:20,fontSize:36,fontWeight:800,color:"#1f2937",lineHeight:1}}>{c.n}</div>
-              <div style={{fontSize:28,marginBottom:16}}>{c.icon}</div>
+              <div style={{marginBottom:16}}>
+                <svg viewBox="0 0 24 24" width={28} height={28} fill="none" stroke="#8ea2bf" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{c.icon}</svg>
+              </div>
               <h3 style={{fontSize:17,fontWeight:700,marginBottom:8,letterSpacing:"-0.3px"}}>{c.t}</h3>
               <p style={{fontSize:14,color:"#6b7280",lineHeight:1.6,margin:0}}>{c.d}</p>
             </div>
@@ -2421,14 +2434,14 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
           <h2 style={{fontSize:22,fontWeight:700,marginBottom:28,letterSpacing:"-0.3px",textAlign:"center"}}>Regras do Jogo</h2>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(260px,100%),1fr))",gap:"12px 40px"}}>
             {[
-              "Cada participante criou 1 portefólio com 8 ações",
-              "Cada ação representa 12,5% do portefólio (peso igual)",
+              "Cada participante criou 1 portefólio com 8 posições",
+              "Cada posição representa exatamente 12,5% do portefólio",
               "Cada um podia abrir até 2 posições short",
-              "Os portefólios dos outros só ficam visíveis quando a competição começar, a 1 de julho de 2026",
-              "Depois de submetidos, os portefólios ficaram bloqueados",
-              "As posições arrancam ao preço de abertura do mercado de 1 de julho",
+              "Os portefólios de todos só ficaram visíveis quando a competição começou, a 1 de julho de 2026",
+              "Depois de submetidos, os portefólios ficaram bloqueados e não vistos por ninguém",
+              "As posições arrancaram ao preço de abertura do mercado de 1 de julho",
               "A rentabilidade é calculada como a média das 8 ações",
-              "A rentabilidade não inclui dividendos — conta só a variação de preço",
+              "A rentabilidade não inclui dividendos. Conta só a variação de preço",
               "O ranking usa os preços de mercado mais recentes",
               "A competição dura 1 ano: o vencedor é apurado a 30 de junho de 2027",
             ].map((r,i)=>(
