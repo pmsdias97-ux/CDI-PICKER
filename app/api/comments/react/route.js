@@ -19,6 +19,12 @@ export async function POST(request) {
   if (!commentId) return Response.json({ error: "Comentário inválido." }, { status: 400 });
   if (!ALLOWED.has(emoji)) return Response.json({ error: "Reação inválida." }, { status: 400 });
 
+  // Não se pode reagir ao PRÓPRIO comentário (o autor vem da BD, não do browser).
+  const { data: cmt } = await a.supabase
+    .from("portfolio_comments").select("user_id").eq("id", commentId).maybeSingle();
+  if (!cmt) return Response.json({ error: "Comentário não encontrado." }, { status: 404 });
+  if (cmt.user_id === a.userId) return Response.json({ error: "Não podes reagir ao teu próprio comentário." }, { status: 403 });
+
   const { data: existing } = await a.supabase
     .from("comment_reactions").select("comment_id")
     .eq("comment_id", commentId).eq("user_id", a.userId).eq("emoji", emoji).maybeSingle();

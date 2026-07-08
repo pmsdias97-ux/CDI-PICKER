@@ -1481,6 +1481,8 @@ export default function App(){
   const [weekCloses,setWeekCloses]=useState({}); // {weekKey:{ticker:fecho}} semanas já fechadas (6ª ao fecho)
   const [myName,setMyName]=useState(null);
   const [hasSubmitted,setHasSubmitted]=useState(false);
+  const [recentComments,setRecentComments]=useState([]); // últimos comentários em perfis de outros (cartão do rail)
+  const detailFocusRef=useRef(null); // {commentId} — intenção de aterrar num comentário ao abrir um perfil
   const [livePrices,setLivePrices]=useState({});
   const [dayChange,setDayChange]=useState({}); // variação do dia por ticker
   const [pricesLoading,setPricesLoading]=useState(false);
@@ -1511,6 +1513,8 @@ export default function App(){
   const openDetail=useCallback((k)=>{ setRankHighlight(null); goRoute({page:"detail",detailSlug:slugForKey(k)}); },[goRoute,slugForKey]);
   // Abrir o portefólio de um membro pelo seu user_id (ex.: clicar no autor de um comentário).
   const openMember=useCallback((userId)=>{ if(!userId) return; const pf=portfolios.find(p=>p.userId===userId); if(pf) openDetail(pf.key); },[portfolios,openDetail]);
+  // Abrir o perfil-alvo de um comentário e aterrar na área de comentários (destacando-o).
+  const openComments=useCallback((portfolioId,commentId)=>{ const pf=portfolios.find(p=>p.id===portfolioId); if(!pf) return; detailFocusRef.current={commentId}; openDetail(pf.key); },[portfolios,openDetail]);
   const openDuel=useCallback((a,b)=>goRoute({page:"duel",duelSlugs:[slugForKey(a),slugForKey(b)]}),[goRoute,slugForKey]);
 
   const refreshLivePrices=useCallback(async(pfs)=>{
@@ -1629,6 +1633,8 @@ export default function App(){
   },[refreshLivePrices]);
 
   useEffect(()=>{ load(); },[load]);
+  // Últimos comentários (cartão do rail do Ranking) — 1× no load (política "refresca no load").
+  useEffect(()=>{ (async()=>{ try{ const r=await fetch("/api/comments/recent"); const j=await r.json(); if(Array.isArray(j?.comments)) setRecentComments(j.comments); }catch{} })(); },[]);
   // Ao mudar de ecrã (ou de portefólio aberto), começa no topo do scroll.
   // Scroll para o topo ao mudar de página — EXCETO ao voltar ao ranking com uma linha a destacar
   // (nesse caso o Ranking faz scroll para essa linha).
@@ -1814,9 +1820,9 @@ export default function App(){
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} pickCounts={compStats.counts} compTickers={compStats.tickers} showToast={showToast}/>);
-  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} monthBase={monthBase} pastBaselines={pastBaselines} weekBase={weekBase} weekOpens={weekOpens} weekCloses={weekCloses} period={rankPeriod} setPeriod={setRankPeriod} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)} winners={winners} showToast={showToast}/>);
+  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} monthBase={monthBase} pastBaselines={pastBaselines} weekBase={weekBase} weekOpens={weekOpens} weekCloses={weekCloses} period={rankPeriod} setPeriod={setRankPeriod} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)} winners={winners} showToast={showToast} recentComments={recentComments.filter(c=>portfolios.some(p=>p.id===c.portfolioId))} openComments={openComments}/>);
   if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} dayChange={dayChange} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
-  if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} myUserId={myPf?.userId||null} adminPw={adminPw} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} winners={winners} standings={detailStandings} monthBase={monthBase} weekBase={weekBase} reload={load} showToast={showToast} onOpenMember={openMember}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} myUserId={myPf?.userId||null} adminPw={adminPw} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} winners={winners} standings={detailStandings} monthBase={monthBase} weekBase={weekBase} reload={load} showToast={showToast} onOpenMember={openMember} focusRef={detailFocusRef}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast} adminPw={adminPw} setAdminPw={setAdminPw}/>);
   return null;
 }
@@ -3469,7 +3475,46 @@ function PeriodPicker({options,value,onPick,accent="#4ade80"}){
     </div>
   );
 }
-function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunch,settings,monthBase,pastBaselines,weekBase,weekOpens,weekCloses,period,setPeriod,onSelect,onCompare,highlightKey,clearHighlight,winners,showToast}){
+// Cartão-carrossel "Últimos comentários" (rail do Ranking): um comentário de cada vez, ‹ › para
+// percorrer do mais recente para os mais antigos. Clicar abre o perfil-alvo na área de comentários.
+function RecentCommentsCard({items,onOpen}){
+  const [i,setI]=useState(0);
+  const n=items.length;
+  const idx=Math.min(i,n-1);
+  const c=items[idx];
+  if(!c) return null;
+  const btn=(dir,disabled,label)=>(
+    <button aria-label={label} disabled={disabled} onClick={()=>setI(v=>Math.max(0,Math.min(n-1,v+dir)))}
+      style={{background:"none",border:"none",cursor:disabled?"default":"pointer",color:disabled?"#3f4b5f":"#94a3b8",
+        fontSize:16,lineHeight:1,padding:"2px 6px",transition:"color .12s"}}
+      onMouseEnter={disabled?undefined:(e=>e.currentTarget.style.color="#e2e8f0")}
+      onMouseLeave={disabled?undefined:(e=>e.currentTarget.style.color="#94a3b8")}>{dir<0?"‹":"›"}</button>
+  );
+  return(
+    <div>
+      <div onClick={()=>onOpen(c.portfolioId,c.id)} title="Ver o comentário no perfil"
+        style={{cursor:"pointer",borderRadius:9,padding:"6px 9px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",transition:"background .12s"}}
+        onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.06)"}
+        onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.03)"}>
+        <div style={{fontSize:11,color:"#94a3b8",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+          <strong style={{color:"#cbd5e1"}}>{c.author}</strong>
+          <span style={{color:"#64748b"}}> → </span>
+          <strong style={{color:"#cbd5e1"}}>{c.targetName}</strong>
+        </div>
+        <div style={{fontSize:12.5,color:"#e2e8f0",lineHeight:1.35,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden",wordBreak:"break-word"}}>{c.content}</div>
+      </div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:5}}>
+        <span style={{fontSize:10.5,color:"#64748b"}}>{timeAgo(c.created_at)}</span>
+        <span style={{display:"flex",alignItems:"center",gap:2}}>
+          {btn(-1,idx===0,"Mais recente")}
+          <span style={{fontSize:10.5,color:"#64748b",fontVariantNumeric:"tabular-nums",minWidth:34,textAlign:"center"}}>{idx+1}/{n}</span>
+          {btn(1,idx>=n-1,"Mais antigo")}
+        </span>
+      </div>
+    </div>
+  );
+}
+function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunch,settings,monthBase,pastBaselines,weekBase,weekOpens,weekCloses,period,setPeriod,onSelect,onCompare,highlightKey,clearHighlight,winners,showToast,recentComments,openComments}){
   const [cmp,setCmp]=useState(false);
   const [sel,setSel]=useState([]);
   // Mini-curva por linha: snapshots por portefólio (histórico). Recarrega só quando o
@@ -4032,6 +4077,13 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       <div style={{display:"flex",flexDirection:"column",gap:8}}>{stockPerf.worst.map(perfRow)}</div>
     </div>
   ),period==="week"?"Ações escolhidas pelos membros com melhor e pior rentabilidade esta semana.":period==="month"?"Ações escolhidas pelos membros com melhor e pior rentabilidade este mês.":"Ações escolhidas pelos membros com melhor e pior rentabilidade desde o arranque da competição."):null;
+  // "Últimos comentários": comentários recentes feitos em perfis de OUTROS membros (carrossel).
+  const wComments=(recentComments&&recentComments.length)?(
+    <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:"9px 14px 10px",boxShadow:"0 6px 20px rgba(0,0,0,0.22)"}}>
+      <div style={{fontSize:10.5,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:800,marginBottom:6}}>Últimos comentários</div>
+      <RecentCommentsCard items={recentComments} onOpen={openComments}/>
+    </div>
+  ):null;
   // "Campeão do mês" (mini-época mensal): líder ao vivo deste mês + campeões dos meses fechados
   // (recalculados on-the-fly a partir dos baselines de início de cada mês).
   const monthNameCap=(()=>{ const n=new Date().toLocaleDateString("pt-PT",{month:"long"}); return n.charAt(0).toUpperCase()+n.slice(1); })();
@@ -4158,7 +4210,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       </div>
     </div>
   );
-  const leftRail=<>{wYou}{wStocks}</>;
+  const leftRail=<>{wYou}{wStocks}{wComments}</>;
   // O campeão sai do rail direito e vai, isolado, para a linha do cabeçalho (célula .railChamp,
   // à altura do 1v1). Os restantes ficam no rail direito (.railR), à altura da tabela — onde sempre estiveram.
   const rightRail=<>{wVsSp}{wHi}{wPicks}</>;
@@ -4648,8 +4700,9 @@ function OwnLockedGate({pf,nav,reload,showToast}){
 // Mural social do portefólio: gostos (1 por pessoa) + comentários/roasts. Leitura pública; escrita só
 // para quem submeteu (name+pin via authOwner). Apaga: o autor o seu, o admin qualquer (adminPw presente).
 const COMMENT_REACTIONS=["❤️","🔥","😂"];
-function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember}){
+function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember,focusRef}){
   const [comments,setComments]=useState(null); // null = a carregar
+  const [focusId,setFocusId]=useState(null); // comentário a destacar (vindo de "Últimos comentários")
   const [likeCount,setLikeCount]=useState(0);
   const [liked,setLiked]=useState(false);
   const [draft,setDraft]=useState("");
@@ -4663,6 +4716,10 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember})
 
   useEffect(()=>{
     let cancel=false;
+    // Consome a intenção de "aterrar num comentário" JÁ (síncrono) → se o utilizador sair antes de
+    // carregar, a ref não fica presa e não afeta o próximo perfil aberto.
+    const wantFocus=(focusRef&&focusRef.current&&focusRef.current.commentId)||null;
+    if(wantFocus) focusRef.current=null;
     (async()=>{
       const { data:cm }=await supabase
         .from("portfolio_comments")
@@ -4682,6 +4739,17 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember})
           .from("portfolio_likes").select("portfolio_id").eq("portfolio_id",pf.id).eq("user_id",myUserId).maybeSingle();
         if(!cancel) setLiked(!!mine);
       }else if(!cancel){ setLiked(false); }
+      // Intenção "aterrar num comentário" (vinda do cartão "Últimos comentários"): já consumida
+      // acima; se ainda válida e não saímos, faz scroll até ao comentário (ou à secção) e destaca ~2.5s.
+      if(!cancel && wantFocus){
+        const cid=wantFocus;
+        setFocusId(cid);
+        requestAnimationFrame(()=>requestAnimationFrame(()=>{
+          const el=(typeof document!=="undefined")&&(document.getElementById(`cmt-${cid}`)||document.getElementById("detComments"));
+          if(el) el.scrollIntoView({behavior:"smooth",block:"center"});
+        }));
+        setTimeout(()=>{ if(!cancel) setFocusId(null); },2600);
+      }
     })();
     return()=>{ cancel=true; };
   },[pf.id,myUserId]);
@@ -4748,6 +4816,19 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember})
   const canSend=!busy&&!!draft.trim();
   return(
     <div style={card}>
+      <style>{`
+        .cmtReactBtn{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:3px 9px;
+          font-size:12.5px;font-weight:700;line-height:1;font-family:inherit;transition:all .12s;cursor:pointer;
+          background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.10);color:#94a3b8}
+        /* Só em rato/hover: o picker (emojis ainda não escolhidos) esconde-se e aparece ao passar por
+           cima do comentário. Em ecrãs táteis (sem hover) fica sempre visível para continuar acessível. */
+        @media (hover:hover){
+          .cmtReactPick{display:none}
+          .cmtRow:hover .cmtReactPick{display:inline-flex}
+        }
+        @keyframes cmtFlashKf{0%,55%{background:rgba(96,165,250,0.16)}100%{background:transparent}}
+        .cmtFlash{animation:cmtFlashKf 2.6s ease-out;border-radius:10px}
+      `}</style>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,minHeight:34,marginBottom:16,flexWrap:"wrap"}}>
         <h3 style={{fontSize:15,fontWeight:700,margin:0,color:"#e2e8f0"}}>Comentários</h3>
         {!isOwn&&(
@@ -4785,11 +4866,12 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember})
         <div>
           {comments.map(c=>{
             const author=c.users?.telegram_name||"Anónimo";
-            const canDel=(myUserId&&c.user_id===myUserId)||!!adminPw;
+            const isMyComment=!!myUserId&&c.user_id===myUserId;
+            const canDel=isMyComment||!!adminPw;
             const canOpen=!!onOpenMember&&!!c.user_id;
             const openAuthor=()=>{ if(canOpen) onOpenMember(c.user_id); };
             return(
-              <div key={c.id} style={{display:"flex",gap:11,padding:"11px 0",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+              <div key={c.id} id={`cmt-${c.id}`} className={"cmtRow"+(focusId===c.id?" cmtFlash":"")} style={{display:"flex",gap:11,padding:"11px 0",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
                 <div onClick={openAuthor} title={canOpen?"Ver portefólio":undefined} style={{width:34,height:34,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)",fontWeight:800,fontSize:14,color:"#cbd5e1",cursor:canOpen?"pointer":"default"}}>{author.slice(0,1).toUpperCase()}</div>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -4799,21 +4881,26 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember})
                     <span style={{fontSize:11.5,color:"#64748b",flexShrink:0}}>{timeAgo(c.created_at)}</span>
                     {canDel&&<button onClick={()=>del(c)} title="Apagar" style={{marginLeft:"auto",background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:12,padding:2,flexShrink:0}}>apagar</button>}
                   </div>
-                  <div style={{fontSize:14,color:"#cbd5e1",lineHeight:1.5,marginTop:2,whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{c.content}</div>
-                  <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
-                    {COMMENT_REACTIONS.map(emoji=>{
-                      const cell=rx[c.id]?.[emoji]; const count=cell?.count||0; const mine=!!cell?.mine;
-                      return(
-                        <button key={emoji} onClick={()=>toggleReaction(c.id,emoji)}
-                          title={loggedIn?(mine?"Remover reação":"Reagir"):"Submete para reagir"}
-                          style={{display:"inline-flex",alignItems:"center",gap:5,cursor:loggedIn?"pointer":"not-allowed",
-                            border:`1px solid ${mine?"rgba(96,165,250,0.55)":"rgba(255,255,255,0.10)"}`,borderRadius:999,padding:"3px 9px",
-                            background:mine?"rgba(96,165,250,0.15)":"rgba(255,255,255,0.04)",color:mine?"#93c5fd":"#94a3b8",
-                            fontSize:12.5,fontWeight:700,lineHeight:1,transition:"all .12s"}}>
-                          <span style={{fontSize:13}}>{emoji}</span>{count>0&&<span>{count}</span>}
-                        </button>
-                      );
-                    })}
+                  {/* Texto + reações "à frente" (inline a seguir). Já escolhidas → sempre visíveis;
+                      o resto do picker só aparece ao passar o rato (classe cmtReactPick). */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:2}}>
+                    <span style={{fontSize:14,color:"#cbd5e1",lineHeight:1.5,whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{c.content}</span>
+                    <span style={{display:"inline-flex",gap:6,flexWrap:"wrap",flexShrink:0}}>
+                      {COMMENT_REACTIONS.map(emoji=>{
+                        const cell=rx[c.id]?.[emoji]; const count=cell?.count||0; const mine=!!cell?.mine;
+                        // No PRÓPRIO comentário não se pode reagir: esconde o picker; mostra só as reações
+                        // (dos outros) que já existem, de leitura.
+                        if(isMyComment&&count===0) return null;
+                        return(
+                          <button key={emoji} onClick={isMyComment?undefined:()=>toggleReaction(c.id,emoji)}
+                            className={`cmtReactBtn${count>0?"":" cmtReactPick"}`} disabled={isMyComment}
+                            title={isMyComment?"Reações ao teu comentário":(loggedIn?(mine?"Remover reação":"Reagir"):"Submete para reagir")}
+                            style={{...(mine?{borderColor:"rgba(96,165,250,0.55)",background:"rgba(96,165,250,0.15)",color:"#93c5fd"}:{}),...(isMyComment?{cursor:"default"}:(loggedIn?{}:{cursor:"not-allowed"}))}}>
+                            <span style={{fontSize:13}}>{emoji}</span>{count>0&&<span>{count}</span>}
+                          </button>
+                        );
+                      })}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -4916,7 +5003,7 @@ function GameStandings({standings}){
     </div>
   );
 }
-function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,myNorm,myUserId,adminPw,preLaunch,competitionStarted,gameStartDate,winners,standings,monthBase,weekBase,reload,showToast,onOpenMember}){
+function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,myNorm,myUserId,adminPw,preLaunch,competitionStarted,gameStartDate,winners,standings,monthBase,weekBase,reload,showToast,onOpenMember,focusRef}){
   const goBack=onBack||(()=>nav("ranking")); // voltar ao ranking (com destaque da linha, via onBack)
   // Coluna de rentabilidade da lista: "total" (desde a compra) ↔ "day" (diário).
   const [retMode,setRetMode]=useState("total");
@@ -5139,7 +5226,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
       </div>{/* /coluna direita (análises) */}
       {/* Linha 2 da grelha (por baixo da lista de ações): "Nos 3 jogos" (col 1) + Comentários (col 2). */}
       <div className="detStats"><GameStandings standings={standings}/></div>
-      <div className="detComments"><PortfolioReactions pf={pf} myNorm={myNorm} myUserId={myUserId} adminPw={adminPw} showToast={showToast} onOpenMember={onOpenMember}/></div>
+      <div className="detComments" id="detComments" style={{scrollMarginTop:88}}><PortfolioReactions pf={pf} myNorm={myNorm} myUserId={myUserId} adminPw={adminPw} showToast={showToast} onOpenMember={onOpenMember} focusRef={focusRef}/></div>
       </div>{/* /cdiDetail */}
     </div>
   );
