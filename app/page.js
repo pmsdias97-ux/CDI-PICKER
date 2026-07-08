@@ -1509,6 +1509,8 @@ export default function App(){
   // Ir DIRETO a um separador do Ranking (Geral/Mensal/Semanal) a partir do menu de topo.
   const navRank=useCallback((per)=>{ setRankHighlight(null); setRankPeriod(per); goRoute({page:"ranking"}); },[goRoute]);
   const openDetail=useCallback((k)=>{ setRankHighlight(null); goRoute({page:"detail",detailSlug:slugForKey(k)}); },[goRoute,slugForKey]);
+  // Abrir o portefólio de um membro pelo seu user_id (ex.: clicar no autor de um comentário).
+  const openMember=useCallback((userId)=>{ if(!userId) return; const pf=portfolios.find(p=>p.userId===userId); if(pf) openDetail(pf.key); },[portfolios,openDetail]);
   const openDuel=useCallback((a,b)=>goRoute({page:"duel",duelSlugs:[slugForKey(a),slugForKey(b)]}),[goRoute,slugForKey]);
 
   const refreshLivePrices=useCallback(async(pfs)=>{
@@ -1814,7 +1816,7 @@ export default function App(){
   if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} pickCounts={compStats.counts} compTickers={compStats.tickers} showToast={showToast}/>);
   if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} monthBase={monthBase} pastBaselines={pastBaselines} weekBase={weekBase} weekOpens={weekOpens} weekCloses={weekCloses} period={rankPeriod} setPeriod={setRankPeriod} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)} winners={winners} showToast={showToast}/>);
   if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} dayChange={dayChange} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
-  if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} myUserId={myPf?.userId||null} adminPw={adminPw} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} winners={winners} standings={detailStandings} monthBase={monthBase} weekBase={weekBase} reload={load} showToast={showToast}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} myUserId={myPf?.userId||null} adminPw={adminPw} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} winners={winners} standings={detailStandings} monthBase={monthBase} weekBase={weekBase} reload={load} showToast={showToast} onOpenMember={openMember}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast} adminPw={adminPw} setAdminPw={setAdminPw}/>);
   return null;
 }
@@ -4645,25 +4647,33 @@ function OwnLockedGate({pf,nav,reload,showToast}){
 }
 // Mural social do portefólio: gostos (1 por pessoa) + comentários/roasts. Leitura pública; escrita só
 // para quem submeteu (name+pin via authOwner). Apaga: o autor o seu, o admin qualquer (adminPw presente).
-function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast}){
+const COMMENT_REACTIONS=["❤️","🔥","😂"];
+function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember}){
   const [comments,setComments]=useState(null); // null = a carregar
   const [likeCount,setLikeCount]=useState(0);
   const [liked,setLiked]=useState(false);
   const [draft,setDraft]=useState("");
   const [busy,setBusy]=useState(false);
   const [likeBusy,setLikeBusy]=useState(false);
+  const [rx,setRx]=useState({}); // { [commentId]: { emoji: {count, mine} } }
   const loggedIn=!!myUserId;
   const isOwn=!!myNorm && pf.normName===myNorm;
   const creds=()=>({ name:sget(K.MYNAME), pin:sget(K.MYPIN) });
+  const aggregateRx=(rows,uid)=>{ const m={}; for(const r of rows||[]){ const c=(m[r.comment_id]=m[r.comment_id]||{}); const e=(c[r.emoji]=c[r.emoji]||{count:0,mine:false}); e.count++; if(uid&&r.user_id===uid) e.mine=true; } return m; };
 
   useEffect(()=>{
     let cancel=false;
     (async()=>{
       const { data:cm }=await supabase
         .from("portfolio_comments")
-        .select("id, content, created_at, user_id, users(telegram_name)")
+        .select("id, content, created_at, user_id, users!portfolio_comments_user_id_fkey(telegram_name)")
         .eq("portfolio_id",pf.id).order("created_at",{ascending:false}).limit(100);
       if(!cancel) setComments(cm||[]);
+      const ids=(cm||[]).map(c=>c.id);
+      if(ids.length){
+        const { data:rr }=await supabase.from("comment_reactions").select("comment_id, emoji, user_id").in("comment_id",ids);
+        if(!cancel) setRx(aggregateRx(rr,myUserId));
+      } else if(!cancel){ setRx({}); }
       const { count }=await supabase
         .from("portfolio_likes").select("portfolio_id",{count:"exact",head:true}).eq("portfolio_id",pf.id);
       if(!cancel) setLikeCount(count||0);
@@ -4720,6 +4730,20 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast}){
     }catch{ setComments(prev); showToast&&showToast("Falha de ligação.","error"); }
   };
 
+  const toggleReaction=async(commentId,emoji)=>{
+    if(!loggedIn){ showToast&&showToast("Submete um portefólio para reagir.","error"); return; }
+    const cur=rx[commentId]?.[emoji]||{count:0,mine:false};
+    const nextMine=!cur.mine;
+    const setCell=(cell)=>setRx(prev=>{ const c={...(prev[commentId]||{})}; c[emoji]=cell; return {...prev,[commentId]:c}; });
+    setCell({count:Math.max(0,cur.count+(nextMine?1:-1)),mine:nextMine}); // otimista
+    try{
+      const { name,pin }=creds();
+      const res=await fetch("/api/comments/react",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,pin,commentId,emoji})});
+      const j=await res.json().catch(()=>({}));
+      if(!res.ok){ setCell(cur); showToast&&showToast(j.error||"Falha ao reagir.","error"); }
+    }catch{ setCell(cur); showToast&&showToast("Falha de ligação.","error"); }
+  };
+
   const card={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24};
   const canSend=!busy&&!!draft.trim();
   return(
@@ -4762,16 +4786,35 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast}){
           {comments.map(c=>{
             const author=c.users?.telegram_name||"Anónimo";
             const canDel=(myUserId&&c.user_id===myUserId)||!!adminPw;
+            const canOpen=!!onOpenMember&&!!c.user_id;
+            const openAuthor=()=>{ if(canOpen) onOpenMember(c.user_id); };
             return(
               <div key={c.id} style={{display:"flex",gap:11,padding:"11px 0",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
-                <div style={{width:34,height:34,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)",fontWeight:800,fontSize:14,color:"#cbd5e1"}}>{author.slice(0,1).toUpperCase()}</div>
+                <div onClick={openAuthor} title={canOpen?"Ver portefólio":undefined} style={{width:34,height:34,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)",fontWeight:800,fontSize:14,color:"#cbd5e1",cursor:canOpen?"pointer":"default"}}>{author.slice(0,1).toUpperCase()}</div>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{fontWeight:700,fontSize:13.5,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{author}</span>
+                    <span onClick={openAuthor} title={canOpen?"Ver portefólio":undefined} style={{fontWeight:700,fontSize:13.5,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:canOpen?"pointer":"default"}}
+                      onMouseEnter={canOpen?(e=>e.currentTarget.style.textDecoration="underline"):undefined}
+                      onMouseLeave={canOpen?(e=>e.currentTarget.style.textDecoration="none"):undefined}>{author}</span>
                     <span style={{fontSize:11.5,color:"#64748b",flexShrink:0}}>{timeAgo(c.created_at)}</span>
                     {canDel&&<button onClick={()=>del(c)} title="Apagar" style={{marginLeft:"auto",background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:12,padding:2,flexShrink:0}}>apagar</button>}
                   </div>
                   <div style={{fontSize:14,color:"#cbd5e1",lineHeight:1.5,marginTop:2,whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{c.content}</div>
+                  <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+                    {COMMENT_REACTIONS.map(emoji=>{
+                      const cell=rx[c.id]?.[emoji]; const count=cell?.count||0; const mine=!!cell?.mine;
+                      return(
+                        <button key={emoji} onClick={()=>toggleReaction(c.id,emoji)}
+                          title={loggedIn?(mine?"Remover reação":"Reagir"):"Submete para reagir"}
+                          style={{display:"inline-flex",alignItems:"center",gap:5,cursor:loggedIn?"pointer":"not-allowed",
+                            border:`1px solid ${mine?"rgba(96,165,250,0.55)":"rgba(255,255,255,0.10)"}`,borderRadius:999,padding:"3px 9px",
+                            background:mine?"rgba(96,165,250,0.15)":"rgba(255,255,255,0.04)",color:mine?"#93c5fd":"#94a3b8",
+                            fontSize:12.5,fontWeight:700,lineHeight:1,transition:"all .12s"}}>
+                          <span style={{fontSize:13}}>{emoji}</span>{count>0&&<span>{count}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             );
@@ -4873,7 +4916,7 @@ function GameStandings({standings}){
     </div>
   );
 }
-function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,myNorm,myUserId,adminPw,preLaunch,competitionStarted,gameStartDate,winners,standings,monthBase,weekBase,reload,showToast}){
+function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,myNorm,myUserId,adminPw,preLaunch,competitionStarted,gameStartDate,winners,standings,monthBase,weekBase,reload,showToast,onOpenMember}){
   const goBack=onBack||(()=>nav("ranking")); // voltar ao ranking (com destaque da linha, via onBack)
   // Coluna de rentabilidade da lista: "total" (desde a compra) ↔ "day" (diário).
   const [retMode,setRetMode]=useState("total");
@@ -5096,7 +5139,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
       </div>{/* /coluna direita (análises) */}
       {/* Linha 2 da grelha (por baixo da lista de ações): "Nos 3 jogos" (col 1) + Comentários (col 2). */}
       <div className="detStats"><GameStandings standings={standings}/></div>
-      <div className="detComments"><PortfolioReactions pf={pf} myNorm={myNorm} myUserId={myUserId} adminPw={adminPw} showToast={showToast}/></div>
+      <div className="detComments"><PortfolioReactions pf={pf} myNorm={myNorm} myUserId={myUserId} adminPw={adminPw} showToast={showToast} onOpenMember={onOpenMember}/></div>
       </div>{/* /cdiDetail */}
     </div>
   );
