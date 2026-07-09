@@ -4667,16 +4667,14 @@ function SectorDonut({stocks}){
         ))}
       </div>
       {/* Empresas do setor em destaque (hover) — área reservada para não mexer no layout. */}
-      <div style={{width:"100%",minHeight:30,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:8}}>
-        {hi!=null?(
+      <div style={{width:"100%",minHeight:30,paddingTop:8}}>
+        {hi!=null&&(
           <div style={{display:"flex",flexWrap:"wrap",gap:5,alignItems:"center",justifyContent:"center"}}>
             {membersOf(segs[hi].name).map(s=>(
               <span key={s.ticker} title={s.companyName||s.ticker}
                 style={{fontSize:10.5,fontFamily:"monospace",fontWeight:700,color:"#cbd5e1",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:6,padding:"2px 6px"}}>{s.ticker}</span>
             ))}
           </div>
-        ):(
-          <div style={{fontSize:10.5,color:"#475569",textAlign:"center"}}>Passa o rato num setor para ver as empresas</div>
         )}
       </div>
     </div>
