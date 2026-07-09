@@ -236,13 +236,10 @@ def site_shares():
     return {row["symbol"]: row.get("shares") for row in r.json()}
 
 
-def fetch_prices():
-    shares = site_shares()
-    symbols = list(shares.keys()) or [s for s, _ in constituents()]
-    print(f"[ath] prices: {len(symbols)} símbolos")
-
-    prices = {}
-    prevs = {}  # fecho anterior por símbolo (para a variação do dia)
+def _dl_prices(symbols):
+    """Preço atual + fecho anterior (period=2d) para uma lista de símbolos, em lotes de BATCH.
+    Devolve (prices, prevs)."""
+    prices, prevs = {}, {}
     for i in range(0, len(symbols), BATCH):
         batch = symbols[i:i + BATCH]
         try:
@@ -263,8 +260,10 @@ def fetch_prices():
             except Exception:
                 continue
         time.sleep(1)
+    return prices, prevs
 
-    have_shares = bool(shares)
+
+def _price_rows(prices, prevs, shares, have_shares):
     rows = []
     for sym, p in prices.items():
         if not p:
@@ -277,7 +276,47 @@ def fetch_prices():
             sh = shares.get(sym)
             row["marketcap"] = round(sh * p) if sh else None
         rows.append(row)
-    print(f"[ath] prices: {len(rows)} linhas (marketcap atualizado: {have_shares})")
+    return rows
+
+
+def held_tickers():
+    """Conjunto NORMALIZADO (ponto→traço) dos tickers que os membros têm/vigiam."""
+    try:
+        r = requests.get(EXTRA_URL, headers={"Authorization": f"Bearer {CRON_SECRET}"}, timeout=30)
+        r.raise_for_status()
+        raw = r.json().get("tickers", [])
+    except Exception as e:
+        print(f"[ath] held-tickers erro (segue passagem única): {e}")
+        return set()
+    return {str(t).upper().strip().replace(".", "-") for t in raw if str(t).strip()}
+
+
+def fetch_prices():
+    shares = site_shares()
+    symbols = list(shares.keys()) or [s for s, _ in constituents()]
+    have_shares = bool(shares)
+    print(f"[ath] prices: {len(symbols)} símbolos")
+
+    # PASSAGEM RÁPIDA: primeiro só os tickers que os MEMBROS têm/vigiam, e POST logo — assim as
+    # POSIÇÕES atualizam no site poucos segundos após a abertura, sem esperar pelo resto do S&P.
+    held = held_tickers()
+    fast = [s for s in symbols if s.replace(".", "-") in held]
+    fast_set = set(fast)
+    rest = [s for s in symbols if s not in fast_set]
+
+    if fast:
+        print(f"[ath] prices passagem 1 (membros): {len(fast)} símbolos")
+        p, pv = _dl_prices(fast)
+        rows = _price_rows(p, pv, shares, have_shares)
+        print(f"[ath] prices passagem 1: {len(rows)} linhas -> POST")
+        post_rows(rows)
+
+    # PASSAGEM 2: o resto do S&P (para a aba ATH / % abaixo). Se não houve lista de membros,
+    # `rest` == todos os símbolos → comporta-se como a passagem única de antes.
+    print(f"[ath] prices passagem 2 (resto): {len(rest)} símbolos")
+    p, pv = _dl_prices(rest)
+    rows = _price_rows(p, pv, shares, have_shares)
+    print(f"[ath] prices passagem 2: {len(rows)} linhas (marketcap: {have_shares}) -> POST")
     post_rows(rows)
 
 
