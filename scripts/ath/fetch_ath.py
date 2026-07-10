@@ -243,8 +243,10 @@ def _dl_prices(symbols):
     for i in range(0, len(symbols), BATCH):
         batch = symbols[i:i + BATCH]
         try:
-            # period="2d": [fecho anterior, dia atual] → dá-nos o preço E o prev_close.
-            df = yf.download(batch, period="2d", interval="1d", auto_adjust=False,
+            # period="5d": últimos pregões → o preço (iloc[-1]) E o fecho anterior (iloc[-2]).
+            # 5d (não 2d) garante ≥2 fechos mesmo em ações de negociação esparsa (ex.: penny
+            # stocks como ATLN) ou com feriados pelo meio — senão o prev_close ficava null.
+            df = yf.download(batch, period="5d", interval="1d", auto_adjust=False,
                              threads=True, progress=False, group_by="ticker")
         except Exception as e:
             print(f"[ath] download(2d) erro {i}: {e}")

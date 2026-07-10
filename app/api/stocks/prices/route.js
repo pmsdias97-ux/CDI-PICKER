@@ -57,11 +57,13 @@ export async function GET(request) {
   let ath;
   try { ath = await athMap(); } catch { ath = new Map(); }
   const missing = [];
+  const needChange = []; // no pipeline com preço, mas sem fecho anterior → variação ao vivo
   for (const ticker of tickers) {
     const a = ath.get(norm(ticker));
     if (a) {
       prices[ticker] = a.price;
       if (a.prev) changes[ticker] = a.price / a.prev - 1;
+      else needChange.push(ticker);
     } else {
       missing.push(ticker); // não está no pipeline → recurso ao vivo (poucos: BTC…)
     }
@@ -77,6 +79,18 @@ export async function GET(request) {
     } catch (err) {
       errors[ticker] = err.message || "fetch_failed";
     }
+  }
+
+  // 3) Preço fiável do pipeline mas sem prev_close (ex.: ATLN, negociação esparsa) → vai buscar
+  // só o FECHO ANTERIOR ao vivo para a variação do dia. Mantém o preço do pipeline (coerente
+  // com os baselines); se a fonte ao vivo também falhar, fica sem variação (não rebenta).
+  for (const ticker of needChange) {
+    try {
+      const q = await fetchQuoteFull(ticker);
+      if (q && Number.isFinite(q.prevClose) && q.prevClose > 0) {
+        changes[ticker] = prices[ticker] / q.prevClose - 1;
+      }
+    } catch { /* sem variação; o preço já está preenchido */ }
   }
 
   return Response.json({ prices, changes, errors });
