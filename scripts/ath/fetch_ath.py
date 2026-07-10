@@ -281,27 +281,15 @@ def _price_rows(prices, prevs, shares, have_shares):
     return rows
 
 
-def held_tickers():
-    """Conjunto NORMALIZADO (ponto→traço) dos tickers que os membros têm/vigiam."""
-    try:
-        r = requests.get(EXTRA_URL, headers={"Authorization": f"Bearer {CRON_SECRET}"}, timeout=30)
-        r.raise_for_status()
-        raw = r.json().get("tickers", [])
-    except Exception as e:
-        print(f"[ath] held-tickers erro (segue passagem única): {e}")
-        return set()
-    return {str(t).upper().strip().replace(".", "-") for t in raw if str(t).strip()}
-
-
 def fetch_prices():
     shares = site_shares()
     symbols = list(shares.keys()) or [s for s, _ in constituents()]
     have_shares = bool(shares)
     print(f"[ath] prices: {len(symbols)} símbolos")
 
-    # PASSAGEM RÁPIDA: primeiro só os tickers que os MEMBROS têm/vigiam, e POST logo — assim as
-    # POSIÇÕES atualizam no site poucos segundos após a abertura, sem esperar pelo resto do S&P.
-    held = held_tickers()
+    # PASSAGEM RÁPIDA: primeiro só os tickers que os MEMBROS têm, e POST logo — assim as POSIÇÕES
+    # atualizam no site poucos segundos após a abertura, sem esperar pelo resto do S&P.
+    held = {t.replace(".", "-") for t in held_tickers()}  # normaliza p/ casar com os símbolos (traço)
     fast = [s for s in symbols if s.replace(".", "-") in held]
     fast_set = set(fast)
     rest = [s for s in symbols if s not in fast_set]
@@ -319,6 +307,25 @@ def fetch_prices():
     p, pv = _dl_prices(rest)
     rows = _price_rows(p, pv, shares, have_shares)
     print(f"[ath] prices passagem 2: {len(rows)} linhas (marketcap: {have_shares}) -> POST")
+    post_rows(rows)
+
+
+def fetch_positions():
+    """Passagem LEVE (30 em 30 min): SÓ os tickers que os membros têm — preço + fecho anterior,
+    em ~2 pedidos bulk ao Yahoo. Não toca no resto do S&P (aba ATH), que fica na corrida horária."""
+    shares = site_shares()
+    symbols = list(shares.keys())
+    have_shares = bool(shares)
+    if not symbols:
+        print("[ath] positions: site_shares vazio — nada a fazer."); return
+    held = {t.replace(".", "-") for t in held_tickers()}
+    fast = [s for s in symbols if s.replace(".", "-") in held]
+    if not fast:
+        print("[ath] positions: sem tickers de membros — nada a fazer."); return
+    print(f"[ath] positions: {len(fast)} símbolos (membros)")
+    p, pv = _dl_prices(fast)
+    rows = _price_rows(p, pv, shares, have_shares)
+    print(f"[ath] positions: {len(rows)} linhas (marketcap: {have_shares}) -> POST")
     post_rows(rows)
 
 
@@ -392,8 +399,8 @@ def fetch_splits():
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["full", "prices", "splits"], default="full")
+    ap.add_argument("--mode", choices=["full", "prices", "positions", "splits"], default="full")
     args = ap.parse_args()
     if not CRON_SECRET:
         sys.exit("CRON_SECRET em falta")
-    {"full": fetch_full, "prices": fetch_prices, "splits": fetch_splits}[args.mode]()
+    {"full": fetch_full, "prices": fetch_prices, "positions": fetch_positions, "splits": fetch_splits}[args.mode]()
