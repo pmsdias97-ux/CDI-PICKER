@@ -3578,6 +3578,21 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   const curMonthStartIso=`${curMonthYM}-01T00:00:00.000Z`;         // abertura do mês (p/ spy.priceAt)
   const curMonthDateOnly=`${curMonthYM}-01`;                        // início do mês (p/ periodStart do gráfico)
   const preStartWk=period==="week"&&!hasWeek;                       // Semanal antes de arrancar (fim de semana)
+  // 1º DIA DE SESSÃO da semana (normalmente 2ª feira; salta feriados): nesse dia o DIÁRIO = o SEMANAL,
+  // porque ambos medem desde o fecho de 6ª. Antes da abertura o semanal está a 0% (baseline reconciliado)
+  // → o diário também mostra 0%; durante a sessão fica ao vivo. Nos dias 2-5, o diário é o normal.
+  const weekDayOne=(()=>{
+    if(period!=="week"||!hasWeek) return false;
+    const etOf=(d)=>new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).format(d);
+    const todayET=etOf(new Date());
+    let d=new Date(curWk+"T12:00:00Z"); // meio-dia UTC evita saltos de fuso à meia-noite
+    for(let i=0;i<5;i++){
+      const iso=etOf(d), dow=d.getUTCDay();
+      if(dow>=1&&dow<=5&&!MARKET_HOLIDAYS_US.has(iso)) return iso===todayET; // 1º dia útil não-feriado
+      d.setUTCDate(d.getUTCDate()+1);
+    }
+    return false;
+  })();
   // Rentabilidade do JOGO ATIVO por membro (null no pré-arranque semanal → linhas/widgets neutros).
   const metricOf=(p)=>period==="week"?weekOf(p):period==="month"?monthOf(p):p.total;
   // Baseline do período para a rentabilidade de UMA ação (widget Performance). Cai no preço inicial se faltar.
@@ -3740,7 +3755,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     const tc=setTimeout(()=>{ if(!cancelled) clearHighlight&&clearHighlight(); },2600); // limpa o destaque no fim do flash
     return()=>{ cancelled=true; rafs.forEach(cancelAnimationFrame); timers.forEach(clearTimeout); clearTimeout(tc); };
   },[highlightKey]);
-  const pfDayReturn=(p)=>pfDayRet(p,dayChange);
+  // No 1º dia da semana o diário espelha o semanal (0% pré-abertura, ao vivo na sessão); resto = normal.
+  const pfDayReturn=(p)=>weekDayOne?weekOf(p):pfDayRet(p,dayChange);
   const SortHd=({k,children})=>{
     const active=sortKey===k;
     return(

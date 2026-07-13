@@ -6,6 +6,7 @@
     { "path": "/api/cron/dispatch-prices", "schedule": "0 18 * * 1-5" },
     { "path": "/api/cron/dispatch-prices", "schedule": "0 21 * * 1-5" },
     { "path": "/api/cron/weekly-baselines", "schedule": "0 15 * * 1-5" },
+    { "path": "/api/cron/weekly-baselines-sync", "schedule": "0 13 * * 1" },
     { "path": "/api/cron/monthly-baselines", "schedule": "0 13 1-5 * *" },
     { "path": "/api/cron/weekly-close", "schedule": "0 22 * * 5" },
     { "path": "/api/cron/snapshot", "schedule": "0 15 * * 1-5" },
