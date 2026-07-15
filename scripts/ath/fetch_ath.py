@@ -281,6 +281,31 @@ def site_shares():
     return {row["symbol"]: row.get("shares") for row in r.json()}
 
 
+def _chart_price(symbol):
+    """Preço atual via Yahoo chart v8 — fallback p/ tickers SEM barras no download (ex.: ATLN, uma
+    micro-cap que o yfinance dá como 'delisted' no histórico mas ainda tem cotação em tempo real).
+    Só o preço (não há fecho anterior fiável → sem variação diária)."""
+    try:
+        r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+                         params={"range": "1d", "interval": "1d"},
+                         headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        meta = (r.json().get("chart", {}).get("result") or [{}])[0].get("meta", {}) or {}
+        p = meta.get("regularMarketPrice")
+        return round(float(p), 2) if p and float(p) > 0 else None
+    except Exception:
+        return None
+
+
+def _fill_missing_via_chart(missing, prices):
+    """Para os tickers de MEMBROS que o download não trouxe, tenta o preço pelo chart v8 (teto de
+    segurança p/ não martelar o Yahoo). Preenche `prices` in-place; sem prev_close → sem diário."""
+    for sym in missing[:20]:
+        p = _chart_price(sym)
+        if p:
+            prices[sym] = p
+            print(f"[ath] chart-fallback {sym} = {p}")
+
+
 def _dl_prices(symbols):
     """Preço atual + fecho anterior (period=5d) para uma lista de símbolos, em lotes de BATCH.
     Devolve (prices, prevs, max_bar_date) — max_bar_date = data da barra mais recente (p/ a guarda)."""
@@ -347,6 +372,7 @@ def fetch_prices():
         print(f"[ath] prices passagem 1 (membros): {len(fast)} símbolos")
         p, pv, mx = _dl_prices(fast)
         if _feed_fresh(mx, "prices passagem 1 (membros)"):
+            _fill_missing_via_chart([s for s in fast if s not in p], p)  # ex.: ATLN (sem barras)
             rows = _price_rows(p, pv, shares, have_shares)
             print(f"[ath] prices passagem 1: {len(rows)} linhas -> POST")
             post_rows(rows)
@@ -377,6 +403,7 @@ def fetch_positions():
     p, pv, mx = _dl_prices(fast)
     if not _feed_fresh(mx, "positions"):
         return
+    _fill_missing_via_chart([s for s in fast if s not in p], p)  # ex.: ATLN (sem barras no download)
     rows = _price_rows(p, pv, shares, have_shares)
     print(f"[ath] positions: {len(rows)} linhas (marketcap: {have_shares}) -> POST")
     post_rows(rows)
