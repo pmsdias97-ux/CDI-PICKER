@@ -4021,14 +4021,14 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     return { best:arr.slice(0,5), worst:arr.slice(-5).reverse() };
   },[officials,livePrices,period,monthBase,weekBase]);
   const railCard=(title,children,info)=>(
-    <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:"14px 15px",boxShadow:"0 6px 20px rgba(0,0,0,0.22)"}}>
-      <div style={{fontSize:10.5,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:800,marginBottom:12,display:"flex",alignItems:"center",gap:6}}>{title}{info&&<InfoTip text={info}/>}</div>
+    <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:"11px 14px",boxShadow:"0 6px 20px rgba(0,0,0,0.22)"}}>
+      <div style={{fontSize:10.5,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:800,marginBottom:9,display:"flex",alignItems:"center",gap:6}}>{title}{info&&<InfoTip text={info}/>}</div>
       {children}
     </div>
   );
   const mono=(v,pos)=><span style={{fontFamily:"monospace",fontSize:13,fontWeight:800,color:pos?"#4ade80":"#f87171"}}>{v}</span>;
   const hiRow=(label,p,valueEl,first)=> p?(
-    <div onClick={()=>onSelect(p.key)} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",padding:"7px 0",borderTop:first?"none":"1px solid rgba(255,255,255,0.07)"}}>
+    <div onClick={()=>onSelect(p.key)} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",padding:"5px 0",borderTop:first?"none":"1px solid rgba(255,255,255,0.07)"}}>
       <span style={{fontSize:10,color:"#64748b",fontWeight:800,textTransform:"uppercase",letterSpacing:".4px",width:70,flexShrink:0}}>{label}</span>
       <span style={{flex:1,minWidth:0,fontSize:13,fontWeight:600,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</span>
       {valueEl}
@@ -4065,23 +4065,23 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   )):null;
   const wVsSp=(!preStartWk&&stats)?railCard("Comunidade vs S&P 500",(
     <div>
-      <div style={{display:"flex",alignItems:"baseline",gap:6,marginBottom:10}}>
-        <span style={{fontSize:30,fontWeight:800,letterSpacing:"-1px",color:"#4ade80"}}>{stats.beating!=null?Math.round(stats.beating/stats.n*100):"—"}%</span>
+      <div style={{display:"flex",alignItems:"baseline",gap:6,marginBottom:7}}>
+        <span style={{fontSize:26,fontWeight:800,letterSpacing:"-1px",color:"#4ade80"}}>{stats.beating!=null?Math.round(stats.beating/stats.n*100):"—"}%</span>
         <span style={{fontSize:12.5,color:"#94a3b8"}}>batem o mercado</span>
       </div>
-      <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,padding:"6px 0",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,padding:"5px 0",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
         <span style={{color:"#94a3b8"}}>Média comunidade</span><span style={{fontFamily:"monospace",fontWeight:800,color:stats.avg>=0?"#4ade80":"#f87171"}}>{pct(stats.avg)}</span>
       </div>
-      <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,padding:"6px 0",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,padding:"5px 0",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
         <span style={{color:"#94a3b8"}}>S&P 500</span><span style={{fontFamily:"monospace",fontWeight:800,color:stats.spyRet==null?"#64748b":stats.spyRet>=0?"#4ade80":"#f87171"}}>{stats.spyRet!=null?pct(stats.spyRet):"—"}</span>
       </div>
     </div>
   )):null;
   const wPicks=topPicks.length?railCard("Mais escolhidas",(
-    <div style={{display:"flex",flexDirection:"column",gap:9}}>
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
       {topPicks.map(t=>(
         <div key={t.ticker} style={{display:"flex",alignItems:"center",gap:8}}>
-          <StockLogo ticker={t.ticker} size={20}/>
+          <StockLogo ticker={t.ticker} size={18}/>
           <span style={{fontWeight:700,fontSize:12.5,width:50,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis"}}>{t.ticker}</span>
           <div style={{flex:1,height:6,borderRadius:999,background:"rgba(255,255,255,0.07)",overflow:"hidden",minWidth:0}}>
             <div style={{height:"100%",width:`${Math.max(5,Math.round(t.frac*100))}%`,background:"linear-gradient(90deg,#16a34a,#4ade80)",borderRadius:999}}/>
@@ -4240,9 +4240,21 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     </div>
   );
   const leftRail=<>{wYou}{wStocks}{wComments}</>;
-  // O campeão sai do rail direito e vai, isolado, para a linha do cabeçalho (célula .railChamp,
-  // à altura do 1v1). Os restantes ficam no rail direito (.railR), à altura da tabela — onde sempre estiveram.
-  const rightRail=<>{wVsSp}{wHi}{wPicks}</>;
+  // Botão 1v1 no FUNDO do rail direito (por baixo de "Mais escolhidas"). No desktop mora aqui; em
+  // mobile/tablet (rail escondido) mora no cabeçalho — ver .rkHeadV1 + o media query que o esconde >1439px.
+  const wV1=ranking.length>=2?(
+    <div style={{display:"flex",justifyContent:"center"}}>
+      <button onClick={()=>{ setCmp(v=>!v); setSel([]); }}
+        style={{cursor:"pointer",fontSize:14,fontWeight:700,borderRadius:999,padding:"9px 40px",letterSpacing:".3px",transition:"all .15s",
+          color:cmp?"#0a0a0a":"#cbd5e1",background:cmp?"#3b82f6":"rgba(255,255,255,0.06)",
+          border:`1px solid ${cmp?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.12)"}`}}
+        onMouseEnter={e=>{ if(!cmp) e.currentTarget.style.background="rgba(255,255,255,0.10)"; }}
+        onMouseLeave={e=>{ if(!cmp) e.currentTarget.style.background="rgba(255,255,255,0.06)"; }}>1v1</button>
+    </div>
+  ):null;
+  // O campeão sai do rail direito e vai, isolado, para a linha do cabeçalho (célula .railChamp).
+  // Os restantes ficam no rail direito (.railR), à altura da tabela; o 1v1 fecha o rail em baixo.
+  const rightRail=<>{wVsSp}{wHi}{wPicks}{wV1}</>;
   // Tabela histórica: só o Top 10 do período fechado (rentab. do período; sem Diário/🟢🔴/sparkline,
   // que são de "hoje"). Reaproveita a grelha .rkRow para alinhar com o resto.
   const histTableEl=()=>(
@@ -4316,10 +4328,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
            linha 2 = rail esquerdo + tabela + rail direito (widgets onde sempre estiveram). */
         .rkLayout{display:grid;grid-template-columns:minmax(240px,1fr) minmax(0,900px) minmax(240px,1fr);
           grid-template-rows:auto auto;grid-template-areas:"badge hdr champ" "left tbl rail";
-          column-gap:28px;row-gap:0;align-items:start;justify-content:center}
+          column-gap:16px;row-gap:0;align-items:start;justify-content:center}
         .cHeader{grid-area:hdr;min-width:0}
         .rkCenter{grid-area:tbl;min-width:0}
-        .rkRail{position:sticky;top:84px;display:flex;flex-direction:column;gap:16px}
+        .rkRail{position:sticky;top:84px;display:flex;flex-direction:column;gap:12px}
         .railL{grid-area:left}
         .railR{grid-area:rail}
         /* "Campeão do mês" ISOLADO na linha do cabeçalho, coluna direita (na horizontal do 1v1). O
@@ -4398,6 +4410,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
           .rkLayout{grid-template-columns:minmax(0,900px);grid-template-areas:"hdr" "tbl";justify-content:center}
           .rkRail,.railChamp,.railBadge{display:none}
         }
+        /* Desktop largo: o 1v1 mora no rail direito (por baixo de "Mais escolhidas") → esconde o do
+           cabeçalho. Em ≤1439px o rail desaparece e o 1v1 do cabeçalho reaparece (única cópia visível). */
+        @media(min-width:1440px){ .rkHeadV1{display:none} }
         @media(max-width:860px){
           /* MOBILE/tablet: sem caixas de pesquisa nem ícones de posições (são só desktop).
              As caixas/ícones têm display:flex inline → precisa de !important para as esconder. */
@@ -4513,7 +4528,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         </div>
       )}
       </div>{/* /rkCenter */}
-      <aside className="rkRail railR">{histActive?null:rightRail}</aside>
+      <aside className="rkRail railR">{histActive?wV1:rightRail}</aside>
       </div>{/* /rkLayout */}
     </div>
   );
@@ -5449,8 +5464,8 @@ function Duel({a,b,livePrices,spy,dayChange,nav}){
   const common=[...setA].filter(t=>setB.has(t));
   const onlyA=[...setA].filter(t=>!setB.has(t));
   const onlyB=[...setB].filter(t=>!setA.has(t));
-  // Quebra o nome em primeiro nome / apelido (mesmo para nomes curtos).
-  const nameLines=(n)=>{ const p=String(n||"").trim().split(/\s+/); return p.length<2?n:<>{p[0]}<br/>{p.slice(1).join(" ")}</>; };
+  // Nome numa ÚNICA linha (só quebra sozinho se for demasiado largo p/ a coluna).
+  const nameLines=(n)=>n;
   // ticker → nome da empresa (para tooltip nos chips das carteiras).
   const nameByTicker={}; [...a.stocks,...b.stocks].forEach(s=>{ nameByTicker[s.ticker]=s.companyName; });
   return(
