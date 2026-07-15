@@ -14,12 +14,14 @@ Env: CRON_SECRET (obrigatório), ATH_INGEST_URL (default = produção),
      SUPABASE_URL + SUPABASE_ANON_KEY (para o modo prices ler as shares).
 """
 import argparse
+import datetime as dt
 import io
 import os
 import signal
 import socket
 import sys
 import time
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
@@ -36,6 +38,38 @@ CRON_SECRET = os.environ.get("CRON_SECRET", "")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 BATCH = 100  # yf.download é mais feliz em lotes ~100
+
+# GUARDA ANTI-STALENESS. O Yahoo às vezes serve barras VELHAS aos runners do GitHub (aconteceu a
+# 15-jul: a corrida da manhã trouxe fechos de 2ª feira numa 4ª feira → variações erradas). Antes de
+# escrever preços, comparamos a data da barra mais recente com o ÚLTIMO pregão US já fechado; se for
+# anterior, NÃO escrevemos (evita clobber de dados bons com dados velhos). Feriados de fecho total US.
+US_HOLIDAYS = {
+    "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
+    "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31", "2027-06-18",
+}
+def _is_trading_day(d):  # d: datetime.date — dia útil (0=2ª…4=6ª) e não-feriado
+    return d.weekday() < 5 and d.isoformat() not in US_HOLIDAYS
+
+def expected_last_session(now=None):
+    """Data (YYYY-MM-DD, ET) do ÚLTIMO pregão US já FECHADO. Barra mais recente < isto ⇒ feed velho."""
+    et = (now or dt.datetime.now(dt.timezone.utc)).astimezone(ZoneInfo("America/New_York"))
+    d = et.date()
+    # Hoje só conta depois do fecho (16:00 ET); senão o último pregão fechado é (pelo menos) ontem.
+    if not (_is_trading_day(d) and et.hour >= 16):
+        d -= dt.timedelta(days=1)
+    while not _is_trading_day(d):
+        d -= dt.timedelta(days=1)
+    return d.isoformat()
+
+def _feed_fresh(max_bar_date, label):
+    """True se a barra mais recente do download não está atrasada face ao último pregão fechado."""
+    if max_bar_date is None:
+        print(f"[ath] {label}: sem barras — nada a escrever."); return False
+    exp = expected_last_session()
+    if max_bar_date < exp:
+        print(f"[ath] {label}: FEED DESATUALIZADO — barra {max_bar_date} < último pregão {exp}. "
+              f"NÃO escreve (evita clobber com dados velhos)."); return False
+    return True
 ENRICH_BUDGET_S = 300  # teto DURO (SIGALRM) p/ a fase de marketcap/nome — evita pendurar se o Yahoo limitar
 
 
@@ -105,6 +139,7 @@ def post_rows(rows):
 def compute_rows(symbols, names, in_sp500):
     """ATH (max High de toda a história) + preço + marketcap/shares para uma lista de símbolos."""
     info = {}  # symbol -> {ath, ath_ts, price}  (tudo do histórico → fiável)
+    max_bar_date = None
     for i in range(0, len(symbols), BATCH):
         batch = symbols[i:i + BATCH]
         try:
@@ -120,6 +155,9 @@ def compute_rows(symbols, names, in_sp500):
                 close = sub["Close"].dropna()
                 if high.empty or close.empty:
                     continue
+                d = close.index[-1].date().isoformat()  # data da barra de preço mais recente
+                if max_bar_date is None or d > max_bar_date:
+                    max_bar_date = d
                 info[sym] = {"ath": round(float(high.max()), 2),
                              "ath_ts": _iso_utc(high.idxmax()),
                              "price": round(float(close.iloc[-1]), 2),
@@ -129,6 +167,10 @@ def compute_rows(symbols, names, in_sp500):
                 continue
         print(f"[ath] download {min(i + BATCH, len(symbols))}/{len(symbols)} (acumulado {len(info)})")
         time.sleep(1)
+
+    # GUARDA: se o feed de preços estiver DESATUALIZADO (barra mais recente < último pregão fechado),
+    # o ATH/nome/marketcap ainda valem, mas o PREÇO não → não o escrevemos (o preço bom fica intacto).
+    write_prices = _feed_fresh(max_bar_date, "full (preços)")
 
     # marketcap + shares via fast_info (best-effort). Nome: S&P vem da Wikipédia; extras via .info.
     # Teto DURO via SIGALRM: mesmo que UMA chamada do yfinance fique pendurada (Yahoo a limitar),
@@ -170,13 +212,16 @@ def compute_rows(symbols, names, in_sp500):
     rows = []
     for sym, d in info.items():
         nm, mcap, shares = enriched.get(sym, (names.get(sym), None, None))
-        rows.append({
-            "symbol": sym, "name": nm or sym, "price": d["price"],
-            "prev_close": d.get("prev_close"),
+        row = {
+            "symbol": sym, "name": nm or sym,
             "marketcap": float(mcap) if mcap else None,
             "shares": float(shares) if shares else None,
             "ath": d["ath"], "ath_ts": d["ath_ts"], "in_sp500": in_sp500,
-        })
+        }
+        if write_prices:  # feed fresco → atualiza o preço; velho → omite (a rota não lhe toca)
+            row["price"] = d["price"]
+            row["prev_close"] = d.get("prev_close")
+        rows.append(row)
     return rows
 
 
@@ -237,9 +282,10 @@ def site_shares():
 
 
 def _dl_prices(symbols):
-    """Preço atual + fecho anterior (period=2d) para uma lista de símbolos, em lotes de BATCH.
-    Devolve (prices, prevs)."""
+    """Preço atual + fecho anterior (period=5d) para uma lista de símbolos, em lotes de BATCH.
+    Devolve (prices, prevs, max_bar_date) — max_bar_date = data da barra mais recente (p/ a guarda)."""
     prices, prevs = {}, {}
+    max_bar_date = None
     for i in range(0, len(symbols), BATCH):
         batch = symbols[i:i + BATCH]
         try:
@@ -257,12 +303,15 @@ def _dl_prices(symbols):
                 c = sub["Close"].dropna()
                 if not c.empty:
                     prices[sym] = float(c.iloc[-1])
+                    d = c.index[-1].date().isoformat()  # data da barra mais recente deste ticker
+                    if max_bar_date is None or d > max_bar_date:
+                        max_bar_date = d
                     if len(c) >= 2:
                         prevs[sym] = float(c.iloc[-2])
             except Exception:
                 continue
         time.sleep(1)
-    return prices, prevs
+    return prices, prevs, max_bar_date
 
 
 def _price_rows(prices, prevs, shares, have_shares):
@@ -296,18 +345,20 @@ def fetch_prices():
 
     if fast:
         print(f"[ath] prices passagem 1 (membros): {len(fast)} símbolos")
-        p, pv = _dl_prices(fast)
-        rows = _price_rows(p, pv, shares, have_shares)
-        print(f"[ath] prices passagem 1: {len(rows)} linhas -> POST")
-        post_rows(rows)
+        p, pv, mx = _dl_prices(fast)
+        if _feed_fresh(mx, "prices passagem 1 (membros)"):
+            rows = _price_rows(p, pv, shares, have_shares)
+            print(f"[ath] prices passagem 1: {len(rows)} linhas -> POST")
+            post_rows(rows)
 
     # PASSAGEM 2: o resto do S&P (para a aba ATH / % abaixo). Se não houve lista de membros,
     # `rest` == todos os símbolos → comporta-se como a passagem única de antes.
     print(f"[ath] prices passagem 2 (resto): {len(rest)} símbolos")
-    p, pv = _dl_prices(rest)
-    rows = _price_rows(p, pv, shares, have_shares)
-    print(f"[ath] prices passagem 2: {len(rows)} linhas (marketcap: {have_shares}) -> POST")
-    post_rows(rows)
+    p, pv, mx = _dl_prices(rest)
+    if _feed_fresh(mx, "prices passagem 2 (resto)"):
+        rows = _price_rows(p, pv, shares, have_shares)
+        print(f"[ath] prices passagem 2: {len(rows)} linhas (marketcap: {have_shares}) -> POST")
+        post_rows(rows)
 
 
 def fetch_positions():
@@ -323,7 +374,9 @@ def fetch_positions():
     if not fast:
         print("[ath] positions: sem tickers de membros — nada a fazer."); return
     print(f"[ath] positions: {len(fast)} símbolos (membros)")
-    p, pv = _dl_prices(fast)
+    p, pv, mx = _dl_prices(fast)
+    if not _feed_fresh(mx, "positions"):
+        return
     rows = _price_rows(p, pv, shares, have_shares)
     print(f"[ath] positions: {len(rows)} linhas (marketcap: {have_shares}) -> POST")
     post_rows(rows)
