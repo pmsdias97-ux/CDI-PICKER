@@ -4887,6 +4887,10 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember,f
         .cmtReactBtn{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:3px 9px;
           font-size:12.5px;font-weight:700;line-height:1;font-family:inherit;transition:all .12s;cursor:pointer;
           background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.10);color:#94a3b8}
+        /* Wrapper do chip (tooltip "quem reagiu"). DECLARADO ANTES do .cmtReactPick: com a mesma
+           especificidade, a regra mais TARDIA ganha — o display:none do picker tem de vencer este
+           display:inline-flex (senão o picker ficava sempre visível). */
+        .cmtWho{position:relative;display:inline-flex}
         /* Só em rato/hover: o picker (emojis ainda não escolhidos) esconde-se e aparece ao passar por
            cima do comentário. Em ecrãs táteis (sem hover) fica sempre visível para continuar acessível. */
         @media (hover:hover){
@@ -4895,7 +4899,6 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember,f
         }
         /* Bolha "quem reagiu": tooltip próprio, instantâneo, no WRAPPER do chip — o title nativo não
            aparece em botões disabled (próprio comentário) nem é imediato. Só em dispositivos com rato. */
-        .cmtWho{position:relative;display:inline-flex}
         @media (hover:hover){
           .cmtWho[data-who]:hover::after{content:attr(data-who);position:absolute;bottom:calc(100% + 7px);left:50%;
             transform:translateX(-50%);background:rgba(10,15,28,0.96);border:1px solid rgba(255,255,255,0.14);
