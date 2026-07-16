@@ -4772,7 +4772,9 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember,f
   const loggedIn=!!myUserId;
   const isOwn=!!myNorm && pf.normName===myNorm;
   const creds=()=>({ name:sget(K.MYNAME), pin:sget(K.MYPIN) });
-  const aggregateRx=(rows,uid)=>{ const m={}; for(const r of rows||[]){ const c=(m[r.comment_id]=m[r.comment_id]||{}); const e=(c[r.emoji]=c[r.emoji]||{count:0,mine:false}); e.count++; if(uid&&r.user_id===uid) e.mine=true; } return m; };
+  const aggregateRx=(rows,uid)=>{ const m={}; for(const r of rows||[]){ const c=(m[r.comment_id]=m[r.comment_id]||{}); const e=(c[r.emoji]=c[r.emoji]||{count:0,mine:false,names:[]}); e.count++; e.names.push(r.users?.telegram_name||"Anónimo"); if(uid&&r.user_id===uid) e.mine=true; } return m; };
+  // "Pedro" · "Pedro e Maria" · "Pedro, João e Maria" — para o tooltip de quem reagiu.
+  const listNames=(a)=>a.length<=1?(a[0]||""):`${a.slice(0,-1).join(", ")} e ${a[a.length-1]}`;
 
   useEffect(()=>{
     let cancel=false;
@@ -4788,7 +4790,9 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember,f
       if(!cancel) setComments(cm||[]);
       const ids=(cm||[]).map(c=>c.id);
       if(ids.length){
-        const { data:rr }=await supabase.from("comment_reactions").select("comment_id, emoji, user_id").in("comment_id",ids);
+        const { data:rr }=await supabase.from("comment_reactions")
+          .select("comment_id, emoji, user_id, users!comment_reactions_user_id_fkey(telegram_name)")
+          .in("comment_id",ids);
         if(!cancel) setRx(aggregateRx(rr,myUserId));
       } else if(!cancel){ setRx({}); }
       const { count }=await supabase
@@ -4860,10 +4864,13 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember,f
 
   const toggleReaction=async(commentId,emoji)=>{
     if(!loggedIn){ showToast&&showToast("Submete um portefólio para reagir.","error"); return; }
-    const cur=rx[commentId]?.[emoji]||{count:0,mine:false};
+    const cur=rx[commentId]?.[emoji]||{count:0,mine:false,names:[]};
     const nextMine=!cur.mine;
     const setCell=(cell)=>setRx(prev=>{ const c={...(prev[commentId]||{})}; c[emoji]=cell; return {...prev,[commentId]:c}; });
-    setCell({count:Math.max(0,cur.count+(nextMine?1:-1)),mine:nextMine}); // otimista
+    // otimista — mantém a lista de QUEM reagiu (tooltip) coerente: junta/retira o próprio nome.
+    const me=(creds().name||"").trim();
+    const nextNames=nextMine?[...(cur.names||[]),me||"Tu"]:(cur.names||[]).filter(n=>norm(n)!==norm(me));
+    setCell({count:Math.max(0,cur.count+(nextMine?1:-1)),mine:nextMine,names:nextNames}); // otimista
     try{
       const { name,pin }=creds();
       const res=await fetch("/api/comments/react",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,pin,commentId,emoji})});
@@ -4951,10 +4958,12 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember,f
                         // No PRÓPRIO comentário não se pode reagir: esconde o picker; mostra só as reações
                         // (dos outros) que já existem, de leitura.
                         if(isMyComment&&count===0) return null;
+                        // Hover num chip com reações → mostra QUEM reagiu (só os nomes); picker (0) mantém a dica de ação.
+                        const who=count>0?listNames(cell.names||[]):null;
                         return(
                           <button key={emoji} onClick={isMyComment?undefined:()=>toggleReaction(c.id,emoji)}
                             className={`cmtReactBtn${count>0?"":" cmtReactPick"}`} disabled={isMyComment}
-                            title={isMyComment?"Reações ao teu comentário":(loggedIn?(mine?"Remover reação":"Reagir"):"Submete para reagir")}
+                            title={who||(isMyComment?"Reações ao teu comentário":(loggedIn?(mine?"Remover reação":"Reagir"):"Submete para reagir"))}
                             style={{...(mine?{borderColor:"rgba(96,165,250,0.55)",background:"rgba(96,165,250,0.15)",color:"#93c5fd"}:{}),...(isMyComment?{cursor:"default"}:(loggedIn?{}:{cursor:"not-allowed"}))}}>
                             <span style={{fontSize:13}}>{emoji}</span>{count>0&&<span>{count}</span>}
                           </button>
