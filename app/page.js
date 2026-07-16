@@ -4893,6 +4893,16 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember,f
           .cmtReactPick{display:none}
           .cmtRow:hover .cmtReactPick{display:inline-flex}
         }
+        /* Bolha "quem reagiu": tooltip próprio, instantâneo, no WRAPPER do chip — o title nativo não
+           aparece em botões disabled (próprio comentário) nem é imediato. Só em dispositivos com rato. */
+        .cmtWho{position:relative;display:inline-flex}
+        @media (hover:hover){
+          .cmtWho[data-who]:hover::after{content:attr(data-who);position:absolute;bottom:calc(100% + 7px);left:50%;
+            transform:translateX(-50%);background:rgba(10,15,28,0.96);border:1px solid rgba(255,255,255,0.14);
+            color:#e2e8f0;font-size:11.5px;font-weight:600;line-height:1.35;padding:5px 9px;border-radius:8px;
+            width:max-content;max-width:240px;white-space:normal;text-align:center;z-index:40;pointer-events:none;
+            box-shadow:0 10px 24px rgba(0,0,0,0.45)}
+        }
         @keyframes cmtFlashKf{0%,55%{background:rgba(96,165,250,0.16)}100%{background:transparent}}
         .cmtFlash{animation:cmtFlashKf 2.6s ease-out;border-radius:10px}
       `}</style>
@@ -4958,15 +4968,18 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember,f
                         // No PRÓPRIO comentário não se pode reagir: esconde o picker; mostra só as reações
                         // (dos outros) que já existem, de leitura.
                         if(isMyComment&&count===0) return null;
-                        // Hover num chip com reações → mostra QUEM reagiu (só os nomes); picker (0) mantém a dica de ação.
+                        // Hover num chip com reações → bolha própria com QUEM reagiu (o title nativo não
+                        // aparece em botões disabled — próprio comentário — nem é imediato). Picker (0) mantém a dica.
                         const who=count>0?listNames(cell.names||[]):null;
                         return(
-                          <button key={emoji} onClick={isMyComment?undefined:()=>toggleReaction(c.id,emoji)}
-                            className={`cmtReactBtn${count>0?"":" cmtReactPick"}`} disabled={isMyComment}
-                            title={who||(isMyComment?"Reações ao teu comentário":(loggedIn?(mine?"Remover reação":"Reagir"):"Submete para reagir"))}
-                            style={{...(mine?{borderColor:"rgba(96,165,250,0.55)",background:"rgba(96,165,250,0.15)",color:"#93c5fd"}:{}),...(isMyComment?{cursor:"default"}:(loggedIn?{}:{cursor:"not-allowed"}))}}>
-                            <span style={{fontSize:13}}>{emoji}</span>{count>0&&<span>{count}</span>}
-                          </button>
+                          <span key={emoji} className={`cmtWho${count>0?"":" cmtReactPick"}`} data-who={who||undefined}>
+                            <button onClick={isMyComment?undefined:()=>toggleReaction(c.id,emoji)}
+                              className="cmtReactBtn" disabled={isMyComment}
+                              title={who?undefined:(isMyComment?"Reações ao teu comentário":(loggedIn?(mine?"Remover reação":"Reagir"):"Submete para reagir"))}
+                              style={{...(mine?{borderColor:"rgba(96,165,250,0.55)",background:"rgba(96,165,250,0.15)",color:"#93c5fd"}:{}),...(isMyComment?{cursor:"default"}:(loggedIn?{}:{cursor:"not-allowed"}))}}>
+                              <span style={{fontSize:13}}>{emoji}</span>{count>0&&<span>{count}</span>}
+                            </button>
+                          </span>
                         );
                       })}
                     </span>
