@@ -4963,7 +4963,9 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember,f
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:2}}>
                     <span style={{fontSize:14,color:"#cbd5e1",lineHeight:1.5,whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{c.content}</span>
                     <span style={{display:"inline-flex",gap:6,flexWrap:"wrap",flexShrink:0}}>
-                      {COMMENT_REACTIONS.map(emoji=>{
+                      {/* Reações DADAS primeiro (mais contagens à esquerda); o picker (0) fica à direita
+                          e só aparece em hover (cmtReactPick). Sort estável → empates mantêm ❤️🔥😂. */}
+                      {[...COMMENT_REACTIONS].sort((x,y)=>(rx[c.id]?.[y]?.count||0)-(rx[c.id]?.[x]?.count||0)).map(emoji=>{
                         const cell=rx[c.id]?.[emoji]; const count=cell?.count||0; const mine=!!cell?.mine;
                         // No PRÓPRIO comentário não se pode reagir: esconde o picker; mostra só as reações
                         // (dos outros) que já existem, de leitura.
