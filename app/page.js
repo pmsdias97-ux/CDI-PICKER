@@ -5161,6 +5161,19 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
       <div className="cdiDetail">
       <div className="detLeft">{/* coluna esquerda: portefólio */}
       <div style={{position:"relative",marginBottom:16}}>
+        {/* 📚 Piada da casa: o ÚLTIMO lugar do Ranking Geral ganha o livro "Pai Rico, Pai Pobre"
+            pousado no cartão — clicar abre o PDF numa nova aba. (Só oficiais, com ≥2 classificados.) */}
+        {standings?.geral&&standings.geral.n>=2&&standings.geral.rank===standings.geral.n&&(
+          <a href="https://dn710201.ca.archive.org/0/items/pai-rico-pai-pobre-edicao-de-20-anos-atualizada-e-ampliada-o-que-os-ricos-ensina/Pai%20Rico,%20Pai%20Pobre%20-%20Edi%C3%A7%C3%A3o%20de%2020%20anos%20atualizada%20e%20ampliada%20O%20que%20os%20ricos%20ensinam%20a%20seus%20filhos%20sobre%20dinheiro%20(Robert%20T.%20Kiyosaki)%20(Z-Library).pdf"
+            target="_blank" rel="noopener noreferrer" title="Leitura recomendada 📚"
+            style={{position:"absolute",top:"clamp(-42px,-4.5vw,-30px)",right:"clamp(2px,1.5vw,14px)",width:"clamp(62px,7vw,86px)",zIndex:6,display:"block",
+              transform:"rotate(10deg)",transition:"transform .25s ease, filter .25s ease",
+              filter:"drop-shadow(0 10px 20px rgba(0,0,0,0.5))"}}
+            onMouseEnter={e=>{ e.currentTarget.style.transform="rotate(5deg) scale(1.08)"; e.currentTarget.style.filter="drop-shadow(0 14px 26px rgba(0,0,0,0.55))"; }}
+            onMouseLeave={e=>{ e.currentTarget.style.transform="rotate(10deg)"; e.currentTarget.style.filter="drop-shadow(0 10px 20px rgba(0,0,0,0.5))"; }}>
+            <img src="/pairicopaipobre.webp" alt="Pai Rico, Pai Pobre" style={{width:"100%",height:"auto",display:"block"}}/>
+          </a>
+        )}
         {rank>=1&&rank<=3&&(
           <BreatheGlow inset="-16% -10%" base={0.4}
             color={rank===1?"rgba(245,200,80,0.55)":rank===2?"rgba(203,213,225,0.5)":"rgba(217,140,60,0.55)"}
