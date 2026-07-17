@@ -1372,7 +1372,6 @@ function CompetitionTimer({settings,period,hasWeek}){
     d=Math.ceil(diff/86400000);
     label=started?`Vencedor a ${fmtDateShort(settings.gameEndDate)}`:"";
   }
-  const accent=started?"#fbbf24":"#fcd34d";
   return(
     <div style={{display:"flex",justifyContent:"center"}}>
       <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:10,flexWrap:"wrap",
@@ -1380,7 +1379,7 @@ function CompetitionTimer({settings,period,hasWeek}){
         background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",
         border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 6px 22px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"}}>
         {label&&<span style={{fontSize:13,color:"#cbd5e1",fontWeight:600,whiteSpace:"nowrap"}}>{label}</span>}
-        {d!=null&&<span style={{fontSize:13,fontWeight:800,fontFamily:"monospace",color:accent,whiteSpace:"nowrap"}}>{d<=0?"apura-se hoje":`faltam ${d===1?"1 dia":`${d} dias`}`}</span>}
+        {d!=null&&<span style={{fontSize:13,fontWeight:800,fontFamily:"monospace",color:"#e2e8f0",whiteSpace:"nowrap"}}>{d<=0?"apura-se hoje":`faltam ${d===1?"1 dia":`${d} dias`}`}</span>}
       </div>
     </div>
   );
@@ -2323,20 +2322,21 @@ function Reveal({children,delay=0,y=14,style}){
     if(reduce){ setShown(true); return; }
     const io=new IntersectionObserver((ents)=>{
       for(const e of ents){ if(e.isIntersecting){ setShown(true); io.disconnect(); break; } }
-    },{threshold:0.01,rootMargin:"0px 0px 14% 0px"}); // dispara ANTES de entrar → nítido quando se vê
+    },{threshold:0.01,rootMargin:"0px 0px 22% 0px"}); // dispara bem ANTES de entrar → já nítido quando se vê
     io.observe(el);
     return()=>io.disconnect();
   },[]);
   const reduce=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // SEM filter:blur — animá-lo por cima do backdrop-filter (vidro) das boxes é pesadíssimo e o desfoque
+  // "agarra-se" (fica em blur muito tempo). Só fade + subida + escala: leve, compositor-friendly, instantâneo.
   return(
     <div ref={ref} style={{
       ...style,
       opacity:shown?1:0,
       transform:(shown||reduce)?"none":`translateY(${y}px) scale(0.99)`,
-      filter:(shown||reduce)?"none":"blur(4px)",
       transition:reduce
         ?`opacity .35s ease ${delay}ms`
-        :`opacity .44s cubic-bezier(.22,.61,.36,1) ${delay}ms, transform .44s cubic-bezier(.22,.61,.36,1) ${delay}ms, filter .28s ease ${delay}ms`,
+        :`opacity .42s cubic-bezier(.22,.61,.36,1) ${delay}ms, transform .42s cubic-bezier(.22,.61,.36,1) ${delay}ms`,
       willChange:shown?"auto":"opacity, transform",
     }}>{children}</div>
   );
@@ -3572,11 +3572,14 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   // Mini-curva por linha: snapshots por portefólio (histórico). Recarrega só quando o
   // conjunto de portefólios muda (não a cada atualização de preços).
   const [seriesById,setSeriesById]=useState({});
+  const [seriesLoaded,setSeriesLoaded]=useState(false); // snapshots já chegaram (p/ o FEED não piscar aos poucos)
+  const [feedTimeout,setFeedTimeout]=useState(false);    // rede de segurança: mostra o FEED ao fim de 3.5s mesmo sem tudo pronto
+  useEffect(()=>{ const t=setTimeout(()=>setFeedTimeout(true),3500); return()=>clearTimeout(t); },[]);
   const idsKey=ranking.map(p=>p.id).filter(Boolean).join(",");
   useEffect(()=>{
     let cancel=false;
     const ids=idsKey?idsKey.split(","):[];
-    if(!ids.length){ setSeriesById({}); return; }
+    if(!ids.length){ setSeriesById({}); setSeriesLoaded(true); return; }
     (async()=>{
       const { data }=await supabase
         .from("portfolio_snapshots").select("portfolio_id,date,total_return")
@@ -3584,7 +3587,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       if(cancel) return;
       const m={};
       (data||[]).forEach(r=>{ (m[r.portfolio_id]=m[r.portfolio_id]||[]).push({date:r.date,r:Number(r.total_return)}); });
-      setSeriesById(m);
+      setSeriesById(m); setSeriesLoaded(true);
     })();
     return()=>{ cancel=true; };
   },[idsKey]);
@@ -4182,19 +4185,31 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       <span style={{fontSize:12.5,color:"#cbd5e1",lineHeight:1.4}}>{it.el}</span>
     </div>
   );
-  const wFeed=(feedNotifs.length||feedAct.length)?(
-    <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:"11px 14px",boxShadow:"0 6px 20px rgba(0,0,0,0.22)"}}>
+  // Cartão do FEED (moldura partilhada pelo skeleton e pelo conteúdo real → mesma largura/altura mínima,
+  // por isso NÃO salta ao trocar). minHeight cobre o caso comum (1 notificação + 3 atividades).
+  const feedCard=(inner)=>(
+    <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:"11px 14px",boxShadow:"0 6px 20px rgba(0,0,0,0.22)",minHeight:150,boxSizing:"border-box"}}>
       <div style={{fontSize:10.5,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:800,marginBottom:9}}>Feed</div>
-      {feedNotifs.length>0&&(<>
-        <div style={{fontSize:9.5,color:"#60a5fa",fontWeight:800,textTransform:"uppercase",letterSpacing:".5px",marginBottom:1}}>Notificações</div>
-        {feedNotifs.map(feedRow)}
-      </>)}
-      {feedAct.length>0&&(<>
-        <div style={{fontSize:9.5,color:"#94a3b8",fontWeight:800,textTransform:"uppercase",letterSpacing:".5px",margin:feedNotifs.length?"11px 0 1px":"0 0 1px"}}>Atividade</div>
-        {feedAct.map(feedRow)}
-      </>)}
+      {inner}
     </div>
-  ):null;
+  );
+  // Separador subtil entre as notificações (o próprio) e a atividade (comunidade) — sem etiquetas.
+  const feedSep={marginTop:4,paddingTop:4,borderTop:"1px solid rgba(255,255,255,0.06)"};
+  // O FEED depende de várias fontes assíncronas (preços, snapshots, diário) que chegam em ONDAS. Só o
+  // mostramos quando os dados assentaram → aparece de uma vez, não aos poucos (e não re-centra a cada item).
+  const feedReady=(!pricesLoading&&seriesLoaded&&Object.keys(livePrices||{}).length>0)||feedTimeout;
+  const feedSkeleton=feedCard(<>
+    <div style={{padding:"5px 0"}}><Skeleton w="82%" h={12} r={6}/></div>
+    <div style={feedSep}>
+      {["92%","70%","86%"].map((w,i)=><div key={i} style={{padding:"5px 0"}}><Skeleton w={w} h={12} r={6}/></div>)}
+    </div>
+  </>);
+  const wFeed=!feedReady
+    ? feedSkeleton
+    : ((feedNotifs.length||feedAct.length)?feedCard(<>
+        {feedNotifs.map(feedRow)}
+        {feedAct.length>0&&<div style={feedNotifs.length?feedSep:undefined}>{feedAct.map(feedRow)}</div>}
+      </>):null);
   // "Campeão do mês" (mini-época mensal): líder ao vivo deste mês + campeões dos meses fechados
   // (recalculados on-the-fly a partir dos baselines de início de cada mês).
   const monthNameCap=(()=>{ const n=new Date().toLocaleDateString("pt-PT",{month:"long"}); return n.charAt(0).toUpperCase()+n.slice(1); })();
@@ -4402,7 +4417,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
            Vidro fosco na cor do tema (--cdi-panel) + blur forte: as linhas passam por
            baixo desfocadas e a barra não fica mais escura (usa o tom do próprio tema). */
         @media(min-width:1001px){
-          .rkStickyHead{position:sticky;top:73px;z-index:15;
+          .rkStickyHead{position:sticky;top:71px;z-index:15;
             background:var(--cdi-panel,rgba(26,41,74,0.9));
             backdrop-filter:blur(42px) saturate(180%);-webkit-backdrop-filter:blur(42px) saturate(180%)}
         }
@@ -4521,10 +4536,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       {/* Grelha de 2 linhas: campeão isolado em cima-direita (linha do cabeçalho, à altura do 1v1);
           rail esquerdo, tabela e rail direito na linha de baixo (onde sempre estiveram). */}
       <div className="rkLayout">
+      {/* "Geral": a célula (livre) recebe o FEED; nos outros períodos, o medalhão do vencedor. Ambos
+          passam pelo mesmo wrapper (badgeStickyRef + badgeTop) → ficam CENTRADOS à altura do gráfico. */}
       <aside className="railBadge" ref={railBadgeRef} style={railH!=null?{height:railH}:undefined}>
-        {period==="total"
-          ? wFeed  /* "Geral": a célula (livre) recebe o FEED, colado ao topo (sticky via .railBadge > *) */
-          : <div ref={badgeStickyRef} style={{marginTop:badgeTop}}>{wBadge}</div>}
+        <div ref={badgeStickyRef} style={{marginTop:badgeTop}}>{period==="total"?wFeed:wBadge}</div>
       </aside>
       <aside className="rkRail railL">{histActive?null:leftRail}</aside>
       <aside className="railChamp" ref={railChampRef} style={railH!=null?{height:railH}:undefined}><div ref={champStickyRef} style={{marginTop:champTop}}>{histActive?wChampHist:wChamp}</div></aside>
