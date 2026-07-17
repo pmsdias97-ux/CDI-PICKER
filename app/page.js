@@ -2323,7 +2323,7 @@ function Reveal({children,delay=0,y=14,style}){
     if(reduce){ setShown(true); return; }
     const io=new IntersectionObserver((ents)=>{
       for(const e of ents){ if(e.isIntersecting){ setShown(true); io.disconnect(); break; } }
-    },{threshold:0.12,rootMargin:"0px 0px -8% 0px"});
+    },{threshold:0.01,rootMargin:"0px 0px 14% 0px"}); // dispara ANTES de entrar → nítido quando se vê
     io.observe(el);
     return()=>io.disconnect();
   },[]);
@@ -2332,11 +2332,11 @@ function Reveal({children,delay=0,y=14,style}){
     <div ref={ref} style={{
       ...style,
       opacity:shown?1:0,
-      transform:(shown||reduce)?"none":`translateY(${y}px) scale(0.985)`,
-      filter:(shown||reduce)?"none":"blur(7px)",
+      transform:(shown||reduce)?"none":`translateY(${y}px) scale(0.99)`,
+      filter:(shown||reduce)?"none":"blur(4px)",
       transition:reduce
-        ?`opacity .4s ease ${delay}ms`
-        :`opacity .62s cubic-bezier(.22,.61,.36,1) ${delay}ms, transform .62s cubic-bezier(.22,.61,.36,1) ${delay}ms, filter .5s ease ${delay}ms`,
+        ?`opacity .35s ease ${delay}ms`
+        :`opacity .44s cubic-bezier(.22,.61,.36,1) ${delay}ms, transform .44s cubic-bezier(.22,.61,.36,1) ${delay}ms, filter .28s ease ${delay}ms`,
       willChange:shown?"auto":"opacity, transform",
     }}>{children}</div>
   );
@@ -5469,9 +5469,9 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
       </Reveal>
       {/* Gráfico "líderes e atrasados" — só desktop; enche o espaço vazio que sobra na coluna direita
           (a coluna estica à altura da lista de ações e este cartão ocupa o resto via flex:1). */}
-      <Reveal delay={160}><div className="detSlot"><SlotChart pf={pf} livePrices={livePrices} dayChange={dayChange} monthBase={monthBase} weekBase={weekBase}/></div></Reveal>
+      <Reveal><div className="detSlot"><SlotChart pf={pf} livePrices={livePrices} dayChange={dayChange} monthBase={monthBase} weekBase={weekBase}/></div></Reveal>
       </div>{/* /coluna direita (análises) */}
-      <div className="detComments" id="detComments" style={{scrollMarginTop:88}}><PortfolioReactions pf={pf} myNorm={myNorm} myUserId={myUserId} adminPw={adminPw} showToast={showToast} onOpenMember={onOpenMember} focusRef={focusRef}/></div>
+      <div className="detComments" id="detComments" style={{scrollMarginTop:88}}><Reveal><PortfolioReactions pf={pf} myNorm={myNorm} myUserId={myUserId} adminPw={adminPw} showToast={showToast} onOpenMember={onOpenMember} focusRef={focusRef}/></Reveal></div>
       </div>{/* /detColR */}
       </div>{/* /cdiDetail */}
     </div>
