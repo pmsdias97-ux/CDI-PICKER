@@ -257,7 +257,8 @@ function nextWeek(key){ const t=new Date(key+"T00:00:00Z"); t.setUTCDate(t.getUT
 const WEEK1_MONDAY="2026-06-29";
 const WEEK_LIVE_FROM="2026-07-06"; // jogo semanal ao vivo a partir da Semana 2 (6-jul)
 // Semana 1 (1–3 jul) é um registo FIXO (semeado), vencedor Manuel. ret=null → mostra só o nome (sem %).
-const WEEK_SEED_CHAMPS=[{period:"2026-06-29", name:"Manuel", ret:null}];
+// ret = rentabilidade do Manuel na Semana 1 (1–2 jul; 3-jul foi feriado) = total_return congelado a 2-jul.
+const WEEK_SEED_CHAMPS=[{period:"2026-06-29", name:"Manuel", ret:0.0984}];
 function weekNum(key){ return Math.max(1, Math.round((Date.parse(key+"T00:00:00Z")-Date.parse(WEEK1_MONDAY+"T00:00:00Z"))/(7*86400000))+1); }
 function weekLabel(key){ return `Semana ${weekNum(key)}`; }
 // Fim da semana = SEXTA-feira (2ª feira + 4). O ranking semanal é 2ª (abertura) → 6ª (fecho).
