@@ -1674,10 +1674,14 @@ export default function App(){
       const from=pastBaselines[per], to=pastBaselines[nextPeriod(per)]; if(!from||!to) continue;
       let best=null; for(const p of offs){ const r=pfPeriodRet(p,from,to); if(r!=null&&(!best||r>best.r)) best={p,r}; }
       if(best) add(best.p.key,"monthly",periodLabel(per)); }
-    // Semanal: semana fechada = tem fecho de 6ª feira (weekCloses); + semeadas (WEEK_SEED_CHAMPS).
-    const curW=weekKey(new Date()); const seen=new Set();
-    for(const per of Object.keys(weekCloses).sort()){ if(per>=curW) continue;
-      const from=weekOpens[per], to=weekCloses[per]; if(!from||!to) continue;
+    // Semanal: medalha logo que a semana FECHA (não só na 2ª feira seguinte). Semana fechada = tem
+    // fecho de 6ª (weekCloses, gravado pela weekly-close das 22:00 UTC). A semana ATUAL conta assim que
+    // o pregão terminou (weekTradingDone: 6ª pós-fecho ou fim de semana) E o fecho está gravado ('to').
+    const now=new Date(); const curW=weekKey(now); const weekDone=weekTradingDone(now); const seen=new Set();
+    for(const per of Object.keys(weekCloses).sort()){
+      if(per>curW) continue;                    // semanas futuras: nunca
+      if(per===curW && !weekDone) continue;      // semana atual: só depois de fechada
+      const from=weekOpens[per], to=weekCloses[per]; if(!from||!to) continue; // 'to'=fecho: só existe após weekly-close
       let best=null; for(const p of offs){ const r=pfPeriodRet(p,from,to); if(r!=null&&(!best||r>best.r)) best={p,r}; }
       if(best){ add(best.p.key,"weekly",weekLabel(per)); seen.add(per); } }
     for(const seed of WEEK_SEED_CHAMPS){ if(seen.has(seed.period)) continue;
@@ -3095,7 +3099,9 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
   const [mktLive,setMktLive]=useState(false);
   const [animDone,setAnimDone]=useState(false); // bolinhas só depois de as linhas "crescerem"
   useEffect(()=>{
-    const ck=()=>setMktLive(isMktOpen(new Date())&&typeof window!=="undefined"&&window.matchMedia("(min-width:861px)").matches);
+    // Pulsar segue o mercado REAL (fecha às 16:00 ET, como a pill "Mercado fechado") — não o isMktOpen,
+    // que tem folga até às 16:15 (essa folga é só para filtrar snapshots, não para o "ao vivo").
+    const ck=()=>setMktLive(marketStatus().open&&typeof window!=="undefined"&&window.matchMedia("(min-width:861px)").matches);
     ck(); const id=setInterval(ck,30000);
     if(typeof window!=="undefined") window.addEventListener("resize",ck);
     return()=>{ clearInterval(id); if(typeof window!=="undefined") window.removeEventListener("resize",ck); };
