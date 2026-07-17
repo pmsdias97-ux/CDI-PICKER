@@ -4266,7 +4266,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         ):leaders.length?(
           // Em curso: o vencedor só é apurado no fim do período. Sem líder à vista → mais suspense.
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontSize:20,lineHeight:1}}>⏳</span>
+            <svg viewBox="0 0 24 24" width={20} height={20} fill="none" stroke="#94a3b8" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{flexShrink:0}}>
+              <path d="M5 22h14M5 2h14M17 22v-4.2a2 2 0 0 0-.6-1.4L12 12l-4.4 4.4a2 2 0 0 0-.6 1.4V22M7 2v4.2a2 2 0 0 0 .6 1.4L12 12l4.4-4.4a2 2 0 0 0 .6-1.4V2"/>
+            </svg>
             <div style={{minWidth:0}}>
               <div style={{fontSize:14,fontWeight:800,color:"#e2e8f0",lineHeight:1.15}}>{cf.pendHead}</div>
               <div style={{fontSize:10.5,color:"#94a3b8"}}>{cf.pendSub}</div>
