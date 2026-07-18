@@ -9,6 +9,7 @@
     { "path": "/api/cron/weekly-baselines-sync", "schedule": "0 12 * * 1" },
     { "path": "/api/cron/monthly-baselines", "schedule": "0 13 1-5 * *" },
     { "path": "/api/cron/weekly-close", "schedule": "0 22 * * 5" },
+    { "path": "/api/cron/rank-notify", "schedule": "0 22 * * 1-5" },
     { "path": "/api/cron/snapshot", "schedule": "0 15 * * 1-5" },
     { "path": "/api/cron/snapshot", "schedule": "0 17 * * 1-5" },
     { "path": "/api/cron/snapshot", "schedule": "0 19 * * 1-5" }
