@@ -2204,7 +2204,7 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
           padding:6px 14px;border-radius:999px;cursor:pointer;color:#cbd5e1;font-size:12px;font-weight:600;letterSpacing:0.2px;
           background:rgba(255,255,255,0.05);backdrop-filter:blur(18px) saturate(170%);-webkit-backdrop-filter:blur(18px) saturate(170%);
           border:1px solid rgba(255,255,255,0.10);box-shadow:0 6px 22px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.10);
-          transition:color .15s, border-color .15s}
+          transition:color .15s, border-color .15s, opacity .35s ease, transform .35s ease}
         .cdiUpdatesLink:hover{color:#fff;border-color:rgba(255,255,255,0.22)}
         .cdiUpdatesLink svg{opacity:0.8}
         @media(max-width:640px){.cdiUpdatesLink{display:none}}
@@ -2251,7 +2251,7 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
           )}
         </div>
         {page==="home"&&submitted&&(
-          <button className="cdiUpdatesLink" title="Ir para Updates e feedbacks"
+          <button className={"cdiUpdatesLink"+(clockHidden?" cdiClockHidden":"")} title="Ir para Updates e feedbacks"
             onClick={()=>{ const el=document.getElementById("updates-feedbacks"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); }}>
             Updates
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
