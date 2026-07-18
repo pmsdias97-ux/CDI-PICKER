@@ -539,7 +539,7 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth}){
       @media(prefers-reduced-motion:reduce){.cdiChatPanel{animation:none}}
     `}</style>
     {/* Ícone flutuante (balão) */}
-    <button onClick={()=>setOpen(o=>!o)} aria-label="Chat geral" title="Chat geral"
+    <button onClick={()=>setOpen(o=>!o)} aria-label="Chat da competição" title="Chat da competição"
       style={{position:"fixed",right,bottom:24,zIndex:46,width:46,height:46,borderRadius:"50%",cursor:"pointer",
         background:open?"#2563eb":"rgba(37,99,235,0.92)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",
         border:"1px solid rgba(255,255,255,0.22)",boxShadow:"0 8px 24px rgba(0,0,0,0.4)",color:"#fff",
@@ -554,7 +554,7 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth}){
       <div className="cdiChatPanel" style={panelStyle}>
         <div style={{...glass,display:"flex",flexDirection:"column",height:"100%",overflow:"hidden"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"12px 14px",borderBottom:"1px solid rgba(255,255,255,0.10)"}}>
-            <span style={{fontSize:14,fontWeight:800,color:"#e2e8f0"}}>Chat geral</span>
+            <span style={{fontSize:14,fontWeight:800,color:"#e2e8f0"}}>Chat da competição</span>
             <button onClick={()=>setOpen(false)} aria-label="Fechar" style={{background:"none",border:"none",cursor:"pointer",color:"#94a3b8",display:"flex",padding:4}}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>
@@ -595,7 +595,7 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth}){
           <div style={{display:"flex",gap:8,alignItems:"flex-end",padding:"10px 12px",borderTop:"1px solid rgba(255,255,255,0.10)"}}>
             <textarea value={draft} onChange={e=>setDraft(e.target.value.slice(0,500))}
               onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); send(); } }}
-              rows={1} placeholder="Escreve no chat geral…"
+              rows={1} placeholder="Escreve no chat da competição…"
               style={{flex:1,resize:"none",minHeight:40,maxHeight:120,background:"rgba(0,0,0,0.28)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:12,padding:"9px 12px",color:"#e2e8f0",fontSize:14,fontFamily:"inherit",lineHeight:1.4,outline:"none"}}/>
             <button onClick={send} disabled={busy||!draft.trim()} aria-label="Enviar"
               style={{border:"none",borderRadius:12,width:42,height:42,flexShrink:0,cursor:busy||!draft.trim()?"not-allowed":"pointer",
