@@ -419,23 +419,19 @@ function LeftBackRail({gap,onBack,label="Voltar ao ranking"}){
 
 // Botão flutuante "voltar ao topo" — só em desktop (hover/ponteiro fino); aparece com scroll.
 // Ancorado junto da coluna de conteúdo (maxWidth): fica ao lado da tabela, não no bordo da janela.
-function BackToTop({maxWidth}){
+function BackToTop({maxWidth,raised}){
   const [show,setShow]=useState(false);
-  const [enabled,setEnabled]=useState(false);
   useEffect(()=>{
-    let ok=false; try{ ok=window.matchMedia("(hover:hover) and (pointer:fine)").matches; }catch{}
-    setEnabled(ok);
-    if(!ok) return;
     const onScroll=()=>setShow(window.scrollY>600);
     onScroll();
     window.addEventListener("scroll",onScroll,{passive:true});
     return()=>window.removeEventListener("scroll",onScroll);
   },[]);
-  if(!enabled) return null;
   const right=maxWidth?`max(16px, calc((100vw - ${maxWidth}px)/2 - 38px))`:"24px";
+  // raised = há ícone de chat por baixo (membro com sessão) → sobe para ficar POR CIMA do chat.
   return(
     <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} aria-label="Voltar ao topo" title="Voltar ao topo"
-      style={{position:"fixed",right,bottom:24,zIndex:45,width:46,height:46,borderRadius:"50%",cursor:"pointer",
+      style={{position:"fixed",right,bottom:raised?82:24,zIndex:45,width:46,height:46,borderRadius:"50%",cursor:"pointer",
         background:"rgba(255,255,255,0.08)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",
         border:"1px solid rgba(255,255,255,0.18)",boxShadow:"0 8px 24px rgba(0,0,0,0.35)",color:"#e2e8f0",
         display:"flex",alignItems:"center",justifyContent:"center",
@@ -444,6 +440,173 @@ function BackToTop({maxWidth}){
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
     </button>
   );
+}
+
+// Chat geral (sala única): ícone flutuante (canto inf-direito) + pop-up estilo X. Mensagens em
+// TEMPO REAL via Supabase Realtime (INSERT/UPDATE/DELETE). Autor edita (5 min) e apaga as suas;
+// admin apaga qualquer. Só para membros com sessão (renderizado no Shell só quando submitted).
+const CHAT_EDIT_WINDOW_MS=5*60*1000;
+function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth}){
+  const [open,setOpen]=useState(false);
+  const [messages,setMessages]=useState([]);
+  const [unread,setUnread]=useState(0);
+  const [draft,setDraft]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [editingId,setEditingId]=useState(null);
+  const [editDraft,setEditDraft]=useState("");
+  const [narrow,setNarrow]=useState(false);
+  const listRef=useRef(null);
+  const openRef=useRef(false); openRef.current=open;
+  const creds=()=>({name:myName,pin:sget(K.MYPIN)});
+
+  useEffect(()=>{ const mq=window.matchMedia("(max-width:560px)"); const on=()=>setNarrow(mq.matches); on();
+    mq.addEventListener("change",on); return()=>mq.removeEventListener("change",on); },[]);
+
+  // Carga inicial (últimas 100) + subscrição Realtime.
+  useEffect(()=>{
+    let cancel=false;
+    (async()=>{
+      const { data }=await supabase.from("chat_messages")
+        .select("id,user_id,author_name,content,created_at,edited_at")
+        .order("created_at",{ascending:true}).limit(100);
+      if(!cancel&&data) setMessages(data);
+    })();
+    const ch=supabase.channel("chat_messages")
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"chat_messages"},(p)=>{
+        setMessages(m=>m.some(x=>x.id===p.new.id)?m:[...m,p.new]);
+        if(!openRef.current) setUnread(u=>Math.min(99,u+1));
+      })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"chat_messages"},(p)=>{
+        setMessages(m=>m.map(x=>x.id===p.new.id?{...x,...p.new}:x));
+      })
+      .on("postgres_changes",{event:"DELETE",schema:"public",table:"chat_messages"},(p)=>{
+        setMessages(m=>m.filter(x=>x.id!==p.old.id));
+      })
+      .subscribe();
+    return()=>{ cancel=true; supabase.removeChannel(ch); };
+  },[]);
+
+  useEffect(()=>{ if(open){ setUnread(0); if(listRef.current) listRef.current.scrollTop=listRef.current.scrollHeight; } },[open]);
+  useEffect(()=>{ if(open&&listRef.current) listRef.current.scrollTop=listRef.current.scrollHeight; },[messages,open]);
+
+  const send=async()=>{
+    const content=draft.trim(); if(!content||busy) return;
+    if(content.length>500){ showToast&&showToast("Máx. 500 caracteres.","error"); return; }
+    setBusy(true);
+    try{
+      const { name,pin }=creds();
+      const res=await fetch("/api/chat/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,pin,content})});
+      const j=await res.json().catch(()=>({}));
+      if(!res.ok) showToast&&showToast(j.error||"Falha ao enviar.","error");
+      else{ setDraft(""); if(j.message) setMessages(m=>m.some(x=>x.id===j.message.id)?m:[...m,j.message]); }
+    }catch{ showToast&&showToast("Falha de ligação.","error"); }
+    finally{ setBusy(false); }
+  };
+  const saveEdit=async(id)=>{
+    const content=editDraft.trim(); if(!content){ setEditingId(null); return; }
+    try{
+      const { name,pin }=creds();
+      const res=await fetch("/api/chat/edit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,pin,id,content})});
+      const j=await res.json().catch(()=>({}));
+      if(!res.ok) showToast&&showToast(j.error||"Falha ao editar.","error");
+      else{ setEditingId(null); if(j.message) setMessages(m=>m.map(x=>x.id===id?{...x,...j.message}:x)); }
+    }catch{ showToast&&showToast("Falha de ligação.","error"); }
+  };
+  const del=async(msg)=>{
+    const mine=msg.user_id===myUserId;
+    const body=mine?{id:msg.id,...creds()}:{id:msg.id,adminPassword:adminPw};
+    const prev=messages; setMessages(m=>m.filter(x=>x.id!==msg.id)); // otimista
+    try{
+      const res=await fetch("/api/chat/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      if(!res.ok){ const j=await res.json().catch(()=>({})); setMessages(prev); showToast&&showToast(j.error||"Falha ao apagar.","error"); }
+    }catch{ setMessages(prev); showToast&&showToast("Falha de ligação.","error"); }
+  };
+
+  const right=maxWidth?`max(16px, calc((100vw - ${maxWidth}px)/2 - 38px))`:"24px";
+  const panelStyle=narrow
+    ? {position:"fixed",left:8,right:8,bottom:8,height:"82vh",zIndex:9995}
+    : {position:"fixed",right,bottom:82,width:360,maxWidth:"calc(100vw - 32px)",height:"min(70vh,560px)",zIndex:9995};
+  const glass={background:"rgba(17,26,45,0.86)",backdropFilter:"blur(22px) saturate(160%)",WebkitBackdropFilter:"blur(22px) saturate(160%)",
+    border:"1px solid rgba(255,255,255,0.12)",boxShadow:"0 18px 48px rgba(0,0,0,0.55)",borderRadius:16};
+
+  return(<>
+    <style>{`
+      @keyframes cdiChatIn{from{opacity:0;transform:scale(.96) translateY(8px)}to{opacity:1;transform:none}}
+      .cdiChatPanel{animation:cdiChatIn .18s cubic-bezier(.22,.61,.36,1);transform-origin:bottom right}
+      .cdiChatMsg .cdiChatActs{opacity:0;transition:opacity .12s}
+      @media(hover:hover){.cdiChatMsg:hover .cdiChatActs{opacity:1}}
+      @media(hover:none){.cdiChatMsg .cdiChatActs{opacity:1}}
+      @media(prefers-reduced-motion:reduce){.cdiChatPanel{animation:none}}
+    `}</style>
+    {/* Ícone flutuante (balão) */}
+    <button onClick={()=>setOpen(o=>!o)} aria-label="Chat geral" title="Chat geral"
+      style={{position:"fixed",right,bottom:24,zIndex:46,width:46,height:46,borderRadius:"50%",cursor:"pointer",
+        background:open?"#2563eb":"rgba(37,99,235,0.92)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",
+        border:"1px solid rgba(255,255,255,0.22)",boxShadow:"0 8px 24px rgba(0,0,0,0.4)",color:"#fff",
+        display:"flex",alignItems:"center",justifyContent:"center",transition:"background .15s"}}>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+      {unread>0&&!open&&(
+        <span style={{position:"absolute",top:-3,right:-3,minWidth:18,height:18,padding:"0 5px",borderRadius:999,
+          background:"#ef4444",color:"#fff",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",border:"2px solid #0a1120"}}>{unread}</span>
+      )}
+    </button>
+    {open&&(
+      <div className="cdiChatPanel" style={panelStyle}>
+        <div style={{...glass,display:"flex",flexDirection:"column",height:"100%",overflow:"hidden"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"12px 14px",borderBottom:"1px solid rgba(255,255,255,0.10)"}}>
+            <span style={{fontSize:14,fontWeight:800,color:"#e2e8f0"}}>Chat geral</span>
+            <button onClick={()=>setOpen(false)} aria-label="Fechar" style={{background:"none",border:"none",cursor:"pointer",color:"#94a3b8",display:"flex",padding:4}}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div ref={listRef} style={{flex:1,overflowY:"auto",padding:"10px 12px",display:"flex",flexDirection:"column",gap:10}}>
+            {messages.length===0
+              ? <div style={{color:"#64748b",fontSize:13,textAlign:"center",margin:"auto"}}>Ainda sem mensagens. Diz olá 👋</div>
+              : messages.map(m=>{
+                  const mine=m.user_id===myUserId;
+                  const canEdit=mine&&(Date.now()-new Date(m.created_at).getTime()<=CHAT_EDIT_WINDOW_MS);
+                  const canDel=mine||!!adminPw;
+                  return(
+                    <div key={m.id} className="cdiChatMsg" style={{display:"flex",flexDirection:"column",gap:2}}>
+                      <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+                        <span style={{fontSize:12.5,fontWeight:800,color:mine?"#93c5fd":"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.author_name}{mine?" (tu)":""}</span>
+                        <span style={{fontSize:10.5,color:"#64748b",flexShrink:0}}>{timeAgo(m.created_at)}{m.edited_at?" · editado":""}</span>
+                        {(canEdit||canDel)&&(
+                          <span className="cdiChatActs" style={{marginLeft:"auto",display:"inline-flex",gap:8,flexShrink:0}}>
+                            {canEdit&&editingId!==m.id&&<button onClick={()=>{ setEditingId(m.id); setEditDraft(m.content); }} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:11,padding:0}}>editar</button>}
+                            {canDel&&<button onClick={()=>del(m)} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:11,padding:0}}>apagar</button>}
+                          </span>
+                        )}
+                      </div>
+                      {editingId===m.id?(
+                        <div style={{display:"flex",gap:6,alignItems:"flex-end"}}>
+                          <textarea value={editDraft} onChange={e=>setEditDraft(e.target.value.slice(0,500))} rows={2}
+                            style={{flex:1,resize:"vertical",minHeight:40,background:"rgba(0,0,0,0.28)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,padding:"6px 9px",color:"#e2e8f0",fontSize:13,fontFamily:"inherit",lineHeight:1.4,outline:"none"}}/>
+                          <button onClick={()=>saveEdit(m.id)} style={{border:"none",borderRadius:9,padding:"7px 11px",fontSize:12,fontWeight:700,cursor:"pointer",background:"#22c55e",color:"#04120a"}}>Guardar</button>
+                          <button onClick={()=>setEditingId(null)} style={{border:"none",borderRadius:9,padding:"7px 8px",fontSize:12,cursor:"pointer",background:"rgba(255,255,255,0.08)",color:"#cbd5e1"}}>✕</button>
+                        </div>
+                      ):(
+                        <span style={{fontSize:13.5,color:"#cbd5e1",lineHeight:1.45,whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{m.content}</span>
+                      )}
+                    </div>
+                  );
+                })}
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"flex-end",padding:"10px 12px",borderTop:"1px solid rgba(255,255,255,0.10)"}}>
+            <textarea value={draft} onChange={e=>setDraft(e.target.value.slice(0,500))}
+              onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); send(); } }}
+              rows={1} placeholder="Escreve no chat geral…"
+              style={{flex:1,resize:"none",minHeight:40,maxHeight:120,background:"rgba(0,0,0,0.28)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:12,padding:"9px 12px",color:"#e2e8f0",fontSize:14,fontFamily:"inherit",lineHeight:1.4,outline:"none"}}/>
+            <button onClick={send} disabled={busy||!draft.trim()} aria-label="Enviar"
+              style={{border:"none",borderRadius:12,width:42,height:42,flexShrink:0,cursor:busy||!draft.trim()?"not-allowed":"pointer",
+                background:busy||!draft.trim()?"rgba(255,255,255,0.08)":"#2563eb",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>);
 }
 
 // Confete dourado (sem biblioteca) — celebração do 1º lugar. Dispara 1× ao abrir o detalhe
@@ -1817,6 +1980,7 @@ export default function App(){
   const rowHover=detailRank===1?"#1d1407":detailRank===2?"#12151c":detailRank===3?"#1a0f06":"#0a1120";
 
   const sh=(children)=><Shell page={page} rankPeriod={rankPeriod} detailRank={detailRank} detailIsOwn={detailIsOwn} nav={nav} navRank={navRank} submitted={submitted} toast={toast}
+    myName={myName} myUserId={myPf?.userId||null} adminPw={adminPw} showToast={showToast}
     onMyPortfolio={openMyPortfolio}
     myPortfolioActive={page==="detail" && !!detailPf && !!myPf && detailPf.key===myPf.key}>{children}</Shell>;
 
@@ -1832,7 +1996,7 @@ export default function App(){
 }
 
 /* ---- Shell --------------------------------------------------------------- */
-function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,submitted,toast,onMyPortfolio,myPortfolioActive}){
+function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,submitted,toast,onMyPortfolio,myPortfolioActive,myName,myUserId,adminPw,showToast}){
   // Premium (ouro/prata/bronze) SÓ no detalhe do Top 3. Tudo o resto — ranking, 4º+,
   // o próprio portefólio (quando fora do pódio), homepage, etc. — fica AZUL original.
   // Mesma lógica de degradê (brilho radial no topo + fade vertical).
@@ -1918,7 +2082,12 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
         <div className="cdiClock"><MarketStatus/></div>
       </header>
       <main className="cdiMain" style={{position:"relative",zIndex:1}}>{children}</main>
-      <BackToTop maxWidth={page==="ranking"?900:page==="detail"?1320:(page==="ath"||page==="home")?940:null}/>
+      {(()=>{ const mw=page==="ranking"?900:page==="detail"?1320:(page==="ath"||page==="home")?940:null;
+        return(<>
+          <BackToTop maxWidth={mw} raised={submitted}/>
+          {submitted&&<ChatWidget myName={myName} myUserId={myUserId} adminPw={adminPw} showToast={showToast} maxWidth={mw}/>}
+        </>);
+      })()}
       <UpdateBanner/>
       {toast&&(
         <div className="cdiBottomFloat" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:9999,
