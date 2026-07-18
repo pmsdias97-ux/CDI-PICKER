@@ -427,7 +427,7 @@ function BackToTop({maxWidth,raised}){
     window.addEventListener("scroll",onScroll,{passive:true});
     return()=>window.removeEventListener("scroll",onScroll);
   },[]);
-  const right=maxWidth?`max(16px, calc((100vw - ${maxWidth}px)/2 - 38px))`:"24px";
+  const right="24px"; // canto inferior direito do viewport (antes: alinhado à goteira do conteúdo)
   // raised = há ícone de chat por baixo (membro com sessão) → sobe para ficar POR CIMA do chat.
   return(
     <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} aria-label="Voltar ao topo" title="Voltar ao topo"
@@ -468,6 +468,7 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
   const [rx,setRx]=useState({}); // {messageId:{emoji:[{uid,name},...]}}
   const [replyingTo,setReplyingTo]=useState(null); // {id,name,excerpt} da mensagem a responder
   const listRef=useRef(null);
+  const inputRef=useRef(null);
   const openRef=useRef(false); openRef.current=open;
   const creds=()=>({name:myName,pin:sget(K.MYPIN)});
   const listNames=(a)=>a.length<=1?(a[0]||""):`${a.slice(0,-1).join(", ")} e ${a[a.length-1]}`;
@@ -516,7 +517,10 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
     return()=>{ cancel=true; supabase.removeChannel(ch); };
   },[]);
 
-  useEffect(()=>{ if(open){ setUnread(0); if(listRef.current) listRef.current.scrollTop=listRef.current.scrollHeight; } },[open]);
+  useEffect(()=>{ if(open){ setUnread(0); if(listRef.current) listRef.current.scrollTop=listRef.current.scrollHeight;
+    // Ao abrir, foca o input para escrever já — MAS só em desktop (rato/ponteiro fino). Em mobile
+    // (táctil) não focar, para o teclado não saltar e o utilizador poder LER o chat primeiro.
+    try{ if(window.matchMedia("(hover:hover) and (pointer:fine)").matches) setTimeout(()=>inputRef.current?.focus(),0); }catch{} } },[open]);
   useEffect(()=>{ if(open&&listRef.current) listRef.current.scrollTop=listRef.current.scrollHeight; },[messages,open]);
 
   const send=async()=>{
@@ -561,7 +565,7 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
     }catch{ setRx(s=> mineNow?rxAdd(s,mid,emoji,myUserId,myName||"Tu"):rxDel(s,mid,emoji,myUserId)); showToast&&showToast("Falha de ligação.","error"); }
   };
 
-  const right=maxWidth?`max(16px, calc((100vw - ${maxWidth}px)/2 - 38px))`:"24px";
+  const right="24px"; // canto inferior direito do viewport (antes: alinhado à goteira do conteúdo)
   const panelStyle=narrow
     ? {position:"fixed",left:8,right:8,bottom:8,height:"82vh",zIndex:9995}
     : {position:"fixed",right,bottom:82,width:360,maxWidth:"calc(100vw - 32px)",height:"min(70vh,560px)",zIndex:9995};
@@ -678,7 +682,7 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
             </div>
           )}
           <div style={{display:"flex",gap:8,alignItems:"flex-end",padding:"10px 12px"}}>
-            <textarea value={draft} onChange={e=>setDraft(e.target.value.slice(0,500))}
+            <textarea ref={inputRef} value={draft} onChange={e=>setDraft(e.target.value.slice(0,500))}
               onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); send(); } }}
               rows={1} placeholder="Escreve no chat da competição…"
               style={{flex:1,resize:"none",minHeight:40,maxHeight:120,background:"rgba(0,0,0,0.28)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:12,padding:"9px 12px",color:"#e2e8f0",fontSize:14,fontFamily:"inherit",lineHeight:1.4,outline:"none"}}/>
@@ -2183,12 +2187,11 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
         @media(max-width:640px){.navWide{display:none}}
         .cdiNav{justify-content:center}
         .cdiClock{position:absolute;top:12px;right:14px}
-        /* Sino de notificações: topo-esquerdo (desktop), topo-direito em mobile (onde o relógio deixa de
-           estar fixo). O dropdown ancora à esquerda no desktop e à direita em mobile p/ não sair do ecrã. */
-        .cdiBell{position:absolute;top:12px;left:14px;z-index:3}
-        .cdiBellMenu{left:0}
-        @media(max-width:640px){ .cdiBell{left:auto;right:14px} .cdiBellMenu{left:auto;right:0} }
-        .cdiUpdatesLink{position:absolute;top:12px;left:60px;display:inline-flex;align-items:center;gap:7px;
+        /* Sino de notificações: AO LADO do menu (fora do pill), como item da linha do menu. O dropdown
+           ancora à direita (o sino fica no lado direito do grupo) p/ não sair do ecrã. */
+        .cdiBell{position:relative;z-index:3}
+        .cdiBellMenu{right:0}
+        .cdiUpdatesLink{position:absolute;top:12px;left:14px;display:inline-flex;align-items:center;gap:7px;
           padding:6px 14px;border-radius:999px;cursor:pointer;color:#cbd5e1;font-size:12px;font-weight:600;letterSpacing:0.2px;
           background:rgba(255,255,255,0.05);backdrop-filter:blur(18px) saturate(170%);-webkit-backdrop-filter:blur(18px) saturate(170%);
           border:1px solid rgba(255,255,255,0.10);box-shadow:0 6px 22px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.10);
@@ -2202,8 +2205,8 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
           .cdiClock{position:static;display:flex;justify-content:center;margin-top:10px}
           .cdiNav{
             position:relative;z-index:3; /* acima do relógio (cdiClock) → o submenu do Ranking fica por cima */
-            width:max-content;max-width:calc(100% - 16px);margin:0 auto;
-            justify-content:center;align-items:center;gap:4px;padding:3px 5px;border-radius:22px;flex-wrap:nowrap;
+            width:max-content;max-width:calc(100% - 16px);margin:0;
+            justify-content:center;align-items:center;gap:4px;padding:2px 6px;border-radius:22px;flex-wrap:nowrap;
             background-color:var(--nav-tint,rgba(255,255,255,0.06));
             transition:background-color .6s ease;
             backdrop-filter:blur(42px) saturate(180%);-webkit-backdrop-filter:blur(42px) saturate(180%);
@@ -2211,10 +2214,6 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
             box-shadow:0 8px 28px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.16);
           }
           .cdiNav>button{padding:6px 13px!important;font-size:13px!important}
-          /* pílula selecionada mais alta que a barra → fica sobreposta/saliente.
-             a margem negativa impede a barra de crescer (mantém-na fina). */
-          .cdiNavSel{padding-top:12px!important;padding-bottom:12px!important;margin:-7px 0!important;
-            box-shadow:0 7px 20px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.22)!important}
         }
       `}</style>
       <header style={{position:"sticky",top:0,zIndex:50,padding:"12px 14px 20px"}}>
@@ -2231,8 +2230,15 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
             backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",
             WebkitMaskImage:"linear-gradient(180deg,transparent 38%,#000 62%,#000 100%)",maskImage:"linear-gradient(180deg,transparent 38%,#000 62%,#000 100%)"}}/>
         )}
-        <Nav page={page} nav={nav} navRank={navRank} rankPeriod={rankPeriod} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} tint={theme.tint} />
-        {submitted&&<NotifBell myName={myName} onLink={onNotifLink} showToast={showToast}/>}
+        {/* Menu CENTRADO na página; o sino fica ABSOLUTO à direita do pill (não desloca o centro do menu). */}
+        <div className="cdiNavRow" style={{position:"relative",width:"max-content",maxWidth:"calc(100% - 16px)",margin:"0 auto",zIndex:3}}>
+          <Nav page={page} nav={nav} navRank={navRank} rankPeriod={rankPeriod} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} tint={theme.tint} />
+          {submitted&&(
+            <div style={{position:"absolute",left:"100%",top:"50%",transform:"translateY(-50%)",marginLeft:4}}>
+              <NotifBell myName={myName} onLink={onNotifLink} showToast={showToast}/>
+            </div>
+          )}
+        </div>
         {page==="home"&&submitted&&(
           <button className="cdiUpdatesLink" title="Ir para Updates e feedbacks"
             onClick={()=>{ const el=document.getElementById("updates-feedbacks"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); }}>
@@ -2305,11 +2311,15 @@ function MarketStatus(){
 /* ---- Nav ----------------------------------------------------------------- */
 function Nav({page,nav,navRank,rankPeriod,submitted,onMyPortfolio,myPortfolioActive,tint}){
   return(
-    <div className="cdiNav" style={{display:"flex",alignItems:"center",gap:6,flexWrap:"nowrap","--nav-tint":tint}}>
-      <NavLink label="Início" active={page==="home"} onClick={()=>nav("home")}/>
+    <div className="cdiNav" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4,flexWrap:"nowrap",
+      width:"max-content",maxWidth:"calc(100% - 16px)",padding:"2px 6px",borderRadius:22,
+      background:"var(--nav-tint, rgba(255,255,255,0.06))",transition:"background-color .6s ease",
+      backdropFilter:"blur(42px) saturate(180%)",WebkitBackdropFilter:"blur(42px) saturate(180%)",
+      border:"1px solid rgba(255,255,255,0.14)",boxShadow:"0 8px 28px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.16)","--nav-tint":tint}}>
+      <NavLink label="Início" active={page==="home"} onClick={()=>nav("home")} icon={NAV_ICONS.home}/>
       <RankingNav active={page==="ranking"} rankPeriod={rankPeriod} navToRanking={()=>nav("ranking")} navRank={navRank}/>
-      <NavLink label="ATH" active={page==="ath"} onClick={()=>nav("ath")}/>
-      <NavLink label="Minhas 8" active={submitted?myPortfolioActive:page==="detail"} onClick={onMyPortfolio} locked={!submitted}/>
+      <NavLink label="ATH" active={page==="ath"} onClick={()=>nav("ath")} icon={NAV_ICONS.mountain}/>
+      <NavLink label="Minhas 8" active={submitted?myPortfolioActive:page==="detail"} onClick={onMyPortfolio} locked={!submitted} icon={NAV_ICONS.person}/>
     </div>
   );
 }
@@ -2321,15 +2331,15 @@ function RankingNav({active,rankPeriod,navToRanking,navRank}){
     <div style={{position:"relative"}} onMouseEnter={()=>setOpen(true)} onMouseLeave={()=>setOpen(false)}>
       {/* Vindo de outra aba → vai direto ao Ranking Geral (e fecha o submenu). Já no Ranking →
           mantém o separador atual. */}
-      <NavLink label="Ranking" active={active} onClick={()=>{ setOpen(false); active?navToRanking():navRank("total"); }} caret/>
+      <NavLink label="Ranking" active={active} onClick={()=>{ setOpen(false); active?navToRanking():navRank("total"); }} caret icon={NAV_ICONS.trophy}/>
       {open&&(
         // paddingTop = ponte invisível entre o botão e o menu → o rato não "sai" no espaço vazio.
         <div style={{position:"absolute",top:"100%",left:"50%",transform:"translateX(-50%)",paddingTop:8,zIndex:80}}>
           {/* Mesmo liquid glass do botão "Ranking" (fundo translúcido + blur + realce interior),
               mas estreito e centrado sob a palavra — lê-se como um submenu. */}
           <div style={{display:"flex",flexDirection:"column",gap:3,padding:5,borderRadius:16,
-            background:"rgba(255,255,255,0.08)",backdropFilter:"blur(16px) saturate(180%)",WebkitBackdropFilter:"blur(16px) saturate(180%)",
-            border:"1px solid rgba(255,255,255,0.14)",boxShadow:"0 8px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.16)"}}>
+            background:"rgba(20,30,54,0.96)",backdropFilter:"blur(24px) saturate(180%)",WebkitBackdropFilter:"blur(24px) saturate(180%)",
+            border:"1px solid rgba(255,255,255,0.16)",boxShadow:"0 12px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.14)"}}>
             {items.map(([k,lbl])=>{
               const sel=active&&rankPeriod===k;
               return(
@@ -2349,10 +2359,11 @@ function RankingNav({active,rankPeriod,navToRanking,navRank}){
     </div>
   );
 }
-// Plain text link; only the page we're on gets the liquid-glass pill.
-function NavLink({label,active,onClick,locked,caret}){
+// Link de navegação: ÍCONE (traço, herda a cor) em vez de texto; o nome fica em title/aria-label
+// (tooltip no desktop + acessibilidade). Só a página atual recebe a pílula liquid-glass.
+function NavLink({label,active,onClick,locked,caret,icon}){
   return(
-    <button onClick={onClick} className={active?"cdiNavSel":undefined}
+    <button onClick={onClick} className={active?"cdiNavSel":undefined} title={label} aria-label={label}
       onMouseEnter={e=>{ if(!active) e.currentTarget.style.color="#e2e8f0"; }}
       onMouseLeave={e=>{ if(!active) e.currentTarget.style.color="#9aa4b2"; }}
       style={{cursor:"pointer",fontSize:14,fontWeight:active?600:500,padding:"8px 16px",borderRadius:999,
@@ -2362,11 +2373,23 @@ function NavLink({label,active,onClick,locked,caret}){
         WebkitBackdropFilter:active?"blur(16px) saturate(180%)":"none",
         border:`1px solid ${active?"rgba(255,255,255,0.14)":"transparent"}`,
         boxShadow:active?"0 4px 18px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.16)":"none",
-        transition:"color 0.15s",display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap",flexShrink:0}}>
-      {label}{caret&&<span style={{fontSize:9,opacity:0.65,marginLeft:1}}>▾</span>}{locked&&<span style={{fontSize:10,opacity:0.5}}>🔒</span>}
+        transition:"color 0.15s",position:"relative",display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap",flexShrink:0}}>
+      {icon
+        ? <svg viewBox="0 0 24 24" width={20} height={20} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon}</svg>
+        : label}
+      {/* ▾/🔒 ABSOLUTOS → não ocupam largura, para os ícones ficarem todos com o mesmo espaçamento. */}
+      {caret&&<span style={{position:"absolute",right:4,bottom:3,fontSize:8,opacity:0.55,pointerEvents:"none"}}>▾</span>}
+      {locked&&<span style={{position:"absolute",right:3,top:3,fontSize:9,opacity:0.5,pointerEvents:"none"}}>🔒</span>}
     </button>
   );
 }
+// Ícones do menu (traço). ATH = montanha (pico = máximo histórico).
+const NAV_ICONS={
+  home:<><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/></>,
+  trophy:<><path d="M7 4h10v4a5 5 0 0 1-10 0V4z"/><path d="M7 5H5a2 2 0 0 0 0 4h2M17 5h2a2 2 0 0 1 0 4h-2"/><path d="M12 13v4M8.5 21h7M10.5 21a1.5 1.5 0 0 1 3 0"/></>,
+  person:<><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></>,
+  mountain:<><path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="M4.1 15.1c2.6-1.6 5.2-1.4 7.9.4 2.7 1.9 5.5 2 8.2.2"/></>,
+};
 
 /* ---- Home: liga ao vivo -------------------------------------------------- */
 
@@ -2392,9 +2415,13 @@ function WinnersGrid({top,livePrices,nav}){
   return(
     <>
       <style>{`
-        .cdiWinners{display:grid;gap:14px;grid-template-columns:repeat(4,minmax(0,1fr))}
+        .cdiWinners{display:grid;gap:14px;grid-template-columns:repeat(4,minmax(0,1fr));padding-top:32px}
+        .cdiCell{display:flex;min-width:0}
+        .cdiCell>.winCard{flex:1;min-width:0}
         .cdiPeek{display:none}
         @media(min-width:769px){
+          /* Pódio: ordem 1º-2º-3º-4º, com o campeão elevado. */
+          .winP1{transform:translateY(-12px)}
           .cdiWinners.has-peek{grid-template-columns:repeat(4,minmax(0,1fr)) minmax(0,0.42fr)}
           .cdiPeek{display:block;overflow:hidden;cursor:pointer;
             -webkit-mask-image:linear-gradient(to right,#000 30%,transparent 95%);
@@ -2402,7 +2429,7 @@ function WinnersGrid({top,livePrices,nav}){
             filter:blur(1.5px);opacity:0.5}
           .cdiPeek>div{width:260px}
         }
-        @media(max-width:768px){.cdiWinners{grid-template-columns:repeat(2,minmax(0,1fr))}.winMetric{text-align:center}.winMetric>div{justify-content:center}}
+        @media(max-width:768px){.cdiWinners{grid-template-columns:repeat(2,minmax(0,1fr))}.winP1{grid-column:1/-1}.winP4{grid-column:1/-1}.winMetric{text-align:center}.winMetric>div{justify-content:center}}
         /* Etiqueta vertical "Desde 1 de julho" à esquerda do pódio — só no desktop (onde é 1 linha). */
         .winSince{display:none}
         @media(min-width:769px){
@@ -2417,8 +2444,10 @@ function WinnersGrid({top,livePrices,nav}){
         <div className="winSince" aria-hidden="true">Desde 1 de julho</div>
         <div className={`cdiWinners${peek?" has-peek":""}`}>
           {main.map((p,i)=>(
-            <WinnerCard key={p.key} p={p} rank={i+1} livePrices={livePrices}
-              series={seriesById[p.id]||[]} onClick={()=>nav("ranking")}/>
+            <div key={p.key} className={`cdiCell winP${i+1}`}>
+              <WinnerCard p={p} rank={i+1} livePrices={livePrices}
+                series={seriesById[p.id]||[]} onClick={()=>nav("ranking")}/>
+            </div>
           ))}
           {peek&&(
             <div className="cdiPeek" onClick={()=>nav("ranking")} aria-hidden="true">
@@ -2443,29 +2472,35 @@ function WinnerCard({p,rank,livePrices,series,onClick}){
   const col=up?"#34d399":"#fb7185";
   const isTop=rank===1;
   const baseShadow=isTop
-    ? "0 10px 36px rgba(0,0,0,0.35), 0 0 0 1px rgba(251,191,36,0.18), inset 0 1px 0 rgba(255,255,255,0.14)"
+    ? "0 14px 44px rgba(0,0,0,0.38), 0 0 0 1px rgba(251,191,36,0.28), 0 0 34px rgba(245,158,11,0.14), inset 0 1px 0 rgba(255,255,255,0.16)"
     : "0 10px 36px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.10)";
   const badge=RANK_BADGE[rank]||{background:"rgba(255,255,255,0.06)",color:"#94a3b8",border:"1px solid rgba(255,255,255,0.14)"};
   return(
     <div onClick={onClick} className="winCard"
-      onMouseEnter={e=>{ e.currentTarget.style.transform="translateY(-3px)"; e.currentTarget.style.boxShadow=isTop?"0 18px 46px rgba(251,191,36,0.16), 0 0 0 1px rgba(251,191,36,0.32), inset 0 1px 0 rgba(255,255,255,0.16)":"0 18px 46px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.14)"; }}
+      onMouseEnter={e=>{ e.currentTarget.style.transform="translateY(-3px)"; e.currentTarget.style.boxShadow=isTop?"0 20px 52px rgba(251,191,36,0.20), 0 0 0 1px rgba(251,191,36,0.40), inset 0 1px 0 rgba(255,255,255,0.18)":"0 18px 46px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.14)"; }}
       onMouseLeave={e=>{ e.currentTarget.style.transform="none"; e.currentTarget.style.boxShadow=baseShadow; }}
-      style={{cursor:"pointer",borderRadius:22,padding:22,
+      style={{position:"relative",cursor:"pointer",borderRadius:22,padding:isTop?"26px 24px 24px":22,
         background:isTop
-          ? "linear-gradient(160deg, rgba(251,191,36,0.12) 0%, rgba(255,255,255,0.045) 38%, rgba(255,255,255,0.025) 100%)"
+          ? "linear-gradient(160deg, rgba(251,191,36,0.16) 0%, rgba(255,255,255,0.05) 42%, rgba(255,255,255,0.028) 100%)"
           : "linear-gradient(160deg, rgba(255,255,255,0.075) 0%, rgba(255,255,255,0.028) 100%)",
         backdropFilter:"blur(22px) saturate(170%)",WebkitBackdropFilter:"blur(22px) saturate(170%)",
-        border:`1px solid ${isTop?"rgba(251,191,36,0.38)":"rgba(255,255,255,0.10)"}`,
+        border:`1px solid ${isTop?"rgba(251,191,36,0.45)":"rgba(255,255,255,0.10)"}`,
         boxShadow:baseShadow,transition:"transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease"}}>
+      {isTop&&(
+        <GoldGlow src="/cdi-louros.webp" alt="Louros de campeão" maskSrc="/cdi-louros.webp" glow={22}
+          baseFilter="drop-shadow(0 8px 16px rgba(0,0,0,0.5)) drop-shadow(0 0 16px rgba(245,158,11,0.45))"
+          wrapStyle={{position:"absolute",top:-40,left:"50%",transform:"translateX(-50%)",width:58,zIndex:5,pointerEvents:"none"}}
+          imgStyle={{width:"100%",height:"auto"}}/>
+      )}
       <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:18}}>
-        <div style={{width:32,height:32,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
-          fontSize:13,fontWeight:800,...badge}}>{rank}</div>
-        <span style={{fontWeight:700,fontSize:"clamp(12.5px,3.4vw,16px)",letterSpacing:"-0.4px",flex:1,minWidth:0,lineHeight:1.2,overflowWrap:"anywhere"}}>{p.name}</span>
+        <div style={{width:isTop?36:32,height:isTop?36:32,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+          fontSize:isTop?15:13,fontWeight:800,...badge}}>{rank}</div>
+        <span style={{fontWeight:700,fontSize:isTop?"clamp(14px,3.8vw,18px)":"clamp(12.5px,3.4vw,16px)",letterSpacing:"-0.4px",flex:1,minWidth:0,lineHeight:1.2,overflowWrap:"anywhere"}}>{p.name}</span>
       </div>
       <div className="winMetric" style={{marginBottom:18}}>
         <div style={{display:"flex",alignItems:"baseline",gap:8}}>
-          <span style={{fontSize:13,color:col}}>{up?"▲":"▼"}</span>
-          <span style={{fontFamily:"'SF Mono',ui-monospace,monospace",fontWeight:800,fontSize:30,letterSpacing:"-1.5px",color:col}}>
+          <span style={{fontSize:isTop?15:13,color:col}}>{up?"▲":"▼"}</span>
+          <span style={{fontFamily:"'SF Mono',ui-monospace,monospace",fontWeight:800,fontSize:isTop?38:30,letterSpacing:"-1.5px",color:col}}>
             <Rolling text={pct(Math.abs(p.total)).replace(/[+-]/,"")}/>
           </span>
         </div>
@@ -2477,7 +2512,7 @@ function WinnerCard({p,rank,livePrices,series,onClick}){
             boxShadow:"inset 0 1px 0 rgba(255,255,255,0.25)"}}/>
         ); })}
       </div>
-      <MiniSparkline series={series} current={p.total}/>
+      <MiniSparkline series={series} current={p.total} height={isTop?56:48}/>
     </div>
   );
 }
