@@ -2156,6 +2156,14 @@ export default function App(){
 
 /* ---- Shell --------------------------------------------------------------- */
 function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,submitted,toast,onMyPortfolio,myPortfolioActive,myName,myUserId,adminPw,showToast,onNotifLink,chatOpenReq}){
+  // Relógio do mercado: não precisa de estar sempre à vista → desvanece ao fazer scroll (volta no topo).
+  const [clockHidden,setClockHidden]=useState(false);
+  useEffect(()=>{
+    const onScroll=()=>setClockHidden(window.scrollY>24);
+    onScroll();
+    window.addEventListener("scroll",onScroll,{passive:true});
+    return()=>window.removeEventListener("scroll",onScroll);
+  },[]);
   // Premium (ouro/prata/bronze) SÓ no detalhe do Top 3. Tudo o resto — ranking, 4º+,
   // o próprio portefólio (quando fora do pódio), homepage, etc. — fica AZUL original.
   // Mesma lógica de degradê (brilho radial no topo + fade vertical).
@@ -2186,7 +2194,8 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
       <style>{`
         @media(max-width:640px){.navWide{display:none}}
         .cdiNav{justify-content:center}
-        .cdiClock{position:absolute;top:12px;right:14px}
+        .cdiClock{position:absolute;top:12px;right:14px;transition:opacity .35s ease, transform .35s ease}
+        .cdiClockHidden{opacity:0;transform:translateY(-8px);pointer-events:none}
         /* Sino de notificações: AO LADO do menu (fora do pill), como item da linha do menu. O dropdown
            ancora à direita (o sino fica no lado direito do grupo) p/ não sair do ecrã. */
         .cdiBell{position:relative;z-index:3}
@@ -2202,7 +2211,9 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
         @media(max-width:640px){
           /* MOBILE: abas numa pílula liquid-glass no TOPO (sticky), com blur forte —
              o conteúdo passa de desfocado a nítido ao deslizar por baixo. Relógio por baixo. */
-          .cdiClock{position:static;display:flex;justify-content:center;margin-top:10px}
+          .cdiClock{position:static;display:flex;justify-content:center;margin-top:10px;overflow:hidden;max-height:64px;
+            transition:opacity .3s ease, transform .3s ease, max-height .35s ease, margin-top .35s ease}
+          .cdiClockHidden{max-height:0;margin-top:0}
           .cdiNav{
             position:relative;z-index:3; /* acima do relógio (cdiClock) → o submenu do Ranking fica por cima */
             width:max-content;max-width:calc(100% - 16px);margin:0;
@@ -2246,7 +2257,7 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
           </button>
         )}
-        <div className="cdiClock"><MarketStatus/></div>
+        <div className={"cdiClock"+(clockHidden?" cdiClockHidden":"")}><MarketStatus/></div>
       </header>
       <main className="cdiMain" style={{position:"relative",zIndex:1}}>{children}</main>
       {(()=>{ const mw=page==="ranking"?900:page==="detail"?1320:(page==="ath"||page==="home")?940:null;
