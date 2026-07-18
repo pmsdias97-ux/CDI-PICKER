@@ -2440,7 +2440,7 @@ function WinnersGrid({top,livePrices,nav}){
             filter:blur(1.5px);opacity:0.5}
           .cdiPeek>div{width:260px}
         }
-        @media(max-width:768px){.cdiWinners{grid-template-columns:repeat(2,minmax(0,1fr))}.winP1{grid-column:1/-1}.winP4{grid-column:1/-1}.winMetric{text-align:center}.winMetric>div{justify-content:center}}
+        @media(max-width:768px){.cdiWinners{grid-template-columns:repeat(2,minmax(0,1fr))}.winP1{grid-column:1/-1}.winP4{display:none}.winMetric{text-align:center}.winMetric>div{justify-content:center}}
         /* Etiqueta vertical "Desde 1 de julho" à esquerda do pódio — só no desktop (onde é 1 linha). */
         .winSince{display:none}
         @media(min-width:769px){
@@ -2500,16 +2500,16 @@ function WinnerCard({p,rank,livePrices,series,onClick}){
       {isTop&&(
         <GoldGlow src="/cdi-louros.webp" alt="Louros de campeão" maskSrc="/cdi-louros.webp" glow={22}
           baseFilter="drop-shadow(0 8px 16px rgba(0,0,0,0.5)) drop-shadow(0 0 16px rgba(245,158,11,0.45))"
-          wrapStyle={{position:"absolute",top:-40,left:"50%",transform:"translateX(-50%)",width:58,zIndex:5,pointerEvents:"none"}}
+          wrapStyle={{position:"absolute",top:-50,left:"50%",transform:"translateX(-50%)",width:58,zIndex:5,pointerEvents:"none"}}
           imgStyle={{width:"100%",height:"auto"}}/>
       )}
-      <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:18}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:9,marginBottom:18}}>
         <div style={{width:isTop?36:32,height:isTop?36:32,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
           fontSize:isTop?15:13,fontWeight:800,...badge}}>{rank}</div>
-        <span style={{fontWeight:700,fontSize:isTop?"clamp(14px,3.8vw,18px)":"clamp(12.5px,3.4vw,16px)",letterSpacing:"-0.4px",flex:1,minWidth:0,lineHeight:1.2,overflowWrap:"anywhere"}}>{p.name}</span>
+        <span style={{fontWeight:700,fontSize:isTop?"clamp(14px,3.8vw,18px)":"clamp(12.5px,3.4vw,16px)",letterSpacing:"-0.4px",flex:"0 1 auto",minWidth:0,lineHeight:1.2,overflowWrap:"anywhere",textAlign:"center"}}>{p.name}</span>
       </div>
       <div className="winMetric" style={{marginBottom:18}}>
-        <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+        <div style={{display:"flex",alignItems:"baseline",justifyContent:"center",gap:8}}>
           <span style={{fontSize:isTop?15:13,color:col}}>{up?"▲":"▼"}</span>
           <span style={{fontFamily:"'SF Mono',ui-monospace,monospace",fontWeight:800,fontSize:isTop?38:30,letterSpacing:"-1.5px",color:col}}>
             <Rolling text={pct(Math.abs(p.total)).replace(/[+-]/,"")}/>
