@@ -1,5 +1,6 @@
 import { rateLimited } from "../../../lib/apiGuards";
 import { authOwner } from "../../../lib/watchlistAuth";
+import { createNotification } from "../../../lib/notify";
 
 // POST { name, pin, commentId, emoji } → alterna uma reação a um comentário
 // (1 por pessoa por emoji por comentário; a PK garante-o). user_id vem SEMPRE do
@@ -21,7 +22,7 @@ export async function POST(request) {
 
   // Não se pode reagir ao PRÓPRIO comentário (o autor vem da BD, não do browser).
   const { data: cmt } = await a.supabase
-    .from("portfolio_comments").select("user_id").eq("id", commentId).maybeSingle();
+    .from("portfolio_comments").select("user_id, portfolio_id").eq("id", commentId).maybeSingle();
   if (!cmt) return Response.json({ error: "Comentário não encontrado." }, { status: 404 });
   if (cmt.user_id === a.userId) return Response.json({ error: "Não podes reagir ao teu próprio comentário." }, { status: 403 });
 
@@ -38,5 +39,10 @@ export async function POST(request) {
   const { error } = await a.supabase.from("comment_reactions")
     .insert({ comment_id: commentId, user_id: a.userId, emoji });
   if (error && error.code !== "23505") return Response.json({ error: "Não foi possível reagir." }, { status: 500 });
+  // Notifica o AUTOR do comentário (só ao adicionar; nunca a si próprio — já garantido acima).
+  const { data: me } = await a.supabase.from("users").select("telegram_name").eq("id", a.userId).maybeSingle();
+  const who = String(me?.telegram_name || "Alguém");
+  await createNotification(a.supabase, { userId: cmt.user_id, type: "reaction",
+    title: `${who} reagiu ${emoji} ao teu comentário`, link: cmt.portfolio_id ? `p:${cmt.portfolio_id}` : "mine", actorName: who });
   return Response.json({ ok: true, reacted: true });
 }

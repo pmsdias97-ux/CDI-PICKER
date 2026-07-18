@@ -446,8 +446,9 @@ function BackToTop({maxWidth,raised}){
 // TEMPO REAL via Supabase Realtime (INSERT/UPDATE/DELETE). Autor edita (5 min) e apaga as suas;
 // admin apaga qualquer. Só para membros com sessão (renderizado no Shell só quando submitted).
 const CHAT_EDIT_WINDOW_MS=5*60*1000;
-function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth}){
+function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
   const [open,setOpen]=useState(false);
+  useEffect(()=>{ if(openSignal) setOpen(true); },[openSignal]); // abrir a partir de uma notificação
   const [messages,setMessages]=useState([]);
   const [unread,setUnread]=useState(0);
   const [draft,setDraft]=useState("");
@@ -663,6 +664,63 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth}){
       </div>
     )}
   </>);
+}
+
+// Sino de notificações (topo-esquerdo, só com sessão). Faz POLL de /api/notifications/list (o app não
+// tem sessão Supabase-auth p/ Realtime por-utilizador). Clicar num item navega via onLink (token: 'mine'
+// | 'ranking' | 'ranking-week' | 'chat' | 'p:<portfolioId>'). Marca lidas ao abrir.
+function NotifBell({myName,onLink,showToast}){
+  const [open,setOpen]=useState(false);
+  const [items,setItems]=useState([]);
+  const [unread,setUnread]=useState(0);
+  const ref=useRef(null);
+  const creds=()=>({name:myName,pin:sget(K.MYPIN)});
+  const load=useCallback(async()=>{
+    const { name,pin }=creds(); if(!name||!pin) return;
+    try{
+      const res=await fetch("/api/notifications/list",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,pin})});
+      const j=await res.json().catch(()=>({}));
+      if(res.ok){ setItems(j.notifications||[]); setUnread(j.unread||0); }
+    }catch{}
+  },[myName]);
+  useEffect(()=>{ load(); const id=setInterval(()=>{ if(!document.hidden) load(); },25000); return()=>clearInterval(id); },[load]);
+  // Fecha ao clicar fora.
+  useEffect(()=>{ if(!open) return; const onDoc=(e)=>{ if(ref.current&&!ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown",onDoc); return()=>document.removeEventListener("mousedown",onDoc); },[open]);
+  const markRead=async()=>{ if(unread===0) return; setUnread(0); setItems(x=>x.map(n=>({...n,read:true})));
+    try{ const { name,pin }=creds(); await fetch("/api/notifications/read",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,pin})}); }catch{} };
+  const toggle=()=>setOpen(o=>{ const n=!o; if(n) markRead(); return n; });
+  const clickItem=(n)=>{ setOpen(false); onLink&&onLink(n.link); };
+  return(
+    <div className="cdiBell" ref={ref}>
+      <button onClick={toggle} aria-label="Notificações" title="Notificações"
+        style={{position:"relative",width:38,height:38,borderRadius:"50%",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+          background:"rgba(255,255,255,0.05)",backdropFilter:"blur(18px) saturate(170%)",WebkitBackdropFilter:"blur(18px) saturate(170%)",
+          border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 6px 22px rgba(0,0,0,0.32)",color:"#cbd5e1"}}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        {unread>0&&(
+          <span style={{position:"absolute",top:-2,right:-2,minWidth:17,height:17,padding:"0 4px",borderRadius:999,background:"#ef4444",color:"#fff",fontSize:10.5,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",border:"2px solid #0a1120"}}>{unread>9?"9+":unread}</span>
+        )}
+      </button>
+      {open&&(
+        <div className="cdiBellMenu" style={{position:"absolute",top:"calc(100% + 8px)",width:"min(340px,92vw)",maxHeight:"70vh",overflowY:"auto",zIndex:9995,
+          background:"rgba(17,26,45,0.92)",backdropFilter:"blur(22px) saturate(160%)",WebkitBackdropFilter:"blur(22px) saturate(160%)",
+          border:"1px solid rgba(255,255,255,0.12)",boxShadow:"0 18px 48px rgba(0,0,0,0.55)",borderRadius:14}}>
+          <div style={{padding:"11px 14px",borderBottom:"1px solid rgba(255,255,255,0.10)",fontSize:13,fontWeight:800,color:"#e2e8f0"}}>Notificações</div>
+          {items.length===0
+            ? <div style={{padding:"22px 14px",textAlign:"center",color:"#64748b",fontSize:13}}>Sem notificações.</div>
+            : items.map(n=>(
+                <div key={n.id} onClick={()=>clickItem(n)} style={{display:"flex",flexDirection:"column",gap:2,padding:"10px 14px",cursor:n.link?"pointer":"default",
+                  borderBottom:"1px solid rgba(255,255,255,0.06)",background:n.read?"transparent":"rgba(96,165,250,0.08)"}}>
+                  <span style={{fontSize:13,fontWeight:700,color:"#e2e8f0",lineHeight:1.35}}>{n.title}</span>
+                  {n.body&&<span style={{fontSize:12,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.body}</span>}
+                  <span style={{fontSize:10.5,color:"#64748b"}}>{timeAgo(n.created_at)}</span>
+                </div>
+              ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Confete dourado (sem biblioteca) — celebração do 1º lugar. Dispara 1× ao abrir o detalhe
@@ -1877,6 +1935,17 @@ export default function App(){
     return portfolios.find(p=>p.normName===n)||null;
   },[myName,portfolios]);
   const openMyPortfolio=useCallback(()=>{ if(myPf?.key) openDetail(myPf.key); else nav("detail"); },[myPf,openDetail,nav]);
+  // Abrir o chat a partir de uma notificação (sinal → o ChatWidget abre quando este contador muda).
+  const [chatOpenReq,setChatOpenReq]=useState(0);
+  // Navegação a partir de uma notificação (token guardado em notifications.link).
+  const handleNotifLink=useCallback((link)=>{
+    if(!link) return;
+    if(link==="mine") openMyPortfolio();
+    else if(link==="ranking") navRank("total");
+    else if(link==="ranking-week") navRank("week");
+    else if(link==="chat") setChatOpenReq(x=>x+1);
+    else if(link.startsWith("p:")){ const id=link.slice(2); const pf=portfolios.find(p=>p.id===id); if(pf) openDetail(pf.key); }
+  },[openMyPortfolio,navRank,openDetail,portfolios]);
 
   const submitted=hasSubmitted;
 
@@ -2037,6 +2106,7 @@ export default function App(){
 
   const sh=(children)=><Shell page={page} rankPeriod={rankPeriod} detailRank={detailRank} detailIsOwn={detailIsOwn} nav={nav} navRank={navRank} submitted={submitted} toast={toast}
     myName={myName} myUserId={myPf?.userId||null} adminPw={adminPw} showToast={showToast}
+    onNotifLink={handleNotifLink} chatOpenReq={chatOpenReq}
     onMyPortfolio={openMyPortfolio}
     myPortfolioActive={page==="detail" && !!detailPf && !!myPf && detailPf.key===myPf.key}>{children}</Shell>;
 
@@ -2052,7 +2122,7 @@ export default function App(){
 }
 
 /* ---- Shell --------------------------------------------------------------- */
-function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,submitted,toast,onMyPortfolio,myPortfolioActive,myName,myUserId,adminPw,showToast}){
+function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,submitted,toast,onMyPortfolio,myPortfolioActive,myName,myUserId,adminPw,showToast,onNotifLink,chatOpenReq}){
   // Premium (ouro/prata/bronze) SÓ no detalhe do Top 3. Tudo o resto — ranking, 4º+,
   // o próprio portefólio (quando fora do pódio), homepage, etc. — fica AZUL original.
   // Mesma lógica de degradê (brilho radial no topo + fade vertical).
@@ -2084,7 +2154,12 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
         @media(max-width:640px){.navWide{display:none}}
         .cdiNav{justify-content:center}
         .cdiClock{position:absolute;top:12px;right:14px}
-        .cdiUpdatesLink{position:absolute;top:12px;left:14px;display:inline-flex;align-items:center;gap:7px;
+        /* Sino de notificações: topo-esquerdo (desktop), topo-direito em mobile (onde o relógio deixa de
+           estar fixo). O dropdown ancora à esquerda no desktop e à direita em mobile p/ não sair do ecrã. */
+        .cdiBell{position:absolute;top:12px;left:14px;z-index:3}
+        .cdiBellMenu{left:0}
+        @media(max-width:640px){ .cdiBell{left:auto;right:14px} .cdiBellMenu{left:auto;right:0} }
+        .cdiUpdatesLink{position:absolute;top:12px;left:60px;display:inline-flex;align-items:center;gap:7px;
           padding:6px 14px;border-radius:999px;cursor:pointer;color:#cbd5e1;font-size:12px;font-weight:600;letterSpacing:0.2px;
           background:rgba(255,255,255,0.05);backdrop-filter:blur(18px) saturate(170%);-webkit-backdrop-filter:blur(18px) saturate(170%);
           border:1px solid rgba(255,255,255,0.10);box-shadow:0 6px 22px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.10);
@@ -2128,6 +2203,7 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
             WebkitMaskImage:"linear-gradient(180deg,transparent 38%,#000 62%,#000 100%)",maskImage:"linear-gradient(180deg,transparent 38%,#000 62%,#000 100%)"}}/>
         )}
         <Nav page={page} nav={nav} navRank={navRank} rankPeriod={rankPeriod} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} tint={theme.tint} />
+        {submitted&&<NotifBell myName={myName} onLink={onNotifLink} showToast={showToast}/>}
         {page==="home"&&submitted&&(
           <button className="cdiUpdatesLink" title="Ir para Updates e feedbacks"
             onClick={()=>{ const el=document.getElementById("updates-feedbacks"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); }}>
@@ -2141,7 +2217,7 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
       {(()=>{ const mw=page==="ranking"?900:page==="detail"?1320:(page==="ath"||page==="home")?940:null;
         return(<>
           <BackToTop maxWidth={mw} raised={submitted}/>
-          {submitted&&<ChatWidget myName={myName} myUserId={myUserId} adminPw={adminPw} showToast={showToast} maxWidth={mw}/>}
+          {submitted&&<ChatWidget myName={myName} myUserId={myUserId} adminPw={adminPw} showToast={showToast} maxWidth={mw} openSignal={chatOpenReq}/>}
         </>);
       })()}
       <UpdateBanner/>

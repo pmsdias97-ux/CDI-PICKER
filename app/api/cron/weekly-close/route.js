@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
 import { usMarketOpen } from "../../../lib/marketHours";
 import { fetchQuote } from "../../../lib/marketData";
+import { createNotification } from "../../../lib/notify";
 
 export const maxDuration = 30;
 
@@ -78,6 +79,18 @@ export async function GET(request){
   const nextBaselines=upserts.map(u=>({period:next,ticker:u.ticker,price:u.close_price,captured_at:capturedAt}));
   const {error:nErr}=await supabase
     .from("weekly_baselines").upsert(nextBaselines,{onConflict:"period,ticker",ignoreDuplicates:true});
+
+  // Notifica o VENCEDOR da semana (best-effort). Vencedor = melhor média (close/open-1), espelhado p/ shorts.
+  try{
+    const oc=new Map(); for(const u of upserts) oc.set(norm(u.ticker),{o:Number(u.price),c:Number(u.close_price)});
+    const {data:pfs}=await supabase.from("portfolios").select("user_id, portfolio_stocks(ticker, side)").eq("official",true);
+    let best=null;
+    for(const p of pfs||[]){ const st=p.portfolio_stocks||[]; if(!st.length) continue;
+      let sum=0,n=0; for(const s of st){ const x=oc.get(norm(s.ticker)); if(!x||!(x.o>0)||!(x.c>0)) continue; const raw=x.c/x.o-1; sum+=(s.side==="short"?-raw:raw); n++; }
+      if(n===0) continue; const ret=sum/n; if(!best||ret>best.ret) best={userId:p.user_id,ret}; }
+    if(best&&best.userId) await createNotification(supabase,{ userId:best.userId, type:"weekly_win",
+      title:"Ganhaste a semana! 🏆", body:`+${(best.ret*100).toFixed(2)}% esta semana`, link:"ranking-week" });
+  }catch{}
 
   return Response.json({ok:true,period,captured:upserts.length,nextSeeded:nErr?0:nextBaselines.length,skippedTickers});
 }

@@ -1,5 +1,6 @@
 import { rateLimited } from "../../../lib/apiGuards";
 import { authOwner } from "../../../lib/watchlistAuth";
+import { createNotification } from "../../../lib/notify";
 
 // POST { name, pin, messageId, emoji } → alterna uma reação a uma mensagem do chat
 // (1 por pessoa por emoji por mensagem; a PK garante-o). user_id/user_name vêm SEMPRE do
@@ -36,8 +37,12 @@ export async function POST(request) {
     return Response.json({ ok: true, reacted: false });
   }
   const { data: user } = await a.supabase.from("users").select("telegram_name").eq("id", a.userId).maybeSingle();
+  const who = String(user?.telegram_name || "Anónimo");
   const { error } = await a.supabase.from("chat_message_reactions")
-    .insert({ message_id: messageId, user_id: a.userId, user_name: String(user?.telegram_name || "Anónimo"), emoji });
+    .insert({ message_id: messageId, user_id: a.userId, user_name: who, emoji });
   if (error && error.code !== "23505") return Response.json({ error: "Não foi possível reagir." }, { status: 500 });
+  // Notifica o AUTOR da mensagem (só ao adicionar; nunca a si próprio — já garantido acima).
+  await createNotification(a.supabase, { userId: msg.user_id, type: "reaction",
+    title: `${who} reagiu ${emoji} à tua mensagem`, link: "chat", actorName: who });
   return Response.json({ ok: true, reacted: true });
 }
