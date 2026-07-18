@@ -455,9 +455,15 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth}){
   const [editingId,setEditingId]=useState(null);
   const [editDraft,setEditDraft]=useState("");
   const [narrow,setNarrow]=useState(false);
+  const [rx,setRx]=useState({}); // {messageId:{emoji:[{uid,name},...]}}
   const listRef=useRef(null);
   const openRef=useRef(false); openRef.current=open;
   const creds=()=>({name:myName,pin:sget(K.MYPIN)});
+  const listNames=(a)=>a.length<=1?(a[0]||""):`${a.slice(0,-1).join(", ")} e ${a[a.length-1]}`;
+  // Agregação de reações por (mensagem, emoji) → lista de {uid,name}. Dedup por uid → o eco do
+  // Realtime da própria reação (após o POST) é no-op sobre o update otimista.
+  const rxAdd=(s,mid,emoji,uid,name)=>{ const msg={...(s[mid]||{})}; const arr=(msg[emoji]||[]).slice(); if(!arr.some(r=>r.uid===uid)) arr.push({uid,name}); msg[emoji]=arr; return {...s,[mid]:msg}; };
+  const rxDel=(s,mid,emoji,uid)=>{ const msg={...(s[mid]||{})}; const arr=(msg[emoji]||[]).filter(r=>r.uid!==uid); if(arr.length) msg[emoji]=arr; else delete msg[emoji]; return {...s,[mid]:msg}; };
 
   useEffect(()=>{ const mq=window.matchMedia("(max-width:560px)"); const on=()=>setNarrow(mq.matches); on();
     mq.addEventListener("change",on); return()=>mq.removeEventListener("change",on); },[]);
@@ -469,7 +475,14 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth}){
       const { data }=await supabase.from("chat_messages")
         .select("id,user_id,author_name,content,created_at,edited_at")
         .order("created_at",{ascending:true}).limit(100);
-      if(!cancel&&data) setMessages(data);
+      if(cancel||!data) return;
+      setMessages(data);
+      const ids=data.map(m=>m.id);
+      if(ids.length){
+        const { data:rr }=await supabase.from("chat_message_reactions")
+          .select("message_id,user_id,user_name,emoji").in("message_id",ids);
+        if(!cancel&&rr){ let agg={}; for(const r of rr) agg=rxAdd(agg,r.message_id,r.emoji,r.user_id,r.user_name); setRx(agg); }
+      }
     })();
     const ch=supabase.channel("chat_messages")
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"chat_messages"},(p)=>{
@@ -481,6 +494,12 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth}){
       })
       .on("postgres_changes",{event:"DELETE",schema:"public",table:"chat_messages"},(p)=>{
         setMessages(m=>m.filter(x=>x.id!==p.old.id));
+      })
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"chat_message_reactions"},(p)=>{
+        setRx(s=>rxAdd(s,p.new.message_id,p.new.emoji,p.new.user_id,p.new.user_name));
+      })
+      .on("postgres_changes",{event:"DELETE",schema:"public",table:"chat_message_reactions"},(p)=>{
+        setRx(s=>rxDel(s,p.old.message_id,p.old.emoji,p.old.user_id));
       })
       .subscribe();
     return()=>{ cancel=true; supabase.removeChannel(ch); };
@@ -521,6 +540,15 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth}){
       if(!res.ok){ const j=await res.json().catch(()=>({})); setMessages(prev); showToast&&showToast(j.error||"Falha ao apagar.","error"); }
     }catch{ setMessages(prev); showToast&&showToast("Falha de ligação.","error"); }
   };
+  const toggleReaction=async(mid,emoji)=>{
+    const arr=rx[mid]?.[emoji]||[]; const mineNow=arr.some(r=>r.uid===myUserId);
+    setRx(s=> mineNow?rxDel(s,mid,emoji,myUserId):rxAdd(s,mid,emoji,myUserId,myName||"Tu")); // otimista
+    try{
+      const { name,pin }=creds();
+      const res=await fetch("/api/chat/react",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,pin,messageId:mid,emoji})});
+      if(!res.ok){ const j=await res.json().catch(()=>({})); setRx(s=> mineNow?rxAdd(s,mid,emoji,myUserId,myName||"Tu"):rxDel(s,mid,emoji,myUserId)); showToast&&showToast(j.error||"Falha ao reagir.","error"); }
+    }catch{ setRx(s=> mineNow?rxAdd(s,mid,emoji,myUserId,myName||"Tu"):rxDel(s,mid,emoji,myUserId)); showToast&&showToast("Falha de ligação.","error"); }
+  };
 
   const right=maxWidth?`max(16px, calc((100vw - ${maxWidth}px)/2 - 38px))`:"24px";
   const panelStyle=narrow
@@ -537,6 +565,14 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth}){
       @media(hover:hover){.cdiChatMsg:hover .cdiChatActs{opacity:1}}
       @media(hover:none){.cdiChatMsg .cdiChatActs{opacity:1}}
       @media(prefers-reduced-motion:reduce){.cdiChatPanel{animation:none}}
+      /* Reações (mesmo visual dos comentários). .cmtWho ANTES do .cmtReactPick p/ o display:none do picker vencer. */
+      .cmtReactBtn{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:3px 9px;font-size:12.5px;font-weight:700;line-height:1;font-family:inherit;transition:all .12s;cursor:pointer;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.10);color:#94a3b8}
+      .cmtWho{position:relative;display:inline-flex}
+      @media (hover:hover){
+        .cmtReactPick{display:none}
+        .cdiChatMsg:hover .cmtReactPick{display:inline-flex}
+        .cmtWho[data-who]:hover::after{content:attr(data-who);position:absolute;bottom:calc(100% + 7px);left:50%;transform:translateX(-50%);background:rgba(10,15,28,0.96);border:1px solid rgba(255,255,255,0.14);color:#e2e8f0;font-size:11.5px;font-weight:600;line-height:1.35;padding:5px 9px;border-radius:8px;width:max-content;max-width:240px;white-space:normal;text-align:center;z-index:40;pointer-events:none;box-shadow:0 10px 24px rgba(0,0,0,0.45)}
+      }
     `}</style>
     {/* Ícone flutuante (balão) */}
     <button onClick={()=>setOpen(o=>!o)} aria-label="Chat da competição" title="Chat da competição"
@@ -587,6 +623,26 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth}){
                         </div>
                       ):(
                         <span style={{fontSize:13.5,color:"#cbd5e1",lineHeight:1.45,whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{m.content}</span>
+                      )}
+                      {editingId!==m.id&&(
+                        <span style={{display:"inline-flex",gap:6,flexWrap:"wrap",marginTop:2}}>
+                          {/* Reações dadas primeiro (mais contagens à esq.); picker (0) à direita, só em hover.
+                              Não se reage à PRÓPRIA mensagem: mostra só as que já existem (leitura). */}
+                          {[...COMMENT_REACTIONS].sort((x,y)=>((rx[m.id]?.[y]?.length)||0)-((rx[m.id]?.[x]?.length)||0)).map(emoji=>{
+                            const arr=rx[m.id]?.[emoji]||[]; const count=arr.length; const reacted=arr.some(r=>r.uid===myUserId);
+                            if(mine&&count===0) return null;
+                            const who=count>0?listNames(arr.map(r=>r.name)):null;
+                            return(
+                              <span key={emoji} className={`cmtWho${count>0?"":" cmtReactPick"}`} data-who={who||undefined}>
+                                <button onClick={mine?undefined:()=>toggleReaction(m.id,emoji)} className="cmtReactBtn" disabled={mine}
+                                  title={who?undefined:(mine?"Reações à tua mensagem":(reacted?"Remover reação":"Reagir"))}
+                                  style={{...(reacted?{borderColor:"rgba(96,165,250,0.55)",background:"rgba(96,165,250,0.15)",color:"#93c5fd"}:{}),...(mine?{cursor:"default"}:{})}}>
+                                  <span style={{fontSize:13}}>{emoji}</span>{count>0&&<span>{count}</span>}
+                                </button>
+                              </span>
+                            );
+                          })}
+                        </span>
                       )}
                     </div>
                   );
