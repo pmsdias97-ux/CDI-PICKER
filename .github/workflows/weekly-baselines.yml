@@ -1,0 +1,33 @@
+name: Baselines semanais (backup)
+
+# BACKUP dos crons da Vercel para o arranque da semana (2ª feira):
+#  - weekly-baselines-sync: reconcilia o baseline com o fecho já assente (TEM de correr ANTES da
+#    abertura US das 13:30 UTC → agendado 12:00 UTC; o endpoint salta sozinho se o mercado estiver aberto).
+#  - weekly-baselines: semeia/garante o baseline da semana (a partir do fecho da anterior).
+# Ambos IDEMPOTENTES → chamar nos dois horários (12:00 e 15:00) não duplica. Gatilho independente da
+# Vercel (que no Hobby tem imprecisão ±59min). Disparável à mão. Segredo: CRON_SECRET.
+
+on:
+  schedule:
+    - cron: "0 12 * * 1"   # pré-abertura → sync + baselines
+    - cron: "0 15 * * 1"   # pós-abertura → baselines (sync salta sozinho)
+  workflow_dispatch:
+
+jobs:
+  weekly-baselines:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger weekly-baselines-sync (reconcilia)
+        run: |
+          code=$(curl -s -o /tmp/sync.txt -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://cdi-picker.vercel.app/api/cron/weekly-baselines-sync)
+          echo "sync HTTP $code"; cat /tmp/sync.txt; echo
+          test "$code" = "200"
+      - name: Trigger weekly-baselines (semeia)
+        run: |
+          code=$(curl -s -o /tmp/base.txt -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://cdi-picker.vercel.app/api/cron/weekly-baselines)
+          echo "baselines HTTP $code"; cat /tmp/base.txt; echo
+          test "$code" = "200"

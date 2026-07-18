@@ -1,0 +1,24 @@
+name: Campeão do mês — baselines (backup)
+
+# BACKUP do cron da Vercel /api/cron/monthly-baselines: no 1º dia útil do mês (à abertura US) grava
+# o preço de início do mês de cada ticker → mini-época "Campeão do mês". Corre nos dias 1-5 às 13:00 UTC;
+# o endpoint só grava uma vez por mês (idempotente) e salta os outros dias. Gatilho independente da Vercel
+# (Hobby: imprecisão ±59min). Disparável à mão. Segredo: CRON_SECRET.
+
+on:
+  schedule:
+    - cron: "0 13 1-5 * *"
+  workflow_dispatch:
+
+jobs:
+  monthly-baselines:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger monthly-baselines endpoint
+        run: |
+          code=$(curl -s -o /tmp/out.txt -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://cdi-picker.vercel.app/api/cron/monthly-baselines)
+          echo "HTTP $code"
+          cat /tmp/out.txt; echo
+          test "$code" = "200"

@@ -1,0 +1,25 @@
+name: Vencedor semanal — fecho (backup)
+
+# BACKUP do cron da Vercel /api/cron/weekly-close (6ª feira ~22:00 UTC, após o fecho US).
+# Grava o close_price da semana + semeia a semana seguinte → a medalha do vencedor semanal aparece.
+# No plano Hobby da Vercel os crons têm imprecisão ±59min (e podem falhar) — este gatilho INDEPENDENTE
+# do GitHub cobre isso. O endpoint é IDEMPOTENTE (só grava se ainda não houver close_price nesta semana),
+# por isso correr em ambos não duplica. Também disparável à mão. Segredo: CRON_SECRET (mesmo valor da Vercel).
+
+on:
+  schedule:
+    - cron: "0 22 * * 5"
+  workflow_dispatch:
+
+jobs:
+  weekly-close:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger weekly-close endpoint
+        run: |
+          code=$(curl -s -o /tmp/out.txt -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://cdi-picker.vercel.app/api/cron/weekly-close)
+          echo "HTTP $code"
+          cat /tmp/out.txt; echo
+          test "$code" = "200"
