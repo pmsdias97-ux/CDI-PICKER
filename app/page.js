@@ -2777,7 +2777,7 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
               </>
             )}
           </div>
-          {officialCount>0&&<p style={{marginTop:22,fontSize:13,color:"#6b7280"}}>{officialCount} {officialCount===1?"portefólio":"portefólios"} já submetidos</p>}
+          {officialCount>0&&<p style={{marginTop:22,fontSize:13,color:"#94a3b8"}}>{officialCount} {officialCount===1?"portefólio":"portefólios"} já submetidos</p>}
         </div>
       </section>
 
@@ -2837,7 +2837,7 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
                 <svg viewBox="0 0 24 24" width={28} height={28} fill="none" stroke="#8ea2bf" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{c.icon}</svg>
               </div>
               <h3 style={{fontSize:17,fontWeight:700,marginBottom:8,letterSpacing:"-0.3px"}}>{c.t}</h3>
-              <p style={{fontSize:14,color:"#6b7280",lineHeight:1.6,margin:0}}>{c.d}</p>
+              <p style={{fontSize:14,color:"#94a3b8",lineHeight:1.6,margin:0}}>{c.d}</p>
             </div>
             </Reveal>
           ))}
@@ -2864,7 +2864,7 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
             ].map((r,i)=>(
               <div key={i} style={{display:"flex",alignItems:"flex-start",gap:12}}>
                 <span style={{color:"#22c55e",fontWeight:700,marginTop:1,flexShrink:0}}>✓</span>
-                <span style={{fontSize:14,color:"#9ca3af",lineHeight:1.5}}>{r}</span>
+                <span style={{fontSize:14,color:"#cbd5e1",lineHeight:1.5}}>{r}</span>
               </div>
             ))}
           </div>
@@ -2886,7 +2886,7 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
           <div style={{background:"linear-gradient(135deg,#0d1f12,#0a1520)",border:"1px solid rgba(34,197,94,0.2)",
             borderRadius:20,padding:"48px 40px",textAlign:"center"}}>
             <h2 style={{fontSize:26,fontWeight:700,marginBottom:8,letterSpacing:"-0.5px",textWrap:"balance"}}>A competição arranca a 1 de julho</h2>
-            <p style={{fontSize:15,color:"#6b7280",marginBottom:28}}>As submissões estão encerradas. Entra com o teu nome e código para veres o teu portefólio, ou acompanha o ranking ao vivo.</p>
+            <p style={{fontSize:15,color:"#94a3b8",marginBottom:28}}>As submissões estão encerradas. Entra com o teu nome e código para veres o teu portefólio, ou acompanha o ranking ao vivo.</p>
             <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap"}}>
               <Btn onClick={onMyPortfolio} primary large>Minhas 8 🔒</Btn>
               <a href="https://www.patreon.com/cw/Conversasdeinvestidores" target="_blank" rel="noopener noreferrer"
