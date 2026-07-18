@@ -2196,6 +2196,11 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
         .cdiNav{justify-content:center}
         .cdiClock{position:absolute;top:12px;right:14px;transition:opacity .35s ease, transform .35s ease}
         .cdiClockHidden{opacity:0;transform:translateY(-8px);pointer-events:none}
+        /* Fade suave ao mudar de página (só opacity — um transform aqui partiria o position:sticky
+           da toolbar/rails do Ranking). Re-dispara via key={page}. Combina com o cross-fade do fundo. */
+        @keyframes cdiPageIn{from{opacity:0}to{opacity:1}}
+        .cdiPageFade{animation:cdiPageIn .34s cubic-bezier(.22,.61,.36,1)}
+        @media(prefers-reduced-motion:reduce){.cdiPageFade{animation:none}}
         /* Sino de notificações: AO LADO do menu (fora do pill), como item da linha do menu. O dropdown
            ancora à direita (o sino fica no lado direito do grupo) p/ não sair do ecrã. */
         .cdiBell{position:relative;z-index:3}
@@ -2235,11 +2240,12 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
           WebkitMaskImage:"linear-gradient(180deg,#000 0%,#000 58%,transparent 100%)",maskImage:"linear-gradient(180deg,#000 0%,#000 58%,transparent 100%)"}}/>
         {/* SÓ no Ranking: 2ª camada de blur PURO (sem saturate) na zona inferior translúcida da
             nav, para desfocar as linhas de membros que espreitam por cima da toolbar fixa. Blur
-            de gradiente vazio ≈ invisível (não cria "faixa de cor"); só frosta o que passa atrás. */}
+            de gradiente vazio ≈ invisível (não cria "faixa de cor"); só frosta o que passa atrás.
+            A máscara DESVANECE a 100% (não corta a direito) → sem a "linha" entre dois tons de azul. */}
         {page==="ranking" && (
           <div aria-hidden="true" style={{position:"absolute",inset:0,zIndex:-1,pointerEvents:"none",
             backdropFilter:"blur(24px)",WebkitBackdropFilter:"blur(24px)",
-            WebkitMaskImage:"linear-gradient(180deg,transparent 38%,#000 62%,#000 100%)",maskImage:"linear-gradient(180deg,transparent 38%,#000 62%,#000 100%)"}}/>
+            WebkitMaskImage:"linear-gradient(180deg,transparent 34%,#000 58%,#000 78%,transparent 100%)",maskImage:"linear-gradient(180deg,transparent 34%,#000 58%,#000 78%,transparent 100%)"}}/>
         )}
         {/* Menu CENTRADO na página; o sino fica ABSOLUTO à direita do pill (não desloca o centro do menu). */}
         <div className="cdiNavRow" style={{position:"relative",width:"max-content",maxWidth:"calc(100% - 16px)",margin:"0 auto",zIndex:3}}>
@@ -2259,7 +2265,7 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
         )}
         <div className={"cdiClock"+(clockHidden?" cdiClockHidden":"")}><MarketStatus/></div>
       </header>
-      <main className="cdiMain" style={{position:"relative",zIndex:1}}>{children}</main>
+      <main className="cdiMain" style={{position:"relative",zIndex:1}}><div key={page} className="cdiPageFade">{children}</div></main>
       {(()=>{ const mw=page==="ranking"?900:page==="detail"?1320:(page==="ath"||page==="home")?940:null;
         return(<>
           <BackToTop maxWidth={mw} raised={submitted}/>
@@ -2388,8 +2394,8 @@ function NavLink({label,active,onClick,locked,caret,icon}){
       {icon
         ? <svg viewBox="0 0 24 24" width={20} height={20} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon}</svg>
         : label}
-      {/* ▾/🔒 ABSOLUTOS → não ocupam largura, para os ícones ficarem todos com o mesmo espaçamento. */}
-      {caret&&<span style={{position:"absolute",right:4,bottom:3,fontSize:8,opacity:0.55,pointerEvents:"none"}}>▾</span>}
+      {/* 🔒 ABSOLUTO → não ocupa largura, para os ícones ficarem todos com o mesmo espaçamento.
+          (o caret ▾ foi removido; o submenu do Ranking mantém-se via hover no RankingNav) */}
       {locked&&<span style={{position:"absolute",right:3,top:3,fontSize:9,opacity:0.5,pointerEvents:"none"}}>🔒</span>}
     </button>
   );
@@ -2745,7 +2751,7 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
                 imgStyle={{width:"clamp(120px,18vw,180px)",height:"auto"}}/>
             </span>
           </span>
-          <h1 className="heroTitle" style={{fontSize:"clamp(46px,11vw,104px)",fontWeight:800,lineHeight:0.98,letterSpacing:"-0.03em",margin:"0 0 20px"}}>
+          <h1 className="heroTitle" style={{fontSize:"clamp(34px,11vw,104px)",fontWeight:800,lineHeight:0.98,letterSpacing:"-0.02em",margin:"0 0 20px"}}>
             <span style={{display:"block",color:"#f1f5f9"}}>Conversas de</span>
             <span style={{display:"block",backgroundImage:"linear-gradient(180deg,#4ade80 0%,#22c55e 52%,#16a34a 100%)",
               WebkitBackgroundClip:"text",backgroundClip:"text",color:"transparent",paddingBottom:"0.08em"}}>Investidores.</span>
@@ -2763,7 +2769,7 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
             O <strong style={{color:"#e2e8f0",fontWeight:700}}>jogo de portefólios</strong> da nossa comunidade.{" "}<br className="heroBrk"/>
             Acompanha <strong style={{color:"#e2e8f0",fontWeight:700}}>ao vivo</strong> o ranking e a evolução ao longo da época.
           </p>
-          <style>{`@media(max-width:520px){.heroTitle{letterSpacing:-0.02em;line-height:1.02}.heroBtns{flex-wrap:nowrap;gap:10px;align-items:stretch}.heroBtns>button{flex:1;min-width:0;padding:14px 10px!important;font-size:15px!important;line-height:1.2}.heroBrk{display:none}} `}</style>
+          <style>{`@media(max-width:520px){.heroTitle{font-size:clamp(32px,10vw,46px)!important;letterSpacing:-0.01em!important;line-height:1.05}.heroBtns{flex-wrap:nowrap;gap:10px;align-items:stretch}.heroBtns>button{flex:1;min-width:0;padding:14px 10px!important;font-size:15px!important;line-height:1.2}.heroBrk{display:none}} `}</style>
           <div className="heroBtns" style={{display:"flex",justifyContent:"center",gap:12,flexWrap:"wrap"}}>
             {submitted?(
               <>
@@ -2801,7 +2807,13 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
         <style>{`
           .statGrid{display:grid;grid-template-columns:1fr 1fr 1fr}
           .statGrid .statCell + .statCell{border-left:1px solid rgba(255,255,255,0.08)}
-          @media(max-width:640px){.statGrid{grid-template-columns:1fr}.statGrid .statCell + .statCell{border-left:none;border-top:1px solid rgba(255,255,255,0.08)}}
+          @media(max-width:640px){
+            .statGrid{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:16;overflow:hidden}
+            .statGrid .statCell{padding:16px 6px}
+            .statIcon{width:32px;height:32px;margin-bottom:8px}
+            .statNum{font-size:clamp(24px,7vw,30px)}
+            .statLabel{font-size:9px;letter-spacing:1px;margin-top:6px}
+          }
         `}</style>
         <Reveal style={{background:"transparent"}}>
           <div className="statGrid">
@@ -2811,10 +2823,10 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
               {icon:<svg {...iconProps}><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><line x1="16" y1="2.5" x2="16" y2="6.5"/><line x1="8" y1="2.5" x2="8" y2="6.5"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,val:<><CountUp to={compDay}/><span style={{color:"#4b5563",fontWeight:700}}>/<CountUp to={365}/></span></>,label:"Dia da competição"},
             ].map((s,i)=>(
               <div key={i} className="statCell" style={{padding:"28px 20px",textAlign:"center"}}>
-                <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:42,height:42,borderRadius:12,
+                <div className="statIcon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:42,height:42,borderRadius:12,
                   background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)",marginBottom:14}}>{s.icon}</div>
-                <div style={{fontSize:"clamp(30px,7vw,44px)",fontWeight:800,letterSpacing:"-1.5px",lineHeight:1,color:"#e2e8f0",fontVariantNumeric:"tabular-nums"}}>{s.val}</div>
-                <div style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"1.5px",fontWeight:600,marginTop:10}}>{s.label}</div>
+                <div className="statNum" style={{fontSize:"clamp(30px,7vw,44px)",fontWeight:800,letterSpacing:"-1.5px",lineHeight:1,color:"#e2e8f0",fontVariantNumeric:"tabular-nums"}}>{s.val}</div>
+                <div className="statLabel" style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"1.5px",fontWeight:600,marginTop:10}}>{s.label}</div>
               </div>
             ))}
           </div>
@@ -3472,6 +3484,7 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
   const nowIso=useMemo(()=>new Date().toISOString(),[]); // "agora" fixo → conteúdo do data estável (não re-anima)
   const [mounted,setMounted]=useState(false);
   const [hi,setHi]=useState(null); // portefólio em destaque (hover no nome ou na linha)
+  const [legendAll,setLegendAll]=useState(false); // mobile: legenda mostra Top 5; "ver todos" expande
   // "Live": ponto pulsante no fim das linhas só com o mercado US aberto (e só desktop).
   const [mktLive,setMktLive]=useState(false);
   const [animDone,setAnimDone]=useState(false); // bolinhas só depois de as linhas "crescerem"
@@ -3775,13 +3788,18 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
             {/* Mobile: lista vertical SEMPRE visível com a rentabilidade (não depende de ter o dedo
                 no gráfico — o tooltip continua a funcionar ao tocar, para o valor num instante). */}
             <div className="raceLegendV">
-              {shown.map((p,i)=>(
+              {(legendAll?shown:shown.slice(0,5)).map((p,i)=>(
                 <div key={p.key} style={{display:"flex",alignItems:"center",gap:9,padding:"5px 2px",borderTop:i===0?"none":"1px solid rgba(255,255,255,0.06)"}}>
                   <span style={{width:8,height:8,borderRadius:"50%",background:raceColorOf(p,i),flexShrink:0}}/>
                   <span style={{flex:1,minWidth:0,fontSize:13.5,color:p._me?"#f1f5f9":"#cbd5e1",fontWeight:p._me?700:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p._me?`${p.name} (tu)`:p.name}</span>
                   <span style={{fontFamily:"ui-monospace, monospace",fontSize:13.5,fontWeight:800,color:(frameMode||!Number.isFinite(valOf(p)))?"#64748b":(valOf(p)>=0?"#4ade80":"#f87171")}}>{frameMode?"—":(Number.isFinite(valOf(p))?`${valOf(p)>=0?"+":""}${(valOf(p)*100).toFixed(2)}%`:"—")}</span>
                 </div>
               ))}
+              {shown.length>5&&(
+                <button onClick={()=>setLegendAll(v=>!v)} style={{marginTop:6,alignSelf:"center",background:"none",border:"none",color:"#93c5fd",fontSize:12.5,fontWeight:700,cursor:"pointer",padding:"4px 8px",fontFamily:"inherit"}}>
+                  {legendAll?"Ver menos":`Ver todos (${shown.length})`}
+                </button>
+              )}
             </div>
             {hasSpy&&!frameMode&&(
               <div style={{display:"flex",justifyContent:"center",marginTop:10}}>
