@@ -446,6 +446,15 @@ function BackToTop({maxWidth,raised}){
 // TEMPO REAL via Supabase Realtime (INSERT/UPDATE/DELETE). Autor edita (5 min) e apaga as suas;
 // admin apaga qualquer. Só para membros com sessão (renderizado no Shell só quando submitted).
 const CHAT_EDIT_WINDOW_MS=5*60*1000;
+const CHAT_URL_RE=/^(https?:\/\/[^\s]+)$/i;
+// Render do conteúdo: URLs → links clicáveis; @menções → realce. Divide por espaços (mantém-nos).
+function renderChatText(text){
+  return String(text||"").split(/(\s+)/).map((tok,i)=>{
+    if(CHAT_URL_RE.test(tok)) return <a key={i} href={tok} target="_blank" rel="noopener noreferrer" style={{color:"#93c5fd",textDecoration:"underline",overflowWrap:"anywhere"}}>{tok}</a>;
+    if(/^@[\p{L}\d._-]+/u.test(tok)) return <span key={i} style={{color:"#93c5fd",fontWeight:700}}>{tok}</span>;
+    return tok;
+  });
+}
 function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
   const [open,setOpen]=useState(false);
   useEffect(()=>{ if(openSignal) setOpen(true); },[openSignal]); // abrir a partir de uma notificação
@@ -457,6 +466,7 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
   const [editDraft,setEditDraft]=useState("");
   const [narrow,setNarrow]=useState(false);
   const [rx,setRx]=useState({}); // {messageId:{emoji:[{uid,name},...]}}
+  const [replyingTo,setReplyingTo]=useState(null); // {id,name,excerpt} da mensagem a responder
   const listRef=useRef(null);
   const openRef=useRef(false); openRef.current=open;
   const creds=()=>({name:myName,pin:sget(K.MYPIN)});
@@ -474,7 +484,7 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
     let cancel=false;
     (async()=>{
       const { data }=await supabase.from("chat_messages")
-        .select("id,user_id,author_name,content,created_at,edited_at")
+        .select("id,user_id,author_name,content,created_at,edited_at,reply_to,reply_to_name,reply_to_excerpt")
         .order("created_at",{ascending:true}).limit(100);
       if(cancel||!data) return;
       setMessages(data);
@@ -515,10 +525,10 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
     setBusy(true);
     try{
       const { name,pin }=creds();
-      const res=await fetch("/api/chat/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,pin,content})});
+      const res=await fetch("/api/chat/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,pin,content,replyTo:replyingTo?.id||null})});
       const j=await res.json().catch(()=>({}));
       if(!res.ok) showToast&&showToast(j.error||"Falha ao enviar.","error");
-      else{ setDraft(""); if(j.message) setMessages(m=>m.some(x=>x.id===j.message.id)?m:[...m,j.message]); }
+      else{ setDraft(""); setReplyingTo(null); if(j.message) setMessages(m=>m.some(x=>x.id===j.message.id)?m:[...m,j.message]); }
     }catch{ showToast&&showToast("Falha de ligação.","error"); }
     finally{ setBusy(false); }
   };
@@ -604,17 +614,23 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
                   const canEdit=mine&&(Date.now()-new Date(m.created_at).getTime()<=CHAT_EDIT_WINDOW_MS);
                   const canDel=mine||!!adminPw;
                   return(
-                    <div key={m.id} className="cdiChatMsg" style={{display:"flex",flexDirection:"column",gap:2}}>
+                    <div key={m.id} id={`chatmsg-${m.id}`} className="cdiChatMsg" style={{display:"flex",flexDirection:"column",gap:2}}>
                       <div style={{display:"flex",alignItems:"baseline",gap:6}}>
                         <span style={{fontSize:12.5,fontWeight:800,color:mine?"#93c5fd":"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.author_name}{mine?" (tu)":""}</span>
                         <span style={{fontSize:10.5,color:"#64748b",flexShrink:0}}>{timeAgo(m.created_at)}{m.edited_at?" · editado":""}</span>
-                        {(canEdit||canDel)&&(
-                          <span className="cdiChatActs" style={{marginLeft:"auto",display:"inline-flex",gap:8,flexShrink:0}}>
-                            {canEdit&&editingId!==m.id&&<button onClick={()=>{ setEditingId(m.id); setEditDraft(m.content); }} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:11,padding:0}}>editar</button>}
-                            {canDel&&<button onClick={()=>del(m)} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:11,padding:0}}>apagar</button>}
-                          </span>
-                        )}
+                        <span className="cdiChatActs" style={{marginLeft:"auto",display:"inline-flex",gap:8,flexShrink:0}}>
+                          {editingId!==m.id&&<button onClick={()=>setReplyingTo({id:m.id,name:m.author_name,excerpt:String(m.content).slice(0,90)})} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:11,padding:0}}>responder</button>}
+                          {canEdit&&editingId!==m.id&&<button onClick={()=>{ setEditingId(m.id); setEditDraft(m.content); }} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:11,padding:0}}>editar</button>}
+                          {canDel&&<button onClick={()=>del(m)} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:11,padding:0}}>apagar</button>}
+                        </span>
                       </div>
+                      {m.reply_to&&(
+                        <div onClick={()=>{ const el=document.getElementById(`chatmsg-${m.reply_to}`); if(el) el.scrollIntoView({block:"center",behavior:"smooth"}); }}
+                          title="Ir à mensagem citada" style={{borderLeft:"2px solid rgba(147,197,253,0.55)",paddingLeft:8,margin:"1px 0",cursor:"pointer",opacity:0.85,minWidth:0}}>
+                          <span style={{fontSize:11,fontWeight:700,color:"#93c5fd"}}>{m.reply_to_name||"mensagem"}</span>
+                          <div style={{fontSize:11.5,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.reply_to_excerpt||""}</div>
+                        </div>
+                      )}
                       {editingId===m.id?(
                         <div style={{display:"flex",gap:6,alignItems:"flex-end"}}>
                           <textarea value={editDraft} onChange={e=>setEditDraft(e.target.value.slice(0,500))} rows={2}
@@ -623,7 +639,7 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
                           <button onClick={()=>setEditingId(null)} style={{border:"none",borderRadius:9,padding:"7px 8px",fontSize:12,cursor:"pointer",background:"rgba(255,255,255,0.08)",color:"#cbd5e1"}}>✕</button>
                         </div>
                       ):(
-                        <span style={{fontSize:13.5,color:"#cbd5e1",lineHeight:1.45,whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{m.content}</span>
+                        <span style={{fontSize:13.5,color:"#cbd5e1",lineHeight:1.45,whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{renderChatText(m.content)}</span>
                       )}
                       {editingId!==m.id&&(
                         <span style={{display:"inline-flex",gap:6,flexWrap:"wrap",marginTop:2}}>
@@ -649,7 +665,19 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
                   );
                 })}
           </div>
-          <div style={{display:"flex",gap:8,alignItems:"flex-end",padding:"10px 12px",borderTop:"1px solid rgba(255,255,255,0.10)"}}>
+          <div style={{borderTop:"1px solid rgba(255,255,255,0.10)"}}>
+          {replyingTo&&(
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px 0"}}>
+              <div style={{flex:1,minWidth:0,borderLeft:"2px solid rgba(147,197,253,0.55)",paddingLeft:8}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#93c5fd"}}>A responder a {replyingTo.name}</div>
+                <div style={{fontSize:11.5,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{replyingTo.excerpt}</div>
+              </div>
+              <button onClick={()=>setReplyingTo(null)} aria-label="Cancelar resposta" style={{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",padding:2,flexShrink:0,display:"flex"}}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+          )}
+          <div style={{display:"flex",gap:8,alignItems:"flex-end",padding:"10px 12px"}}>
             <textarea value={draft} onChange={e=>setDraft(e.target.value.slice(0,500))}
               onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); send(); } }}
               rows={1} placeholder="Escreve no chat da competição…"
@@ -659,6 +687,7 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
                 background:busy||!draft.trim()?"rgba(255,255,255,0.08)":"#2563eb",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center"}}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
             </button>
+          </div>
           </div>
         </div>
       </div>
