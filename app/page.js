@@ -3479,6 +3479,9 @@ function SnapshotCard({cardRef,shown,data,raceYMin,raceYMax,dateStr,compDay,dayT
     </div>
   );
 }
+// Cache em memória (dura a sessão SPA, não sobrevive a reload) dos snapshots por conjunto de membros.
+// Ao voltar ao Ranking, o gráfico usa logo o que já tinha (instantâneo) e revalida em fundo sem re-animar.
+const RACE_SNAP_CACHE=new Map();
 function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDate,periodStart,periodLabelText,frameStart,periodRetOf,gamePeriod,hist}){
   const [snaps,setSnaps]=useState([]); // [] em vez de null → o gráfico desenha logo (baseline início→agora)
   const nowIso=useMemo(()=>new Date().toISOString(),[]); // "agora" fixo → conteúdo do data estável (não re-anima)
@@ -3488,6 +3491,8 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
   // "Live": ponto pulsante no fim das linhas só com o mercado US aberto (e só desktop).
   const [mktLive,setMktLive]=useState(false);
   const [animDone,setAnimDone]=useState(false); // bolinhas só depois de as linhas "crescerem"
+  const [snapsLoaded,setSnapsLoaded]=useState(false); // só anima DEPOIS de os snapshots carregarem (senão a animação recomeça quando o fetch chega)
+  const [animate,setAnimate]=useState(false); // anima o "crescimento" só na 1ª carga (sem cache); revisitas com cache = instantâneo, sem re-animar
   useEffect(()=>{
     // Pulsar segue o mercado REAL (fecha às 16:00 ET, como a pill "Mercado fechado") — não o isMktOpen,
     // que tem folga até às 16:15 (essa folga é só para filtrar snapshots, não para o "ao vivo").
@@ -3542,13 +3547,30 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
   const ids=shown.map(p=>p.id).join(",");
   useEffect(()=>{
     const idList=ids?ids.split(","):[];
-    if(!idList.length){ setSnaps([]); return; }
+    if(!idList.length){ setSnaps([]); return; } // sem membros ainda → mantém em "a carregar" (placeholder)
+    // Chave de cache independente da ORDEM (Geral/Semanal/Mensal têm os mesmos snaps crus, só re-baseiam).
+    const cacheKey=idList.slice().sort().join(",");
+    const cached=RACE_SNAP_CACHE.get(cacheKey);
+    // Anima SEMPRE o crescimento; a cache serve só para eliminar o DELAY do fetch na revisita.
+    if(cached){ setSnaps(cached); setSnapsLoaded(true); } // revisita: dados já em cache → anima logo, sem esperar a rede
+    else { setSnapsLoaded(false); }                       // 1ª carga: placeholder até os dados chegarem
+    setAnimate(true);
     let cancel=false;
     (async()=>{
-      const { data }=await supabase
-        .from("portfolio_snapshots").select("portfolio_id,captured_at,total_return")
-        .in("portfolio_id",idList).order("captured_at",{ascending:true});
-      if(!cancel) setSnaps(data||[]);
+      try{
+        const { data }=await supabase
+          .from("portfolio_snapshots").select("portfolio_id,captured_at,total_return")
+          .in("portfolio_id",idList).order("captured_at",{ascending:true});
+        if(!cancel){
+          const arr=data||[]; const prev=RACE_SNAP_CACHE.get(cacheKey);
+          RACE_SNAP_CACHE.set(cacheKey,arr);
+          const same=prev&&prev.length===arr.length&&prev.every((r,i)=>r.portfolio_id===arr[i].portfolio_id&&r.captured_at===arr[i].captured_at&&r.total_return===arr[i].total_return);
+          // Só re-aplica se os dados MUDARAM. Igual (revisita típica) → não mexe: a animação em curso não é interrompida
+          // nem recomeça. Se mudaram numa revisita, aplica sem re-animar (animate=false) p/ evitar duplo crescimento.
+          if(!same){ if(prev) setAnimate(false); setSnaps(arr); }
+        }
+      }catch{ /* mantém os snaps anteriores (cache) */ }
+      finally{ if(!cancel) setSnapsLoaded(true); } // desbloqueia o gráfico mesmo se o fetch falhar
     })();
     return()=>{ cancel=true; };
   },[ids]);
@@ -3648,11 +3670,12 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
   const frameMode=!!frameStart;
   // Espera a animação de "crescimento" das linhas terminar antes de mostrar as bolinhas live.
   useEffect(()=>{
+    if(frameMode||!(data&&data.length>=2)){ setAnimDone(false); return; }
+    if(!animate){ setAnimDone(true); return; } // revisita instantânea (sem animação) → bolinhas já
     setAnimDone(false);
-    if(frameMode||!(data&&data.length>=2)) return;
     const t=setTimeout(()=>setAnimDone(true),1170);
     return()=>clearTimeout(t);
-  },[data,frameMode,shown.length]);
+  },[data,frameMode,shown.length,animate]);
   // Valor por membro (cabeçalho/legenda): histórico → rentab. do período fechado; período ao vivo
   // (semana/mês) → rentab. DESSE período (não o total); "Geral" → total.
   const valOf=(p)=> (hist&&typeof hist.retOf==="function") ? hist.retOf(p)
@@ -3716,7 +3739,7 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
           return <span style={{color:"#94a3b8"}}>{preLaunch?"Pré-visualização com os portefólios demo. A partir de 1 de julho mostrará o Top 10 oficial":(periodStart||frameMode||hist)?`Top 10 — ${periodLabelText}`:"Top 10 — rentabilidade ao longo da competição"}</span>;
         })()}
       </p>
-      {!mounted?(
+      {(!mounted||(!hist&&!frameMode&&!snapsLoaded))?(
         <div style={{height:320}}/>
       ):frameMode?(
         // Grelha de partida: frame completo (2ª→6ª feira), todos a 0% — pronto a preencher 2ª feira.
@@ -3753,11 +3776,11 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
                   strokeWidth={hi===p.name?(p._me?4.5:3.2):(p._me?3.5:2)}
                   strokeOpacity={dim?0.15:1}
                   dot={(live&&!dim)?((dp)=> dp&&dp.index===lastIdx?<RaceLiveDot key={`ld-${p.key}`} cx={dp.cx} cy={dp.cy} color={raceColorOf(p,i)}/>:null):false}
-                  connectNulls isAnimationActive={true} animationDuration={1000} animationEasing="ease-out" animationBegin={i*30}
+                  connectNulls isAnimationActive={animate} animationDuration={1000} animationEasing="ease-out" animationBegin={i*30}
                   activeDot={hi===p.name?{r:4}:(p._me?{r:3.5}:false)}/>
               );
             }); })()}
-            {hasSpy&&<Line type="monotone" dataKey="S&P 500" name="S&P 500" stroke="#ffffff" strokeWidth={1.8} strokeDasharray="6 5" strokeOpacity={0.75} dot={false} connectNulls isAnimationActive={true} animationDuration={1000} animationEasing="ease-out"/>}
+            {hasSpy&&<Line type="monotone" dataKey="S&P 500" name="S&P 500" stroke="#ffffff" strokeWidth={1.8} strokeDasharray="6 5" strokeOpacity={0.75} dot={false} connectNulls isAnimationActive={animate} animationDuration={1000} animationEasing="ease-out"/>}
           </LineChart>
         </ResponsiveContainer>
       )}
@@ -4187,16 +4210,35 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   };
   useEffect(()=>{
     if(!highlightKey) return;
-    let cancelled=false;
-    const doScroll=()=>{ if(!cancelled&&highlightRef.current) highlightRef.current.scrollIntoView({block:"center",behavior:"auto"}); };
-    // Re-centra a MESMA linha várias vezes enquanto o layout assenta: o gráfico (Recharts mede e
-    // re-renderiza) e as imagens/sparklines carregam DEPOIS do 1.º paint e empurram a linha para
-    // baixo — uma só tentativa cairia no sítio errado. Como é sempre a mesma linha + behavior:auto,
-    // o membro fica visualmente centrado o tempo todo (sem solavancos).
-    const rafs=[requestAnimationFrame(()=>{ doScroll(); rafs.push(requestAnimationFrame(doScroll)); })];
-    const timers=[90,220,420,650].map(ms=>setTimeout(doScroll,ms));
+    let cancelled=false, raf=0;
+    const now=()=>(typeof performance!=="undefined"?performance.now():Date.now());
+    const start=now();
+    setCvOff(true); // alturas REAIS das linhas (sem a estimativa do content-visibility) → centro exato
+    // Mantém a MESMA linha COLADA ao centro em CADA frame enquanto o layout assenta (~1s): o gráfico
+    // Race, o Feed e as sparklines/imagens chegam em ondas e empurrariam a linha. Ao corrigir por-frame
+    // (antes do paint) a linha NUNCA salta — só recentra se saiu do sítio (não luta com o utilizador parado).
+    let stable=0;
+    const tick=()=>{
+      if(cancelled) return;
+      const el=highlightRef.current; let moved=false;
+      if(el){
+        const rect=el.getBoundingClientRect();
+        const off=(rect.top+rect.height/2)-window.innerHeight/2;
+        if(Math.abs(off)>1.5){ window.scrollBy(0,off); moved=true; }
+      }
+      stable=moved?0:stable+1;
+      // pára quando estabilizar (10 frames ≈ 150ms sem mexer) ou ao fim de 2s (rede de segurança).
+      if(stable<10 && now()-start<2000) raf=requestAnimationFrame(tick);
+      else setCvOff(false); // repõe o content-visibility depois de assentar
+    };
+    raf=requestAnimationFrame(tick);
+    // Se o utilizador começar a fazer scroll, larga o controlo imediatamente (não o "prende").
+    const stop=()=>{ cancelled=true; setCvOff(false); };
+    window.addEventListener("wheel",stop,{passive:true,once:true});
+    window.addEventListener("touchmove",stop,{passive:true,once:true});
     const tc=setTimeout(()=>{ if(!cancelled) clearHighlight&&clearHighlight(); },2600); // limpa o destaque no fim do flash
-    return()=>{ cancelled=true; rafs.forEach(cancelAnimationFrame); timers.forEach(clearTimeout); clearTimeout(tc); };
+    return()=>{ cancelled=true; cancelAnimationFrame(raf); clearTimeout(tc);
+      window.removeEventListener("wheel",stop); window.removeEventListener("touchmove",stop); };
   },[highlightKey]);
   // No 1º dia da semana o diário espelha o semanal (0% pré-abertura, ao vivo na sessão); resto = normal.
   const pfDayReturn=(p)=>weekDayOne?weekOf(p):pfDayRet(p,dayChange);
