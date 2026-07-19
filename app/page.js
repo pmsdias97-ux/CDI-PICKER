@@ -443,7 +443,7 @@ function BackToTop({maxWidth,raised}){
   return(
     <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} aria-label="Voltar ao topo" title="Voltar ao topo"
       style={{position:"fixed",right,bottom:raised?82:24,zIndex:45,width:46,height:46,borderRadius:"50%",cursor:"pointer",
-        background:"rgba(255,255,255,0.08)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",
+        background:"rgba(30,41,59,0.94)",/* fundo SÓLIDO: backdrop-filter em position:fixed dá bug no Safari iOS (botão flutua p/ o centro) */
         border:"1px solid rgba(255,255,255,0.18)",boxShadow:"0 8px 24px rgba(0,0,0,0.35)",color:"#e2e8f0",
         display:"flex",alignItems:"center",justifyContent:"center",
         opacity:show?1:0,transform:show?"translateY(0)":"translateY(12px)",pointerEvents:show?"auto":"none",
@@ -603,7 +603,7 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
     {/* Ícone flutuante (balão) */}
     <button onClick={()=>setOpen(o=>!o)} aria-label="Chat da competição" title="Chat da competição"
       style={{position:"fixed",right,bottom:24,zIndex:46,width:46,height:46,borderRadius:"50%",cursor:"pointer",
-        background:open?"#2563eb":"rgba(37,99,235,0.92)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",
+        background:open?"#1d4ed8":"#2563eb",/* fundo SÓLIDO: backdrop-filter em position:fixed dá bug no Safari iOS */
         border:"1px solid rgba(255,255,255,0.22)",boxShadow:"0 8px 24px rgba(0,0,0,0.4)",color:"#fff",
         display:"flex",alignItems:"center",justifyContent:"center",transition:"background .15s"}}>
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
@@ -2819,28 +2819,26 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
       {/* A competição em números (métricas reais do jogo) */}
       <section style={{maxWidth:980,margin:"0 auto",padding:"0 24px 80px"}}>
         <style>{`
-          .statGrid{display:grid;grid-template-columns:1fr 1fr 1fr}
-          .statGrid .statCell + .statCell{border-left:1px solid rgba(255,255,255,0.08)}
-          @media(max-width:640px){
-            .statGrid{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:16;overflow:hidden}
-            .statGrid .statCell{padding:16px 6px}
-            .statIcon{width:32px;height:32px;margin-bottom:8px}
-            .statNum{font-size:clamp(24px,7vw,30px)}
-            .statLabel{font-size:9px;letter-spacing:1px;margin-top:6px}
-          }
+          /* Sem box: 3 stats numa linha limpa (sem moldura nem divisórias). Tudo dimensionado por vw
+             → cabe sempre no ecrã do telemóvel (o problema era o inline sobrepor-se ao @media). */
+          .statGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(4px,2vw,20px);align-items:start}
+          .statCell{text-align:center;padding:0 2px;min-width:0}
+          .statIcon{display:inline-flex;align-items:center;justify-content:center;color:#94a3b8;margin-bottom:clamp(8px,2.5vw,14px)}
+          .statIcon svg{width:clamp(20px,5.5vw,26px);height:clamp(20px,5.5vw,26px)}
+          .statNum{font-size:clamp(24px,7.5vw,44px);font-weight:800;letter-spacing:-1px;line-height:1;color:#e2e8f0;font-variant-numeric:tabular-nums;white-space:nowrap}
+          .statLabel{font-size:clamp(9px,2.5vw,11px);color:#6b7280;text-transform:uppercase;letter-spacing:clamp(.5px,0.4vw,1.5px);font-weight:600;margin-top:clamp(6px,1.6vw,10px);text-wrap:balance}
         `}</style>
         <Reveal style={{background:"transparent"}}>
           <div className="statGrid">
             {[
-              {icon:<svg {...iconProps}><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,val:<CountUp to={officialCount}/>,label:"Participantes"},
-              {icon:<svg {...iconProps}><line x1="6" y1="20" x2="6" y2="13"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="9"/></svg>,val:<CountUp to={officialCount*8}/>,label:"Ações escolhidas"},
+              {icon:<svg {...iconProps}><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,val:<CountUp to={officialCount}/>,label:"Participantes registados"},
               {icon:<svg {...iconProps}><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><line x1="16" y1="2.5" x2="16" y2="6.5"/><line x1="8" y1="2.5" x2="8" y2="6.5"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,val:<><CountUp to={compDay}/><span style={{color:"#4b5563",fontWeight:700}}>/<CountUp to={365}/></span></>,label:"Dia da competição"},
+              {icon:<svg {...iconProps}><line x1="6" y1="20" x2="6" y2="13"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="9"/></svg>,val:<CountUp to={officialCount*8}/>,label:"Ações escolhidas"},
             ].map((s,i)=>(
-              <div key={i} className="statCell" style={{padding:"28px 20px",textAlign:"center"}}>
-                <div className="statIcon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:42,height:42,borderRadius:12,
-                  background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)",marginBottom:14}}>{s.icon}</div>
-                <div className="statNum" style={{fontSize:"clamp(30px,7vw,44px)",fontWeight:800,letterSpacing:"-1.5px",lineHeight:1,color:"#e2e8f0",fontVariantNumeric:"tabular-nums"}}>{s.val}</div>
-                <div className="statLabel" style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"1.5px",fontWeight:600,marginTop:10}}>{s.label}</div>
+              <div key={i} className="statCell">
+                <div className="statIcon">{s.icon}</div>
+                <div className="statNum">{s.val}</div>
+                <div className="statLabel">{s.label}</div>
               </div>
             ))}
           </div>
