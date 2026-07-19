@@ -417,6 +417,17 @@ function LeftBackRail({gap,onBack,label="Voltar ao ranking"}){
   );
 }
 
+// Portal para o document.body. Tira os filhos de dentro do root do Shell (que tem overflow-x:clip):
+// no Safari iOS, um ancestral com overflow clip/hidden PARTE o position:fixed — os botões "flutuam"
+// e prendem-se ao centro do ecrã ao fazer scroll. Fora desse ancestral, o fixed volta a ser relativo
+// à viewport (comportamento correto). Só monta no cliente (evita SSR sem document).
+function Portal({children}){
+  const [mounted,setMounted]=useState(false);
+  useEffect(()=>{ setMounted(true); },[]);
+  if(!mounted||typeof document==="undefined") return null;
+  return createPortal(children, document.body);
+}
+
 // Botão flutuante "voltar ao topo" — só em desktop (hover/ponteiro fino); aparece com scroll.
 // Ancorado junto da coluna de conteúdo (maxWidth): fica ao lado da tabela, não no bordo da janela.
 function BackToTop({maxWidth,raised}){
@@ -2267,10 +2278,13 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
       </header>
       <main className="cdiMain" style={{position:"relative",zIndex:1}}><div key={page} className="cdiPageFade">{children}</div></main>
       {(()=>{ const mw=page==="ranking"?900:page==="detail"?1320:(page==="ath"||page==="home")?940:null;
-        return(<>
-          <BackToTop maxWidth={mw} raised={submitted}/>
-          {submitted&&<ChatWidget myName={myName} myUserId={myUserId} adminPw={adminPw} showToast={showToast} maxWidth={mw} openSignal={chatOpenReq}/>}
-        </>);
+        // Portal → fora do root (overflow-x:clip) p/ o position:fixed não "flutuar" ao centro no Safari iOS.
+        return(
+          <Portal>
+            <BackToTop maxWidth={mw} raised={submitted}/>
+            {submitted&&<ChatWidget myName={myName} myUserId={myUserId} adminPw={adminPw} showToast={showToast} maxWidth={mw} openSignal={chatOpenReq}/>}
+          </Portal>
+        );
       })()}
       <UpdateBanner/>
       {toast&&(
