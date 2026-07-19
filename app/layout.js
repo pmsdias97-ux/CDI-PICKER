@@ -30,7 +30,10 @@ export default function RootLayout({ children }) {
     >
       {/* suppressHydrationWarning: extensões (ex.: Grammarly) injetam atributos
           no <body> antes da hidratação, causando um mismatch benigno. */}
-      <body className="min-h-full flex flex-col" suppressHydrationWarning>{children}</body>
+      {/* NOTA: SEM `flex flex-col` no body. No Safari iOS, um flex container no body faz os
+          position:fixed descendentes (ex.: FABs) serem posicionados relativos ao container e não à
+          viewport → "flutuam"/prendem-se ao centro ao fazer scroll. min-h-full chega p/ a altura. */}
+      <body className="min-h-full" suppressHydrationWarning>{children}</body>
     </html>
   );
 }
