@@ -50,6 +50,17 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* O Safari iOS faz ZOOM ao focar um campo com font-size < 16px — e não volta ao normal ao sair
+   (fica preso, com scroll horizontal). Forçar 16px em TODOS os campos de texto em mobile evita
+   sempre esse zoom. Só mobile → o desktop mantém os tamanhos originais. */
+@media (max-width: 640px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 /* Títulos das boxes (Evolução / Exposição) centrados em mobile */
 @media (max-width: 560px) { .detailCardTitle { text-align: center; } }
 
