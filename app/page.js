@@ -761,7 +761,8 @@ function NotifBell({myName,onLink,showToast}){
             ? <div style={{padding:"22px 14px",textAlign:"center",color:"#64748b",fontSize:13}}>Sem notificações.</div>
             : items.map(n=>(
                 <div key={n.id} onClick={()=>clickItem(n)} style={{display:"flex",flexDirection:"column",gap:2,padding:"10px 14px",cursor:n.link?"pointer":"default",
-                  borderBottom:"1px solid rgba(255,255,255,0.06)",background:n.read?"transparent":"rgba(96,165,250,0.08)"}}>
+                  borderBottom:"1px solid rgba(255,255,255,0.06)",background:n.read?"transparent":"rgba(96,165,250,0.08)",
+                  borderLeft:n.type==="admin"?"3px solid #3b82f6":"3px solid transparent"}}>
                   <span style={{fontSize:13,fontWeight:700,color:"#e2e8f0",lineHeight:1.35}}>{n.title}</span>
                   {n.body&&<span style={{fontSize:12,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.body}</span>}
                   <span style={{fontSize:10.5,color:"#64748b"}}>{timeAgo(n.created_at)}</span>
@@ -1993,9 +1994,12 @@ export default function App(){
     if(link==="mine") openMyPortfolio();
     else if(link==="ranking") navRank("total");
     else if(link==="ranking-week") navRank("week");
+    else if(link==="ranking-month") navRank("month");
+    else if(link==="ath") nav("ath");
+    else if(link==="updates"){ nav("home"); setTimeout(()=>{ const el=document.getElementById("updates-feedbacks"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); },400); }
     else if(link==="chat") setChatOpenReq(x=>x+1);
     else if(link.startsWith("p:")){ const id=link.slice(2); const pf=portfolios.find(p=>p.id===id); if(pf) openDetail(pf.key); }
-  },[openMyPortfolio,navRank,openDetail,portfolios]);
+  },[openMyPortfolio,navRank,nav,openDetail,portfolios]);
 
   const submitted=hasSubmitted;
 
@@ -6267,6 +6271,24 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
   const [aUpdates,setAUpdates]=useState(null); // updates (recap diário) — null = por carregar
   const [aFeedback,setAFeedback]=useState(null); // feedback dos membros (com autor, só admin)
   const [bodyEdits,setBodyEdits]=useState({}); // { day: texto } em edição
+  // Notificação manual (broadcast) para todos os membros.
+  const [nTitle,setNTitle]=useState("");
+  const [nBody,setNBody]=useState("");
+  const [nLink,setNLink]=useState("");
+  const [nSending,setNSending]=useState(false);
+  async function sendNotifyAll(){
+    const title=nTitle.trim(); if(!title){ showToast("Escreve um título.","error"); return; }
+    if(!confirm(`Enviar esta notificação a TODOS os membros?\n\n"${title}"`)) return;
+    setNSending(true);
+    try{
+      const r=await fetch("/api/admin/notify-all",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,title,body:nBody.trim(),link:nLink})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok||!j.ok){ showToast(j.error||"Não foi possível enviar.","error"); return; }
+      setNTitle(""); setNBody(""); setNLink("");
+      showToast(`Notificação enviada a ${j.count} ${j.count===1?"membro":"membros"}.`);
+    }catch{ showToast("Falha de ligação.","error"); }
+    finally{ setNSending(false); }
+  }
   async function loadUpdates(){
     try{
       const r=await fetch("/api/admin/updates",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,action:"list"})});
@@ -6413,7 +6435,8 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
     dlCSV("detalhe.csv",rows);
   }
 
-  const TABS=[["portfolios","👥 Portefólios"],["game","⚙️ Jogo"],["updates","📣 Updates"],["feedback","💬 Feedback"],["export","⬇️ Exportar"]];
+  const TABS=[["portfolios","👥 Portefólios"],["game","⚙️ Jogo"],["updates","📣 Updates"],["notify","🔔 Notificar"],["feedback","💬 Feedback"],["export","⬇️ Exportar"]];
+  const memberCount=apfs.filter(p=>p.official).length;
 
   return(
     <div style={{maxWidth:1200,margin:"0 auto",padding:"40px 20px 80px"}}>
@@ -6553,6 +6576,54 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Notificar — broadcast manual a todos os membros (as automáticas continuam a funcionar) */}
+      {tab==="notify"&&(
+        <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,maxWidth:640}}>
+          <p style={{fontSize:13,color:"#6b7280",margin:"0 0 4px"}}>Escreve uma notificação e envia a <strong style={{color:"#94a3b8"}}>todos os {memberCount} membros</strong>. Aparece no sino de cada um (não lida). As notificações automáticas (comentários, reações, vencedor da semana…) continuam na mesma.</p>
+          <div style={{display:"flex",flexDirection:"column",gap:14,marginTop:18}}>
+            <label style={{display:"flex",flexDirection:"column",gap:6}}>
+              <span style={{fontSize:12,color:"#94a3b8",fontWeight:600}}>Título <span style={{color:"#64748b",fontWeight:400}}>({nTitle.length}/120)</span></span>
+              <input value={nTitle} onChange={e=>setNTitle(e.target.value.slice(0,120))} placeholder="Ex.: Nova funcionalidade no ranking 🎉"
+                style={{background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"11px 12px",color:"#e2e8f0",fontSize:14,fontFamily:"inherit",width:"100%",boxSizing:"border-box",outline:"none"}}/>
+            </label>
+            <label style={{display:"flex",flexDirection:"column",gap:6}}>
+              <span style={{fontSize:12,color:"#94a3b8",fontWeight:600}}>Mensagem <span style={{color:"#64748b",fontWeight:400}}>(opcional · {nBody.length}/300)</span></span>
+              <textarea value={nBody} onChange={e=>setNBody(e.target.value.slice(0,300))} rows={3} placeholder="Detalhe (opcional). Aparece por baixo do título."
+                style={{background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"11px 12px",color:"#e2e8f0",fontSize:14,fontFamily:"inherit",width:"100%",boxSizing:"border-box",outline:"none",resize:"vertical"}}/>
+            </label>
+            <label style={{display:"flex",flexDirection:"column",gap:6}}>
+              <span style={{fontSize:12,color:"#94a3b8",fontWeight:600}}>Ao clicar, abre</span>
+              <select value={nLink} onChange={e=>setNLink(e.target.value)}
+                style={{background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"11px 12px",color:"#e2e8f0",fontSize:14,fontFamily:"inherit",width:"100%",boxSizing:"border-box",outline:"none"}}>
+                <option value="">Nada (só a mensagem)</option>
+                <option value="ranking">Ranking Geral</option>
+                <option value="ranking-month">Ranking Mensal</option>
+                <option value="ranking-week">Ranking Semanal</option>
+                <option value="chat">Chat da competição</option>
+                <option value="mine">As Minhas 8</option>
+                <option value="updates">Secção Updates (Homepage)</option>
+                <option value="ath">ATH</option>
+              </select>
+            </label>
+            {(nTitle.trim()||nBody.trim())&&(
+              <div style={{background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.25)",borderRadius:12,padding:"11px 14px"}}>
+                <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:700,marginBottom:6}}>Pré-visualização</div>
+                <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",lineHeight:1.35}}>{nTitle.trim()||"(título)"}</div>
+                {nBody.trim()&&<div style={{fontSize:12,color:"#94a3b8",marginTop:2}}>{nBody.trim()}</div>}
+                <div style={{fontSize:10.5,color:"#64748b",marginTop:4}}>agora</div>
+              </div>
+            )}
+            <div>
+              <button onClick={sendNotifyAll} disabled={nSending||!nTitle.trim()}
+                style={{border:"none",borderRadius:10,padding:"12px 22px",fontSize:14,fontWeight:800,cursor:nSending||!nTitle.trim()?"not-allowed":"pointer",
+                  background:nSending||!nTitle.trim()?"rgba(255,255,255,0.08)":"#2563eb",color:"#fff"}}>
+                {nSending?"A enviar…":`Enviar a ${memberCount} membros`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
