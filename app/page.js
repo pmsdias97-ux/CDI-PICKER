@@ -4848,12 +4848,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
            todas as linhas alinhadas e as sparklines (1fr) começam todas no mesmo sítio, colado ao
            maior nome. Fallback 190px enquanto não mede. */
         .rkRow{display:grid;grid-template-columns:40px var(--rk-name-w,190px) 1fr 72px 72px 56px 150px;gap:8px}
-        /* Lista longa (124 linhas × sparkline + 8 ícones): o browser não renderiza/pinta as linhas
-           fora do ecrã → scroll fluido (senão saturava o compositor e a pintura ficava atrasada).
-           Só no desktop, onde as linhas têm altura fixa de 1 linha (evita saltos). */
-        @media(min-width:861px){ .rkDataRow{content-visibility:auto;contain-intrinsic-size:auto 56px} }
-        /* Durante o scroll para "A tua posição": alturas reais em todas as linhas → centra à 1ª. */
-        .rkNoCV .rkDataRow{content-visibility:visible!important}
+        /* NOTA: já NÃO usamos content-visibility:auto nas linhas. Com sparkline em SVG leve (não Recharts)
+           as ~124 linhas pintam bem de uma vez; o content-visibility fazia as linhas aparecerem EM BRANCO
+           ao fazer scroll (o browser só as pintava ao entrar no ecrã). .rkNoCV fica como no-op inofensivo. */
         .rkSpark{display:flex;align-items:center;align-self:center;height:24px;overflow:hidden;min-width:0}
         .rkNarrowHd{display:none}   /* cabeçalhos simples #/Membro: só aparecem no mobile */
         @keyframes rkHiFlash{0%{background-color:rgba(59,130,246,0.30)}60%{background-color:rgba(59,130,246,0.15)}100%{background-color:rgba(59,130,246,0)}}
