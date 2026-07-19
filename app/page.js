@@ -403,7 +403,7 @@ function LeftBackRail({gap,onBack,label="Voltar ao ranking"}){
       role="button" aria-label={label} title={label}
       style={{position:"fixed",left:0,top:0,bottom:0,width:gap,cursor:"pointer",zIndex:40,
         display:"flex",alignItems:"center",justifyContent:"center",
-        background:hover?"linear-gradient(90deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.04) 50%, transparent 100%)":"transparent",
+        background:hover?"linear-gradient(90deg, rgba(0,0,0,0.38) 0%, rgba(0,0,0,0.14) 50%, transparent 100%)":"transparent",
         transition:"background .25s ease"}}>
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10,padding:8,
         opacity:hover?1:0,transform:hover?"translateX(0)":"translateX(12px)",transition:"opacity .25s ease, transform .25s ease"}}>
