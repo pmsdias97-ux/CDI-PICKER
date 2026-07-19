@@ -417,15 +417,21 @@ function LeftBackRail({gap,onBack,label="Voltar ao ranking"}){
   );
 }
 
-// Portal para o document.body. Tira os filhos de dentro do root do Shell (que tem overflow-x:clip):
-// no Safari iOS, um ancestral com overflow clip/hidden PARTE o position:fixed — os botões "flutuam"
-// e prendem-se ao centro do ecrã ao fazer scroll. Fora desse ancestral, o fixed volta a ser relativo
-// à viewport (comportamento correto). Só monta no cliente (evita SSR sem document).
+// Portal para um <div> block dedicado no fim do <body>. Isto resolve DOIS bugs de position:fixed no
+// Safari iOS que faziam os botões "flutuar" e prender-se ao centro ao fazer scroll:
+//  1) ancestral com overflow clip/hidden (o root do Shell) → tira-os de lá;
+//  2) o <body> é `flex flex-col` (layout.js) e um fixed que é FILHO DIRETO de um flex container é
+//     posicionado relativo ao container, não à viewport. O wrapper block (não é flex item) evita isso.
+// Só monta no cliente (evita SSR sem document).
 function Portal({children}){
-  const [mounted,setMounted]=useState(false);
-  useEffect(()=>{ setMounted(true); },[]);
-  if(!mounted||typeof document==="undefined") return null;
-  return createPortal(children, document.body);
+  const [container,setContainer]=useState(null);
+  useEffect(()=>{
+    const el=document.createElement("div");
+    document.body.appendChild(el);
+    setContainer(el);
+    return()=>{ try{ document.body.removeChild(el); }catch{} };
+  },[]);
+  return container?createPortal(children, container):null;
 }
 
 // Botão flutuante "voltar ao topo" — só em desktop (hover/ponteiro fino); aparece com scroll.
