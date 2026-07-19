@@ -655,7 +655,7 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
                       {editingId===m.id?(
                         <div style={{display:"flex",gap:6,alignItems:"flex-end"}}>
                           <textarea value={editDraft} onChange={e=>setEditDraft(e.target.value.slice(0,500))} rows={2}
-                            style={{flex:1,resize:"vertical",minHeight:40,background:"rgba(0,0,0,0.28)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,padding:"6px 9px",color:"#e2e8f0",fontSize:13,fontFamily:"inherit",lineHeight:1.4,outline:"none"}}/>
+                            style={{flex:1,resize:"vertical",minHeight:40,background:"rgba(0,0,0,0.28)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,padding:"6px 9px",color:"#e2e8f0",fontSize:16,fontFamily:"inherit",lineHeight:1.4,outline:"none"}}/>
                           <button onClick={()=>saveEdit(m.id)} style={{border:"none",borderRadius:9,padding:"7px 11px",fontSize:12,fontWeight:700,cursor:"pointer",background:"#22c55e",color:"#04120a"}}>Guardar</button>
                           <button onClick={()=>setEditingId(null)} style={{border:"none",borderRadius:9,padding:"7px 8px",fontSize:12,cursor:"pointer",background:"rgba(255,255,255,0.08)",color:"#cbd5e1"}}>✕</button>
                         </div>
@@ -702,7 +702,7 @@ function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
             <textarea ref={inputRef} value={draft} onChange={e=>setDraft(e.target.value.slice(0,500))}
               onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); send(); } }}
               rows={1} placeholder="Escreve no chat da competição…"
-              style={{flex:1,resize:"none",minHeight:40,maxHeight:120,background:"rgba(0,0,0,0.28)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:12,padding:"9px 12px",color:"#e2e8f0",fontSize:14,fontFamily:"inherit",lineHeight:1.4,outline:"none"}}/>
+              style={{flex:1,resize:"none",minHeight:40,maxHeight:120,background:"rgba(0,0,0,0.28)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:12,padding:"9px 12px",color:"#e2e8f0",fontSize:16,fontFamily:"inherit",lineHeight:1.4,outline:"none"}}/>{/* 16px: <16 faz o Safari iOS dar zoom ao focar */}
             <button onClick={send} disabled={busy||!draft.trim()} aria-label="Enviar"
               style={{border:"none",borderRadius:12,width:42,height:42,flexShrink:0,cursor:busy||!draft.trim()?"not-allowed":"pointer",
                 background:busy||!draft.trim()?"rgba(255,255,255,0.08)":"#2563eb",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center"}}>
