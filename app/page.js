@@ -5629,6 +5629,12 @@ const BADGE_ICONS={
   "all-green":<><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9"/></>,
   "short-master":<><path d="M3 7l6 6 4-4 8 8"/><path d="M17 17h4v-4"/></>,
   resilient:<><path d="M12 3l7 3v5c0 4-3 7-7 8-4-1-7-4-7-8V6l7-3z"/><path d="M9 12l2 2 4-4"/></>,
+  leader:<><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9 6.8 19l1-5.8L3.5 9.2l5.9-.9z"/></>,
+  podium:<><circle cx="12" cy="9" r="6"/><path d="M9 14l-1.5 7L12 19l4.5 2L15 14"/></>,
+  top10:<><path d="M3 17l6-6 4 4 7-7"/><path d="M14 8h6v6"/></>,
+  "gain-10":<><circle cx="12" cy="12" r="9"/><path d="M8 12l4-4 4 4M12 8v8"/></>,
+  "gain-20":<><circle cx="12" cy="12" r="9"/><path d="M8 12l4-4 4 4M12 8v8"/></>,
+  "green-streak":<><path d="M12 2s5 4 5 9a5 5 0 0 1-10 0c0-2 1-3.5 1.5-4.5C9 8 11 6 12 2z"/></>,
 };
 // Badges de conquistas de um portefólio (gamificação leve). Vive dentro da box "Overview".
 function AchievementBadges({pf}){
@@ -5656,6 +5662,12 @@ function AchievementBadges({pf}){
     "all-green":{bg:"rgba(34,197,94,0.15)",border:"rgba(34,197,94,0.35)",color:"#4ade80"},
     "short-master":{bg:"rgba(56,189,248,0.15)",border:"rgba(56,189,248,0.35)",color:"#7dd3fc"},
     resilient:{bg:"rgba(168,85,247,0.15)",border:"rgba(168,85,247,0.35)",color:"#c084fc"},
+    leader:{bg:"rgba(250,204,21,0.18)",border:"rgba(250,204,21,0.42)",color:"#fde047"},
+    podium:{bg:"rgba(217,119,6,0.15)",border:"rgba(217,119,6,0.35)",color:"#fbbf24"},
+    top10:{bg:"rgba(96,165,250,0.15)",border:"rgba(96,165,250,0.35)",color:"#93c5fd"},
+    "gain-10":{bg:"rgba(34,197,94,0.15)",border:"rgba(34,197,94,0.35)",color:"#4ade80"},
+    "gain-20":{bg:"rgba(16,185,129,0.18)",border:"rgba(16,185,129,0.4)",color:"#34d399"},
+    "green-streak":{bg:"rgba(251,146,60,0.16)",border:"rgba(251,146,60,0.38)",color:"#fb923c"},
   };
   return(
     <div style={{marginTop:6,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.07)"}}>
@@ -6289,6 +6301,19 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
     }catch{ showToast("Falha de ligação.","error"); }
     finally{ setNSending(false); }
   }
+  // Saúde operacional (só leitura).
+  const [health,setHealth]=useState(null);
+  const [loadingHealth,setLoadingHealth]=useState(false);
+  async function loadHealth(){
+    setLoadingHealth(true);
+    try{
+      const r=await fetch("/api/admin/health",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok){ showToast(j.error||"Não foi possível carregar.","error"); }
+      else setHealth(j);
+    }catch{ showToast("Falha de ligação.","error"); }
+    finally{ setLoadingHealth(false); }
+  }
   async function loadUpdates(){
     try{
       const r=await fetch("/api/admin/updates",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,action:"list"})});
@@ -6333,7 +6358,7 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
     })();
     return()=>{ cancel=true; };
   },[pw,portfolios]);
-  useEffect(()=>{ if(tab==="updates"&&aUpdates===null) loadUpdates(); if(tab==="feedback"&&aFeedback===null) loadAdminFeedback(); },[tab]);// eslint-disable-line
+  useEffect(()=>{ if(tab==="updates"&&aUpdates===null) loadUpdates(); if(tab==="feedback"&&aFeedback===null) loadAdminFeedback(); if(tab==="health"&&health===null&&!loadingHealth) loadHealth(); },[tab]);// eslint-disable-line
   // Usa os portefólios completos (admin) se disponíveis; senão, os públicos (prop).
   const apfs = fullPfs||portfolios;
   const aranking = apfs.map(p=>({...p,...pfStats(p,livePrices)}))
@@ -6435,7 +6460,7 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
     dlCSV("detalhe.csv",rows);
   }
 
-  const TABS=[["portfolios","👥 Portefólios"],["game","⚙️ Jogo"],["updates","📣 Updates"],["notify","🔔 Notificar"],["feedback","💬 Feedback"],["export","⬇️ Exportar"]];
+  const TABS=[["portfolios","👥 Portefólios"],["game","⚙️ Jogo"],["updates","📣 Updates"],["notify","🔔 Notificar"],["health","🩺 Saúde"],["feedback","💬 Feedback"],["export","⬇️ Exportar"]];
   const memberCount=apfs.filter(p=>p.official).length;
 
   return(
@@ -6626,6 +6651,70 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
           </div>
         </div>
       )}
+
+      {/* Saúde operacional — diagnóstico só de leitura */}
+      {tab==="health"&&(()=>{
+        const card={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:20,marginBottom:14};
+        const G="#4ade80",Y="#facc15",R="#f87171";
+        const Dot=({c})=><span style={{width:9,height:9,borderRadius:"50%",background:c,flexShrink:0,boxShadow:`0 0 8px ${c}`}}/>;
+        const Row=({c,label,value})=><div style={{display:"flex",alignItems:"center",gap:10,padding:"6px 0"}}><Dot c={c}/><span style={{fontSize:13,color:"#cbd5e1",flex:1}}>{label}</span><span style={{fontSize:13,fontWeight:700,color:"#e2e8f0",fontVariantNumeric:"tabular-nums"}}>{value}</span></div>;
+        const h=health;
+        return(
+          <div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+              <p style={{fontSize:13,color:"#6b7280",margin:0}}>Diagnóstico só de leitura. Verde = ok · amarelo = atenção · vermelho = corrigir.{h?.now&&<> · <span style={{color:"#4b5563"}}>lido {new Date(h.now).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}</span></>}</p>
+              <button onClick={loadHealth} disabled={loadingHealth} style={{border:"1px solid rgba(255,255,255,0.16)",background:"rgba(255,255,255,0.06)",color:"#e2e8f0",borderRadius:9,padding:"8px 14px",fontSize:13,fontWeight:700,cursor:loadingHealth?"default":"pointer"}}>{loadingHealth?"A ler…":"Atualizar"}</button>
+            </div>
+            {!h?(
+              <p style={{color:"#4b5563"}}>{loadingHealth?"A carregar…":"Sem dados."}</p>
+            ):(<>
+              {/* Snapshots */}
+              {(()=>{ const s=h.snapshots||{}; const c=s.missingCount===0?(s.daysSince>4?Y:G):(s.missingCount<5?Y:R);
+                return <div style={card}>
+                  <div style={{fontSize:12,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Snapshots (gráfico de evolução)</div>
+                  <Row c={c} label="Último dia" value={s.latestDate||"—"}/>
+                  <Row c={s.missingCount===0?G:(s.missingCount<5?Y:R)} label="Cobertura dos oficiais" value={`${s.covered}/${s.officials}${s.missingCount?` · faltam ${s.missingCount}`:""}`}/>
+                  <Row c={s.daysSince>4?R:(s.daysSince>3?Y:G)} label="Dias desde o último" value={s.daysSince==null?"—":`${s.daysSince}`}/>
+                  {s.missingCount>0&&<div style={{marginTop:6,fontSize:12,color:"#94a3b8"}}>Sem snapshot: {s.missing.join(", ")}{s.missingCount>s.missing.length?"…":""}</div>}
+                </div>; })()}
+              {/* Baselines semanais */}
+              {(()=>{ const w=h.week||{}; const c=w.missingCount===0?G:R;
+                return <div style={card}>
+                  <div style={{fontSize:12,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Baselines semanais · {w.period}</div>
+                  <Row c={w.tickers>0?G:R} label="Tickers com baseline" value={w.tickers}/>
+                  <Row c={G} label="Semana fechada (fecho gravado)" value={w.closed?"sim":"não (ao vivo)"}/>
+                  <Row c={c} label="Tickers oficiais sem baseline" value={w.missingCount}/>
+                  {w.missingCount>0&&<div style={{marginTop:6,fontSize:12,color:"#f87171"}}>{w.missingTickers.join(", ")}{w.missingCount>w.missingTickers.length?"…":""}</div>}
+                </div>; })()}
+              {/* Baseline mensal */}
+              {(()=>{ const m=h.month||{};
+                return <div style={card}>
+                  <div style={{fontSize:12,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Baseline mensal · {m.period}</div>
+                  <Row c={m.tickers>0?G:Y} label="Tickers com baseline do mês" value={m.tickers}/>
+                </div>; })()}
+              {/* Preços */}
+              {(()=>{ const p=h.prices||{}; const stale=p.staleHours!=null&&p.staleHours>=24;
+                return <div style={card}>
+                  <div style={{fontSize:12,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Preços (pipeline sp500_ath)</div>
+                  <Row c={stale?Y:G} label="Última atualização do pipeline" value={p.athLatest?`há ${p.staleHours}h`:"—"}/>
+                  <Row c={p.suspiciousCount===0?G:Y} label="Preços suspeitos (desvio >40% / sem preço)" value={p.suspiciousCount}/>
+                  {p.suspiciousCount>0&&(
+                    <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5}}>
+                      {p.suspicious.map((x,i)=>(
+                        <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:12.5,color:"#e2e8f0",background:"rgba(250,204,21,0.06)",border:"1px solid rgba(250,204,21,0.22)",borderRadius:8,padding:"6px 10px"}}>
+                          <span style={{fontWeight:800,minWidth:56}}>{x.ticker}</span>
+                          <span style={{color:"#94a3b8",flex:1}}>{x.reason}</span>
+                          <span style={{fontVariantNumeric:"tabular-nums"}}>{x.price==null?"—":x.price} {x.ref!=null?`vs ${x.ref}`:""} {x.dev!=null?`(${x.dev>=0?"+":""}${(x.dev*100).toFixed(0)}%)`:""}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{marginTop:8,fontSize:11.5,color:"#64748b"}}>Nota: ao fim de semana os preços já são congelados no fecho de 6ª (guarda automática) — suspeitos aqui indicam tick mau do pipeline a corrigir.</div>
+                </div>; })()}
+            </>)}
+          </div>
+        );
+      })()}
 
       {/* Feedback — moderação (autor visível só ao admin) */}
       {tab==="feedback"&&(

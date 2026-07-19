@@ -53,16 +53,34 @@ export async function GET(request) {
   // Preços atuais (best effort).
   const tickers = stocks.map((s) => s.ticker);
   const prices = await fetchPrices(supabase, tickers);
+  const totalRet = portfolioReturn(stocks, prices);
 
   const badges = [];
+
+  // 🥇 Lugar no Ranking Geral (pelo ÚLTIMO snapshot congelado — só o MELHOR badge). Só oficiais têm snapshot diário.
+  try {
+    const { data: latestSnap } = await supabase.from("portfolio_snapshots").select("date").order("date", { ascending: false }).limit(1).maybeSingle();
+    if (latestSnap?.date) {
+      const { data: daySnaps } = await supabase.from("portfolio_snapshots").select("portfolio_id, total_return").eq("date", latestSnap.date);
+      const ranked = (daySnaps || []).filter((s) => Number.isFinite(Number(s.total_return))).sort((a, b) => Number(b.total_return) - Number(a.total_return));
+      const idx = ranked.findIndex((s) => s.portfolio_id === pf.id);
+      const rank = idx >= 0 ? idx + 1 : null;
+      if (rank === 1) badges.push({ id: "leader", label: "Líder", emoji: "🥇", description: "1º no Ranking Geral." });
+      else if (rank >= 2 && rank <= 3) badges.push({ id: "podium", label: "Pódio", emoji: "🏆", description: `${rank}º no Ranking Geral (Top 3).` });
+      else if (rank >= 4 && rank <= 10) badges.push({ id: "top10", label: "Top 10", emoji: "🔟", description: `${rank}º no Ranking Geral (Top 10).` });
+    }
+  } catch { /* sem snapshots → sem badge de lugar */ }
+
+  // 🚀 Marco de rentabilidade (só o MAIOR alcançado).
+  if (totalRet >= 0.20) badges.push({ id: "gain-20", label: "+20%", emoji: "🌟", description: "Rentabilidade total igual ou acima de +20%." });
+  else if (totalRet >= 0.10) badges.push({ id: "gain-10", label: "+10%", emoji: "🚀", description: "Rentabilidade total igual ou acima de +10%." });
 
   // 🏆 Bateu o S&P
   if (Number.isFinite(pf.spy_initial_price) && pf.spy_initial_price > 0) {
     const spyPrice = await fetchQuote("SPY");
     if (typeof spyPrice === "number") {
-      const portfolioRet = portfolioReturn(stocks, prices);
       const spyRet = spyPrice / pf.spy_initial_price - 1;
-      if (portfolioRet > spyRet) {
+      if (totalRet > spyRet) {
         badges.push({
           id: "beat-spy",
           label: "Bate o S&P",
@@ -102,10 +120,10 @@ export async function GET(request) {
   // 🦾 Resiliente (drawdown >5% mas agora positivo)
   const { data: snapshots } = await supabase
     .from("portfolio_snapshots")
-    .select("total_return")
+    .select("date, total_return")
     .eq("portfolio_id", pf.id)
     .order("captured_at", { ascending: true });
-  const returns = (snapshots || []).map((s) => Number(s.total_return)).filter(Number.isFinite);
+  const returns = (snapshots || []).map((s) => Number(s.total_return)).filter(Number.isFinite); // por snapshot (drawdown)
   if (returns.length >= 2) {
     let peak = -Infinity;
     let maxDrawdown = 0;
@@ -114,8 +132,7 @@ export async function GET(request) {
       const dd = peak - r;
       if (dd > maxDrawdown) maxDrawdown = dd;
     }
-    const currentRet = portfolioReturn(stocks, prices);
-    if (maxDrawdown > 0.05 && currentRet > 0) {
+    if (maxDrawdown > 0.05 && totalRet > 0) {
       badges.push({
         id: "resilient",
         label: "Resiliente",
@@ -123,6 +140,17 @@ export async function GET(request) {
         description: "Recuperou de um drawdown superior a 5%.",
       });
     }
+  }
+
+  // 🔥 Streak: DIAS de sessão seguidos no verde. Conta por DIA (há vários snapshots/dia → usa o
+  // FECHO de cada dia = último snapshot desse dia), senão inflava (ex.: "27 dias" = 27 snapshots).
+  const byDay = new Map();
+  for (const s of snapshots || []) { const r = Number(s.total_return); if (Number.isFinite(r)) byDay.set(s.date, r); }
+  const dayReturns = [...byDay.values()];
+  if (dayReturns.length) {
+    let streak = 0;
+    for (let i = dayReturns.length - 1; i >= 0; i--) { if (dayReturns[i] > 0) streak++; else break; }
+    if (streak >= 5) badges.push({ id: "green-streak", label: `${streak} dias no verde`, emoji: "🔥", description: `${streak} dias de sessão seguidos com o portefólio no verde.` });
   }
 
   return Response.json({ ok: true, badges });
