@@ -2,8 +2,16 @@ import { after } from "next/server";
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
 import { fetchQuoteFull, flushQuoteRevalidations } from "../../../lib/marketData";
 import { isValidTicker, rateLimited } from "../../../lib/apiGuards";
+import { usMarketOpen } from "../../../lib/marketHours";
 
 export const maxDuration = 30; // corta de forma limpa se algo demorar
+
+// Tickers cronicamente instáveis no pipeline yfinance (cotações erradas, sobretudo ao fim de semana /
+// fora de horas, e negociação esparsa). Para estes, quando o mercado está FECHADO (ou o preço do
+// pipeline destoa absurdamente), servimos a ÂNCORA sã = último fecho/abertura dos weekly_baselines
+// (frozen, coerente com os baselines) em vez do preço ao vivo. Evita que um mau tick estrague o ranking.
+const UNSTABLE_TICKERS = new Set(["ATLN"]);
+const UNSTABLE_DEV = 0.30; // com o mercado aberto, só rejeita desvios > 30% da âncora (garbage, não movimento normal)
 
 // FONTE DOS PREÇOS: a tabela sp500_ath (pipeline yfinance no GitHub, de minuto a minuto).
 // É a MESMA fonte dos baselines trancados → a rentabilidade fica coerente (preço atual e
@@ -30,6 +38,30 @@ async function athMap() {
     map.set(norm(r.symbol), { price, prev: Number.isFinite(prev) && prev > 0 ? prev : null });
   }
   athSnap = { at: Date.now(), map };
+  return map;
+}
+
+// Âncora sã (frozen) para os UNSTABLE_TICKERS: último fecho dos weekly_baselines (ou abertura se a
+// semana ainda não fechou). Muda 1×/semana → cache generosa. {norm(ticker): price}.
+let unstableSnap = { at: 0, map: null };
+const UNSTABLE_TTL_MS = 5 * 60 * 1000;
+async function unstableRefMap() {
+  if (!UNSTABLE_TICKERS.size) return new Map();
+  if (unstableSnap.map && Date.now() - unstableSnap.at < UNSTABLE_TTL_MS) return unstableSnap.map;
+  const map = new Map();
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data } = await supabase
+      .from("weekly_baselines").select("ticker, period, price, close_price")
+      .in("ticker", [...UNSTABLE_TICKERS]).order("period", { ascending: false });
+    for (const r of data || []) {
+      const t = norm(r.ticker);
+      if (map.has(t)) continue; // já temos o período mais recente deste ticker
+      const ref = r.close_price != null ? Number(r.close_price) : Number(r.price);
+      if (Number.isFinite(ref) && ref > 0) map.set(t, ref);
+    }
+  } catch { /* sem âncora → a guarda não atua */ }
+  unstableSnap = { at: Date.now(), map };
   return map;
 }
 
@@ -91,6 +123,23 @@ export async function GET(request) {
         changes[ticker] = prices[ticker] / q.prevClose - 1;
       }
     } catch { /* sem variação; o preço já está preenchido */ }
+  }
+
+  // 4) GUARDA de tickers instáveis (ex.: ATLN): com o mercado FECHADO, ou preço do pipeline a destoar
+  // >30% da âncora sã, servimos a âncora (fecho congelado dos weekly_baselines). Só toca nestes tickers.
+  const unstableInReq = tickers.filter((t) => UNSTABLE_TICKERS.has(norm(t)) && prices[t] != null);
+  if (unstableInReq.length) {
+    let refs; try { refs = await unstableRefMap(); } catch { refs = new Map(); }
+    const mktOpen = usMarketOpen(new Date());
+    for (const ticker of unstableInReq) {
+      const ref = refs.get(norm(ticker));
+      if (!(Number.isFinite(ref) && ref > 0)) continue;
+      const dev = Math.abs(prices[ticker] / ref - 1);
+      if (!mktOpen || dev > UNSTABLE_DEV) {
+        prices[ticker] = ref;   // mercado fechado → congela no fecho; ou tick absurdo → rejeita
+        delete changes[ticker]; // a variação do dia deixa de fazer sentido
+      }
+    }
   }
 
   return Response.json({ prices, changes, errors });
