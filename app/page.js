@@ -2121,14 +2121,17 @@ export default function App(){
       const i=s.findIndex(x=>x.p.key===detailPf.key); return i>=0?{rank:i+1,n:s.length,ret:s[i].m}:null; };
     const hasMonth=!!(monthBase&&Object.keys(monthBase).length);
     const hasWeek=!!(weekBase&&Object.keys(weekBase).length);
+    // Semana fechada → posição semanal pelo resultado OFICIAL congelado (open→close), como a lista/vencedor.
+    const curWk=weekKey(new Date());
+    const wkFrozen=(weekTradingDone(new Date())&&weekOpens&&weekOpens[curWk]&&weekCloses&&weekCloses[curWk])?{from:weekOpens[curWk],to:weekCloses[curWk]}:null;
     const monthLabel=(()=>{ const n=new Date().toLocaleDateString("pt-PT",{month:"long"}); return n.charAt(0).toUpperCase()+n.slice(1); })();
     return {
       geral: rankBy(p=>p.total),
       mensal: hasMonth?rankBy(p=>pfMonthRet(p,monthBase,livePrices)):null,
-      semanal: hasWeek?rankBy(p=>pfWeekRet(p,weekBase,livePrices)):null,
+      semanal: wkFrozen?rankBy(p=>pfPeriodRet(p,wkFrozen.from,wkFrozen.to)):(hasWeek?rankBy(p=>pfWeekRet(p,weekBase,livePrices)):null),
       monthLabel, weeklyWins:(winners?.[detailPf.key]?.weekly)||[],
     };
-  },[detailPf,ranking,monthBase,weekBase,livePrices,winners]);
+  },[detailPf,ranking,monthBase,weekBase,livePrices,winners,weekOpens,weekCloses]);
 
   if(loading) return(
     <div style={{minHeight:"100vh",
@@ -4051,9 +4054,13 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   const monthOf=(p)=>pfMonthRet(p,monthBase,livePrices);
   const hasMonth=!!(monthBase&&Object.keys(monthBase).length); // só há corrida mensal distinta quando há baselines do mês (a partir de agosto)
   const hasWeek=!!(weekBase&&Object.keys(weekBase).length); // baseline da semana capturado (a partir de 2ª feira)
-  // Pré-arranque (fim de semana): sem baseline da semana → devolve null (coluna "—", ordem geral).
-  const weekOf=(p)=>hasWeek?pfWeekRet(p,weekBase,livePrices):null;
   const curWk=weekKey(new Date());                                  // 2ª feira UTC da semana atual
+  // Semana JÁ FECHADA (6ª pós-fecho / fim de semana) e com o fecho gravado → a lista E o gráfico semanais
+  // CONGELAM no resultado OFICIAL (open→close), tal como o vencedor. Antes usavam preços AO VIVO, que ao
+  // fim de semana derrapam do fecho de 6ª (sp500_ath atualizado, split, ATLN instável…) → trocava o 1º.
+  const weekFrozen=(weekTradingDone(new Date())&&weekOpens&&weekOpens[curWk]&&weekCloses&&weekCloses[curWk])?{from:weekOpens[curWk],to:weekCloses[curWk]}:null;
+  // Pré-arranque (fim de semana): sem baseline da semana → devolve null (coluna "—", ordem geral).
+  const weekOf=(p)=> weekFrozen ? pfPeriodRet(p,weekFrozen.from,weekFrozen.to) : (hasWeek?pfWeekRet(p,weekBase,livePrices):null);
   // 2ª feira em que a semana VAI arrancar (grelha de partida do gráfico, pré-arranque semanal):
   // antes do arranque ao vivo → WEEK_LIVE_FROM; ao fim de semana → próxima 2ª; num dia útil → esta 2ª.
   const frameWk=(()=>{ const n=new Date(); const ymd=n.toISOString().slice(0,10); const dow=n.getUTCDay();
