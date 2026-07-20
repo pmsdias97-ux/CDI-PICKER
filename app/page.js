@@ -209,9 +209,12 @@ function mapPortfolioFromSupabase(row){
     })),
   };
 }
+// Verde/vermelho conta pelo valor ARREDONDADO a 2 casas (= o que é mostrado): "+0.00%" → neutro.
+// Evita "1 no verde" por ruído de cêntimo no arranque da semana (ex.: base 384.27 vs 384.28 = +0.003%).
+const rSign=(r)=>Number((r*100).toFixed(2));
 function pfStats(p,livePrices){
   const rets=p.stocks.map(s=>stockRet(s,livePrices));
-  return{ total:rets.reduce((a,b)=>a+b,0)/rets.length, pos:rets.filter(r=>r>0).length, neg:rets.filter(r=>r<0).length };
+  return{ total:rets.reduce((a,b)=>a+b,0)/rets.length, pos:rets.filter(r=>rSign(r)>0).length, neg:rets.filter(r=>rSign(r)<0).length };
 }
 // Mini-época MENSAL ("Campeão do mês"): MESMA fórmula do total, mas com o baseline do
 // início do mês (monthBase[ticker]) em vez do preço de submissão. Justo ao membro — pondera
@@ -4369,7 +4372,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         const dayRet=pfDayReturn(p);
         const rentVal=perActive?valForPeriod(p):p.total; // valor mostrado na coluna Rentab./Mês/Semana
         // 🟢/🔴 do PERÍODO: ações em ganho/perda desde o baseline do período (semana/mês), não o total.
-        const stat=perActive?(()=>{ let pos=0,neg=0; for(const s of (p.stocks||[])){ const base=baseForStock(s.ticker,s.initialPrice); const cur=curPrice(s.ticker,s.initialPrice,livePrices); const rr0=base>0?cur/base-1:0; const r=s.side==="short"?-rr0:rr0; if(r>0)pos++; else if(r<0)neg++; } return {pos,neg}; })():{pos:p.pos,neg:p.neg};
+        const stat=perActive?(()=>{ let pos=0,neg=0; for(const s of (p.stocks||[])){ const base=baseForStock(s.ticker,s.initialPrice); const cur=curPrice(s.ticker,s.initialPrice,livePrices); const rr0=base>0?cur/base-1:0; const r=s.side==="short"?-rr0:rr0; const rd=rSign(r); if(rd>0)pos++; else if(rd<0)neg++; } return {pos,neg}; })():{pos:p.pos,neg:p.neg};
         const picked=cmp&&sel.includes(p.key);
         // Top 3: ouro (1º, amarelo vivo) / prata (2º) / bronze-âmbar (3º). 4º-10º: cor geral.
         const rr=(!preStartWk&&i<3)?[

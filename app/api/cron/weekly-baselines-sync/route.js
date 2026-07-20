@@ -1,5 +1,7 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
 import { usMarketOpen } from "../../../lib/marketHours";
+import { fetchQuote } from "../../../lib/marketData";
+import { isCrypto } from "../../../lib/crypto";
 
 export const maxDuration = 30;
 
@@ -47,15 +49,22 @@ export async function GET(request) {
   const priceMap = new Map();
   for (const r of ath || []) { const p = Number(r.price); if (Number.isFinite(p) && p > 0) priceMap.set(norm(r.symbol), p); }
 
-  // Reconcilia só onde diverge ≥0.5% e o ticker existe no feed. Cripto (BTC…) fica de fora: negoceia
-  // 24/7, logo o seu "fecho de 6ª" difere legitimamente do preço de 2ª — não é fecho não-assente.
+  // AÇÕES: reconcilia ao preço assente do sp500_ath (fecho de 6ª), só onde diverge ≥0.5%.
+  // CRIPTO (BTC, 24/7): reconcilia ao preço AO VIVO de 2ª pré-abertura (fetchQuote, mesma fonte do feed)
+  //   → arranca a semana a 0% como as ações, EXCLUINDO o movimento de fim de semana (o dono quer assim).
   const capturedAt = now.toISOString();
   const toFix = [];
   for (const r of rows) {
-    const settled = priceMap.get(norm(r.ticker));
+    const t = norm(r.ticker);
     const base = Number(r.price);
-    if (!(Number.isFinite(settled) && settled > 0) || !(base > 0)) continue;
-    if (Math.abs(settled / base - 1) >= 0.005) toFix.push({ ticker: r.ticker, from: base, to: settled });
+    if (!(base > 0)) continue;
+    if (priceMap.has(t)) {
+      const settled = priceMap.get(t);
+      if (settled > 0 && Math.abs(settled / base - 1) >= 0.005) toFix.push({ ticker: r.ticker, from: base, to: settled });
+    } else if (isCrypto(r.ticker)) {
+      let live; try { live = await fetchQuote(r.ticker); } catch { /* sem cotação → não reconcilia */ }
+      if (Number.isFinite(live) && live > 0 && Math.abs(live / base - 1) >= 0.001) toFix.push({ ticker: r.ticker, from: base, to: live });
+    }
   }
   if (!toFix.length) return Response.json({ ok: true, period, synced: 0, note: "nada a reconciliar" });
 
