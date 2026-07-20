@@ -2626,7 +2626,7 @@ function CountUp({to=0}){
 function UpdatesFeedback({myName}){
   const [updates,setUpdates]=useState([]);
   const [feedback,setFeedback]=useState([]);
-  const [openDays,setOpenDays]=useState({}); // { day: true } — datas anteriores expandidas
+  const [activeDay,setActiveDay]=useState(null); // data antiga (chip) ativa — mostra o conteúdo por baixo
   const [msg,setMsg]=useState("");
   const [sending,setSending]=useState(false);
   const [sent,setSent]=useState(false);
@@ -2638,6 +2638,7 @@ function UpdatesFeedback({myName}){
     return()=>{ ok=false; };
   },[]);
   const fmtDay=(d)=>{ try{ return new Date(d+"T00:00:00Z").toLocaleDateString("pt-PT",{day:"numeric",month:"short",timeZone:"UTC"}); }catch{ return d; } };
+  const fmtDayShort=(d)=>{ try{ const [,m,dd]=String(d).split("-"); return `${dd}/${m}`; }catch{ return d; } };
   const bodyLines=(t)=>String(t||"").split("\n").map(s=>s.replace(/^\s*[-•]\s*/,"").trim()).filter(Boolean);
   const submit=async()=>{ const m=msg.trim(); if(!m||sending) return; setSending(true); setErr("");
     try{
@@ -2678,24 +2679,37 @@ function UpdatesFeedback({myName}){
                 <div style={{flexShrink:0,minWidth:52,fontSize:12,fontWeight:700,color:"#4ade80",paddingTop:2,textTransform:"lowercase"}}>{fmtDay(updates[0].day)}</div>
                 {bodyBlock(updates[0])}
               </div>
-              {/* Anteriores — só as DATAS (clicáveis); clicar mostra os updates desse dia. */}
-              {updates.length>1&&(
-                <div style={{display:"flex",flexDirection:"column",gap:10,paddingTop:4}}>
-                  {updates.slice(1).map(u=>{
-                    const open=!!openDays[u.day];
-                    return(
-                      <div key={u.day}>
-                        <button onClick={()=>setOpenDays(p=>({...p,[u.day]:!p[u.day]}))}
-                          style={{display:"inline-flex",alignItems:"center",gap:7,background:"none",border:"none",cursor:"pointer",padding:0,color:"#94a3b8",fontSize:10.5,fontWeight:700,textTransform:"lowercase"}}>
-                          <span aria-hidden="true" style={{display:"inline-block",transform:open?"rotate(90deg)":"none",transition:"transform .15s",fontSize:8,color:"#64748b"}}>▶</span>
-                          {fmtDay(u.day)}
-                        </button>
-                        {open&&<div style={{margin:"8px 0 0 18px"}}>{bodyBlock(u)}</div>}
+              {/* Anteriores — chips horizontais (fluem e quebram de linha, não crescem em altura).
+                  Clicar num chip abre o conteúdo desse dia por baixo; clicar no ativo fecha. */}
+              {updates.length>1&&(()=>{
+                const older=updates.slice(1);
+                const activeUpdate=activeDay?older.find(u=>u.day===activeDay):null;
+                return(
+                  <div style={{paddingTop:6}}>
+                    <div style={{fontSize:10,color:"#64748b",textTransform:"uppercase",letterSpacing:"1px",fontWeight:700,marginBottom:9}}>Anteriores</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                      {older.map(u=>{ const active=activeDay===u.day;
+                        return(
+                          <button key={u.day} onClick={()=>setActiveDay(active?null:u.day)}
+                            style={{display:"inline-flex",alignItems:"center",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:700,
+                              borderRadius:999,padding:"5px 12px",transition:"all .15s",
+                              background:active?"rgba(74,222,128,0.12)":"rgba(255,255,255,0.05)",
+                              border:`1px solid ${active?"rgba(74,222,128,0.4)":"rgba(255,255,255,0.12)"}`,
+                              color:active?"#4ade80":"#94a3b8"}}>
+                            {fmtDayShort(u.day)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {activeUpdate&&(
+                      <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",gap:14,alignItems:"flex-start"}}>
+                        <div style={{flexShrink:0,minWidth:52,fontSize:12,fontWeight:700,color:"#4ade80",paddingTop:2,textTransform:"lowercase"}}>{fmtDay(activeUpdate.day)}</div>
+                        {bodyBlock(activeUpdate)}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           );
         })()}
