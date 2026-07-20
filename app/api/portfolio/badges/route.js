@@ -57,19 +57,25 @@ export async function GET(request) {
 
   const badges = [];
 
-  // 🥇 Lugar no Ranking Geral (pelo ÚLTIMO snapshot congelado — só o MELHOR badge). Só oficiais têm snapshot diário.
-  try {
-    const { data: latestSnap } = await supabase.from("portfolio_snapshots").select("date").order("date", { ascending: false }).limit(1).maybeSingle();
-    if (latestSnap?.date) {
-      const { data: daySnaps } = await supabase.from("portfolio_snapshots").select("portfolio_id, total_return").eq("date", latestSnap.date);
-      const ranked = (daySnaps || []).filter((s) => Number.isFinite(Number(s.total_return))).sort((a, b) => Number(b.total_return) - Number(a.total_return));
-      const idx = ranked.findIndex((s) => s.portfolio_id === pf.id);
-      const rank = idx >= 0 ? idx + 1 : null;
-      if (rank === 1) badges.push({ id: "leader", label: "Líder", emoji: "🥇", description: "1º no Ranking Geral." });
-      else if (rank >= 2 && rank <= 3) badges.push({ id: "podium", label: "Pódio", emoji: "🏆", description: `${rank}º no Ranking Geral (Top 3).` });
-      else if (rank >= 4 && rank <= 10) badges.push({ id: "top10", label: "Top 10", emoji: "🔟", description: `${rank}º no Ranking Geral (Top 10).` });
-    }
-  } catch { /* sem snapshots → sem badge de lugar */ }
+  // 🥇 Lugar no Ranking Geral (só o MELHOR badge; 3º pertence ao PÓDIO). Usa o rank AO VIVO passado pelo
+  // cliente (?rank=) — coerente com o que o ranking mostra. Sem ele, cai no rank do último snapshot.
+  let rank = null;
+  const rankParam = Number(searchParams.get("rank"));
+  if (Number.isInteger(rankParam) && rankParam >= 1) rank = rankParam;
+  else {
+    try {
+      const { data: latestSnap } = await supabase.from("portfolio_snapshots").select("date").order("date", { ascending: false }).limit(1).maybeSingle();
+      if (latestSnap?.date) {
+        const { data: daySnaps } = await supabase.from("portfolio_snapshots").select("portfolio_id, total_return").eq("date", latestSnap.date);
+        const ranked = (daySnaps || []).filter((s) => Number.isFinite(Number(s.total_return))).sort((a, b) => Number(b.total_return) - Number(a.total_return));
+        const idx = ranked.findIndex((s) => s.portfolio_id === pf.id);
+        rank = idx >= 0 ? idx + 1 : null;
+      }
+    } catch { /* sem snapshots → sem badge de lugar */ }
+  }
+  if (rank === 1) badges.push({ id: "leader", label: "Líder", emoji: "🥇", description: "1º no Ranking Geral." });
+  else if (rank >= 2 && rank <= 3) badges.push({ id: "podium", label: "Pódio", emoji: "🏆", description: `${rank}º no Ranking Geral (pódio).` });
+  else if (rank >= 4 && rank <= 10) badges.push({ id: "top10", label: "Top 10", emoji: "🔟", description: `${rank}º no Ranking Geral (Top 10).` });
 
   // 🚀 Marco de rentabilidade (só o MAIOR alcançado).
   if (totalRet >= 0.20) badges.push({ id: "gain-20", label: "+20%", emoji: "🌟", description: "Rentabilidade total igual ou acima de +20%." });

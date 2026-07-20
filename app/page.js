@@ -5658,14 +5658,15 @@ const BADGE_ICONS={
   "green-streak":<><path d="M12 2s5 4 5 9a5 5 0 0 1-10 0c0-2 1-3.5 1.5-4.5C9 8 11 6 12 2z"/></>,
 };
 // Badges de conquistas de um portefólio (gamificação leve). Vive dentro da box "Overview".
-function AchievementBadges({pf}){
+function AchievementBadges({pf,rank}){
   const [badges,setBadges]=useState(null);
   useEffect(()=>{
     let cancel=false;
     (async()=>{
       try{
         const slug=encodeURIComponent(pf?.name||pf?.normName||"");
-        const res=await fetch(`/api/portfolio/badges?slug=${slug}`);
+        const rq=(Number.isInteger(rank)&&rank>=1)?`&rank=${rank}`:""; // rank AO VIVO → 3º = Pódio, não Top 10
+        const res=await fetch(`/api/portfolio/badges?slug=${slug}${rq}`);
         const json=await res.json();
         if(!cancel) setBadges(json.ok?json.badges||[]:[]);
       }catch{
@@ -5673,7 +5674,7 @@ function AchievementBadges({pf}){
       }
     })();
     return()=>{cancel=true};
-  },[pf?.name,pf?.normName]);
+  },[pf?.name,pf?.normName,rank]);
 
   // Enquanto carrega ou sem badges → nada (não deixa separador/etiqueta vazios na box).
   if(!badges||!badges.length) return null;
@@ -5742,7 +5743,7 @@ function GameStandings({standings,pf}){
           </div>
         </div>
       ))}
-      {pf&&<AchievementBadges pf={pf}/>}
+      {pf&&<AchievementBadges pf={pf} rank={standings?.geral?.rank}/>}
     </div>
   );
 }
