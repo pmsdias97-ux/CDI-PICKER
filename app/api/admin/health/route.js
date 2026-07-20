@@ -31,8 +31,8 @@ export async function POST(request) {
 
     const { data: pfs } = await supabase.from("portfolios").select("id, user_id, portfolio_stocks(ticker)").eq("official", true);
     const officials = pfs || [];
-    const { data: users } = await supabase.from("users").select("id, name");
-    const nameById = new Map((users || []).map((u) => [u.id, u.name]));
+    const { data: users } = await supabase.from("users").select("id, telegram_name");
+    const nameById = new Map((users || []).map((u) => [u.id, u.telegram_name]));
     const officialTickers = new Set();
     for (const p of officials) for (const s of p.portfolio_stocks || []) officialTickers.add(norm(s.ticker));
 

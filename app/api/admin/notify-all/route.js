@@ -32,8 +32,10 @@ export async function POST(request) {
   const userIds = [...new Set((pfs || []).map((p) => p.user_id).filter(Boolean))];
   if (!userIds.length) return Response.json({ ok: true, count: 0 });
 
+  // created_at ÚNICO p/ todo o envio → o admin agrupa o broadcast por este instante (mesmo com vários lotes).
+  const sentAt = new Date().toISOString();
   const rows = userIds.map((uid) => ({
-    user_id: uid, type: "admin", title, body: text, link, actor_name: "Admin",
+    user_id: uid, type: "admin", title, body: text, link, actor_name: "Admin", created_at: sentAt,
   }));
 
   // Insere em lotes (segurança com muitos membros).

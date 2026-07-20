@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
 import { fetchQuoteFull, flushQuoteRevalidations } from "../../../lib/marketData";
 import { isValidTicker, rateLimited } from "../../../lib/apiGuards";
 import { isCrypto } from "../../../lib/crypto";
+import { usMarketOpen } from "../../../lib/marketHours";
 
 export const maxDuration = 30; // corta de forma limpa se algo demorar
 
@@ -149,6 +150,7 @@ export async function GET(request) {
     const now = new Date();
     const curWk = weekKey(now);
     const weekDone = weekTradingDone(now);
+    const marketOpen = usMarketOpen(now);
     const wref = await weekRefMap(curWk);
     if (wref.size) {
       for (const ticker of tickers) {
@@ -156,9 +158,9 @@ export async function GET(request) {
         const r = wref.get(norm(ticker));
         if (!r) continue;
         if (weekDone && r.close > 0) {
-          prices[ticker] = r.close; delete changes[ticker];                 // semana fechada → fecho oficial
-        } else if (UNSTABLE_TICKERS.has(norm(ticker)) && r.open > 0 && Math.abs(prices[ticker] / r.open - 1) > UNSTABLE_DEV) {
-          prices[ticker] = r.open; delete changes[ticker];                  // instável com tick absurdo → âncora (abertura)
+          prices[ticker] = r.close; delete changes[ticker];                 // semana fechada → fecho oficial (todos)
+        } else if (UNSTABLE_TICKERS.has(norm(ticker)) && r.open > 0 && (!marketOpen || Math.abs(prices[ticker] / r.open - 1) > UNSTABLE_DEV)) {
+          prices[ticker] = r.open; delete changes[ticker];                  // instável, mercado FECHADO (pré-abertura 2ª/fora de horas) OU tick absurdo → âncora (abertura da semana)
         }
       }
     }

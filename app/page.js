@@ -734,13 +734,15 @@ function NotifBell({myName,onLink,showToast}){
     }catch{}
   },[myName]);
   useEffect(()=>{ load(); const id=setInterval(()=>{ if(!document.hidden) load(); },25000); return()=>clearInterval(id); },[load]);
-  // Fecha ao clicar fora.
-  useEffect(()=>{ if(!open) return; const onDoc=(e)=>{ if(ref.current&&!ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown",onDoc); return()=>document.removeEventListener("mousedown",onDoc); },[open]);
+  // Marca lidas ao FECHAR o sino (não ao abrir) → o "NEW"/não-lida ficam visíveis enquanto lês.
   const markRead=async()=>{ if(unread===0) return; setUnread(0); setItems(x=>x.map(n=>({...n,read:true})));
     try{ const { name,pin }=creds(); await fetch("/api/notifications/read",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,pin})}); }catch{} };
-  const toggle=()=>setOpen(o=>{ const n=!o; if(n) markRead(); return n; });
-  const clickItem=(n)=>{ setOpen(false); onLink&&onLink(n.link); };
+  const closePanel=()=>{ markRead(); setOpen(false); };
+  // Fecha ao clicar fora.
+  useEffect(()=>{ if(!open) return; const onDoc=(e)=>{ if(ref.current&&!ref.current.contains(e.target)) closePanel(); };
+    document.addEventListener("mousedown",onDoc); return()=>document.removeEventListener("mousedown",onDoc); },[open]);// eslint-disable-line
+  const toggle=()=>{ if(open) closePanel(); else setOpen(true); };
+  const clickItem=(n)=>{ closePanel(); onLink&&onLink(n.link); };
   return(
     <div className="cdiBell" ref={ref}>
       <button onClick={toggle} aria-label="Notificações" title="Notificações"
@@ -760,12 +762,14 @@ function NotifBell({myName,onLink,showToast}){
           {items.length===0
             ? <div style={{padding:"22px 14px",textAlign:"center",color:"#64748b",fontSize:13}}>Sem notificações.</div>
             : items.map(n=>(
-                <div key={n.id} onClick={()=>clickItem(n)} style={{display:"flex",flexDirection:"column",gap:2,padding:"10px 14px",cursor:n.link?"pointer":"default",
-                  borderBottom:"1px solid rgba(255,255,255,0.06)",background:n.read?"transparent":"rgba(96,165,250,0.08)",
-                  borderLeft:n.type==="admin"?"3px solid #3b82f6":"3px solid transparent"}}>
-                  <span style={{fontSize:13,fontWeight:700,color:"#e2e8f0",lineHeight:1.35}}>{n.title}</span>
-                  {n.body&&<span style={{fontSize:12,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.body}</span>}
-                  <span style={{fontSize:10.5,color:"#64748b"}}>{timeAgo(n.created_at)}</span>
+                <div key={n.id} onClick={()=>clickItem(n)} style={{display:"flex",alignItems:"center",gap:11,padding:"10px 14px",cursor:n.link?"pointer":"default",
+                  borderBottom:"1px solid rgba(255,255,255,0.06)",background:n.read?"transparent":"rgba(96,165,250,0.055)"}}>
+                  {n.type==="admin"&&!n.read&&<span aria-label="New" style={{writingMode:"vertical-rl",transform:"rotate(180deg)",fontSize:9,fontWeight:800,letterSpacing:"1.5px",textTransform:"uppercase",color:"#93c5fd",flexShrink:0,lineHeight:1}}>New</span>}
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",lineHeight:1.3,minWidth:0,overflowWrap:"anywhere"}}>{n.title}</div>
+                    {n.body&&<div style={{fontSize:12,color:"#94a3b8",lineHeight:1.3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.body}</div>}
+                  </div>
+                  <span style={{fontSize:10.5,color:"#64748b",flexShrink:0,whiteSpace:"nowrap"}}>{timeAgo(n.created_at)}</span>
                 </div>
               ))}
         </div>
@@ -4390,9 +4394,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
                 : <span style={{fontSize:13,color:"#94a3b8",fontWeight:700}}>{preStartWk?"·":i+1}</span>}
             </span>
             <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
-              <span style={{overflowWrap:"normal",wordBreak:"normal",lineHeight:1.2}}>{p.name}</span>
-              <WinnerMedals w={winners&&winners[p.key]} size={20}/>
-              {me&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
+              <span style={{minWidth:0,overflowWrap:"normal",wordBreak:"normal",lineHeight:1.2}}>{p.name}</span>
+              {winners&&winners[p.key]&&<span style={{display:"inline-flex",alignItems:"center",gap:4,flexShrink:0}}><WinnerMedals w={winners[p.key]} size={20}/></span>}
+              {me&&<span style={{flexShrink:0,fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700}}>Tu</span>}
             </span>
             <span className="rkSpark">
               {/* Sem sparkline no pré-arranque semanal — ainda não há histórico da semana.
@@ -4850,10 +4854,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
                     : <span style={{fontSize:13,color:"#94a3b8",fontWeight:700}}>{idx+1}</span>}
                 </span>
                 <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
-                  <span style={{overflowWrap:"normal",wordBreak:"normal",lineHeight:1.2}}>{p.name}</span>
-                  {idx===0&&<span title="Vencedor" style={{fontSize:14,lineHeight:1}}>🏆</span>}
-                  <WinnerMedals w={winners&&winners[p.key]} size={20}/>
-                  {p.normName===myNorm&&<span style={{fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700,flexShrink:0}}>Tu</span>}
+                  <span style={{minWidth:0,overflowWrap:"normal",wordBreak:"normal",lineHeight:1.2}}>{p.name}</span>
+                  {idx===0&&<span title="Vencedor" style={{fontSize:14,lineHeight:1,flexShrink:0}}>🏆</span>}
+                  {winners&&winners[p.key]&&<span style={{display:"inline-flex",alignItems:"center",gap:4,flexShrink:0}}><WinnerMedals w={winners[p.key]} size={20}/></span>}
+                  {p.normName===myNorm&&<span style={{flexShrink:0,fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700}}>Tu</span>}
                 </span>
                 <span className="rkSpark"/>
                 <span style={{textAlign:"center",alignSelf:"center",fontWeight:800,fontFamily:"monospace",fontSize:"clamp(12.5px,3.6vw,15px)",color:r>=0?"#4ade80":"#f87171"}}>{pct(r)}</span>
@@ -6298,8 +6302,56 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
       if(!r.ok||!j.ok){ showToast(j.error||"Não foi possível enviar.","error"); return; }
       setNTitle(""); setNBody(""); setNLink("");
       showToast(`Notificação enviada a ${j.count} ${j.count===1?"membro":"membros"}.`);
+      loadNotifList();
     }catch{ showToast("Falha de ligação.","error"); }
     finally{ setNSending(false); }
+  }
+  // Histórico de notificações enviadas (broadcasts + automáticas), editar e ver quem leu.
+  const [notifList,setNotifList]=useState(null);
+  const [notifLoading,setNotifLoading]=useState(false);
+  const [readersOf,setReadersOf]=useState(null); // {createdAt, read:[], unread:[], loading}
+  const [editT,setEditT]=useState(null);         // alvo em edição {batchCreatedAt|id, title, body, link}
+  async function loadNotifList(){
+    setNotifLoading(true);
+    try{
+      const r=await fetch("/api/admin/notifications",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,action:"list"})});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok&&j.ok) setNotifList({broadcasts:j.broadcasts||[],recent:j.recent||[]});
+      else showToast(j.error||"Não foi possível carregar.","error");
+    }catch{ showToast("Falha de ligação.","error"); }
+    finally{ setNotifLoading(false); }
+  }
+  async function openReaders(createdAt){
+    if(readersOf&&readersOf.createdAt===createdAt){ setReadersOf(null); return; } // toggle
+    setReadersOf({createdAt,loading:true});
+    try{
+      const r=await fetch("/api/admin/notifications",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,action:"readers",createdAt})});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok&&j.ok) setReadersOf({createdAt,read:j.read||[],unread:j.unread||[]});
+      else { setReadersOf(null); showToast(j.error||"Não foi possível.","error"); }
+    }catch{ setReadersOf(null); showToast("Falha de ligação.","error"); }
+  }
+  async function saveEditNotif(){
+    if(!editT) return;
+    const title=(editT.title||"").trim(); if(!title){ showToast("Escreve um título.","error"); return; }
+    try{
+      const payload={password:pw,action:"edit",title,body:(editT.body||"").trim(),link:editT.link||""};
+      if(editT.batchCreatedAt) payload.batchCreatedAt=editT.batchCreatedAt; else payload.id=editT.id;
+      const r=await fetch("/api/admin/notifications",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok||!j.ok){ showToast(j.error||"Não foi possível guardar.","error"); return; }
+      setEditT(null); showToast("Notificação atualizada."); loadNotifList();
+    }catch{ showToast("Falha de ligação.","error"); }
+  }
+  async function deleteNotif(target){ // {batchCreatedAt}|{id}
+    const isBatch=!!target.batchCreatedAt;
+    if(!confirm(isBatch?"Apagar este broadcast em TODOS os membros? Não pode ser desfeito.":"Apagar esta notificação? Não pode ser desfeito.")) return;
+    try{
+      const r=await fetch("/api/admin/notifications",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,action:"delete",...target})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok||!j.ok){ showToast(j.error||"Não foi possível apagar.","error"); return; }
+      setReadersOf(null); setEditT(null); showToast("Notificação apagada."); loadNotifList();
+    }catch{ showToast("Falha de ligação.","error"); }
   }
   // Saúde operacional (só leitura).
   const [health,setHealth]=useState(null);
@@ -6358,7 +6410,7 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
     })();
     return()=>{ cancel=true; };
   },[pw,portfolios]);
-  useEffect(()=>{ if(tab==="updates"&&aUpdates===null) loadUpdates(); if(tab==="feedback"&&aFeedback===null) loadAdminFeedback(); if(tab==="health"&&health===null&&!loadingHealth) loadHealth(); },[tab]);// eslint-disable-line
+  useEffect(()=>{ if(tab==="updates"&&aUpdates===null) loadUpdates(); if(tab==="feedback"&&aFeedback===null) loadAdminFeedback(); if(tab==="health"&&health===null&&!loadingHealth) loadHealth(); if(tab==="notify"&&notifList===null&&!notifLoading) loadNotifList(); },[tab]);// eslint-disable-line
   // Usa os portefólios completos (admin) se disponíveis; senão, os públicos (prop).
   const apfs = fullPfs||portfolios;
   const aranking = apfs.map(p=>({...p,...pfStats(p,livePrices)}))
@@ -6605,8 +6657,10 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
       )}
 
       {/* Notificar — broadcast manual a todos os membros (as automáticas continuam a funcionar) */}
-      {tab==="notify"&&(
-        <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24,maxWidth:640}}>
+      {tab==="notify"&&(<>
+        <style>{`.notifGrid{display:grid;grid-template-columns:1fr;gap:16px;align-items:start}@media(min-width:980px){.notifGrid{grid-template-columns:minmax(0,460px) minmax(0,1fr)}}`}</style>
+        <div className="notifGrid">
+        <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24}}>
           <p style={{fontSize:13,color:"#6b7280",margin:"0 0 4px"}}>Escreve uma notificação e envia a <strong style={{color:"#94a3b8"}}>todos os {memberCount} membros</strong>. Aparece no sino de cada um (não lida). As notificações automáticas (comentários, reações, vencedor da semana…) continuam na mesma.</p>
           <div style={{display:"flex",flexDirection:"column",gap:14,marginTop:18}}>
             <label style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -6650,7 +6704,90 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
             </div>
           </div>
         </div>
-      )}
+        {/* Coluna direita: histórico de notificações (broadcasts + automáticas) */}
+        {(()=>{
+          const inputSt={background:"rgba(0,0,0,0.28)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:9,padding:"9px 11px",color:"#e2e8f0",fontSize:14,fontFamily:"inherit",width:"100%",boxSizing:"border-box",outline:"none"};
+          const btnP={border:"none",borderRadius:9,padding:"9px 16px",fontSize:13,fontWeight:800,cursor:"pointer",background:"#22c55e",color:"#04120a"};
+          const btnG={border:"1px solid rgba(255,255,255,0.16)",borderRadius:9,padding:"9px 14px",fontSize:13,fontWeight:700,cursor:"pointer",background:"rgba(255,255,255,0.06)",color:"#cbd5e1"};
+          const lk={background:"none",border:"none",color:"#93c5fd",cursor:"pointer",fontSize:11.5,fontWeight:700,padding:0};
+          const lkDel={...lk,color:"#f87171"};
+          const OPTS=[["","Nada (só a mensagem)"],["ranking","Ranking Geral"],["ranking-month","Ranking Mensal"],["ranking-week","Ranking Semanal"],["chat","Chat da competição"],["mine","As Minhas 8"],["updates","Secção Updates (Homepage)"],["ath","ATH"]];
+          const linkSel=(val,on)=><select value={val||""} onChange={on} style={inputSt}>{OPTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>;
+          const editForm=(withLink)=>(
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              <input value={editT.title} onChange={e=>setEditT({...editT,title:e.target.value.slice(0,120)})} style={inputSt}/>
+              <textarea value={editT.body} onChange={e=>setEditT({...editT,body:e.target.value.slice(0,300)})} rows={2} style={{...inputSt,resize:"vertical"}}/>
+              {withLink&&linkSel(editT.link,e=>setEditT({...editT,link:e.target.value}))}
+              <div style={{display:"flex",gap:8}}><button onClick={saveEditNotif} style={btnP}>Guardar</button><button onClick={()=>setEditT(null)} style={btnG}>Cancelar</button></div>
+            </div>
+          );
+          return(
+            <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:20}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                <div style={{fontSize:15,fontWeight:800,color:"#e2e8f0"}}>Enviadas</div>
+                <button onClick={loadNotifList} disabled={notifLoading} style={{border:"1px solid rgba(255,255,255,0.16)",background:"rgba(255,255,255,0.06)",color:"#e2e8f0",borderRadius:9,padding:"7px 12px",fontSize:12.5,fontWeight:700,cursor:notifLoading?"default":"pointer"}}>{notifLoading?"A ler…":"Atualizar"}</button>
+              </div>
+              {!notifList?(
+                <p style={{color:"#4b5563",fontSize:13}}>{notifLoading?"A carregar…":"—"}</p>
+              ):(<>
+                <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:700,margin:"0 0 8px"}}>Broadcasts ({notifList.broadcasts.length})</div>
+                {notifList.broadcasts.length===0?<p style={{color:"#4b5563",fontSize:13}}>Ainda não enviaste nenhuma.</p>:(
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {notifList.broadcasts.map(b=>{ const isEdit=editT&&editT.batchCreatedAt===b.createdAt; const isR=readersOf&&readersOf.createdAt===b.createdAt;
+                      return(
+                        <div key={b.createdAt} style={{border:"1px solid rgba(255,255,255,0.10)",borderRadius:12,padding:"11px 13px",background:"rgba(255,255,255,0.03)"}}>
+                          {isEdit?editForm(true):(<>
+                            <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",lineHeight:1.35}}>{b.title}</div>
+                            {b.body&&<div style={{fontSize:12,color:"#94a3b8",marginTop:2}}>{b.body}</div>}
+                            <div style={{display:"flex",alignItems:"center",gap:12,marginTop:8,fontSize:11.5,color:"#64748b",flexWrap:"wrap"}}>
+                              <span>{new Date(b.createdAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}</span>
+                              <span style={{color:"#4ade80",fontWeight:700}}>{b.read}/{b.total} lidas</span>
+                              <button onClick={()=>openReaders(b.createdAt)} style={lk}>{isR?"ocultar":"quem leu"}</button>
+                              <button onClick={()=>setEditT({batchCreatedAt:b.createdAt,title:b.title,body:b.body||"",link:b.link||""})} style={lk}>editar</button>
+                              <button onClick={()=>deleteNotif({batchCreatedAt:b.createdAt})} style={lkDel}>apagar</button>
+                            </div>
+                            {isR&&(
+                              <div style={{marginTop:8,borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:8}}>
+                                {readersOf.loading?<span style={{fontSize:12,color:"#64748b"}}>A carregar…</span>:(<>
+                                  <div style={{fontSize:11.5,color:"#4ade80",fontWeight:700,marginBottom:3}}>Leram ({readersOf.read.length})</div>
+                                  <div style={{fontSize:12,color:"#cbd5e1",lineHeight:1.5}}>{readersOf.read.length?readersOf.read.join(", "):"—"}</div>
+                                  <div style={{fontSize:11.5,color:"#f87171",fontWeight:700,margin:"8px 0 3px"}}>Por ler ({readersOf.unread.length})</div>
+                                  <div style={{fontSize:12,color:"#94a3b8",lineHeight:1.5}}>{readersOf.unread.length?readersOf.unread.join(", "):"—"}</div>
+                                </>)}
+                              </div>
+                            )}
+                          </>)}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:700,margin:"18px 0 8px"}}>Automáticas recentes</div>
+                {notifList.recent.length===0?<p style={{color:"#4b5563",fontSize:13}}>Nenhuma.</p>:(
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    {notifList.recent.map(n=>{ const isEdit=editT&&editT.id===n.id;
+                      return(
+                        <div key={n.id} style={{border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"9px 11px"}}>
+                          {isEdit?editForm(false):(<>
+                            <div style={{display:"flex",alignItems:"center",gap:8}}>
+                              <span title={n.read?"lida":"não lida"} style={{width:7,height:7,borderRadius:"50%",background:n.read?"#4ade80":"#f87171",flexShrink:0}}/>
+                              <span style={{fontSize:12.5,fontWeight:700,color:"#e2e8f0",flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.title}</span>
+                              <button onClick={()=>setEditT({id:n.id,title:n.title,body:n.body||"",link:n.link||""})} style={lk}>editar</button>
+                              <button onClick={()=>deleteNotif({id:n.id})} style={lkDel}>apagar</button>
+                            </div>
+                            <div style={{fontSize:11,color:"#64748b",marginTop:3}}>para <strong style={{color:"#94a3b8"}}>{n.userName}</strong> · {new Date(n.createdAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}</div>
+                          </>)}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>)}
+            </div>
+          );
+        })()}
+        </div>{/* /notifGrid */}
+      </>)}
 
       {/* Saúde operacional — diagnóstico só de leitura */}
       {tab==="health"&&(()=>{
