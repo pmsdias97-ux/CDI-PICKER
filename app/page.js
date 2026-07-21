@@ -79,14 +79,14 @@ function msUntilMarketOpen(){
     return 0;
   }catch{ return 0; }
 }
-// "falta HHmm" no formato 01H02 (<24h) ou "falta Nd 01H02" (>=24h). Sem segundos.
+// "falta HH:mm" no formato 01:02 (<24h) ou "falta Nd 01:02" (>=24h). Sem segundos.
 function fmtCountdown(ms){
   if(ms<=0) return "";
   const totalMin=Math.floor(ms/60000);
   const days=Math.floor(totalMin/1440);
   const h=Math.floor((totalMin%1440)/60);
   const m=totalMin%60;
-  const hhmm=`${String(h).padStart(2,"0")}H${String(m).padStart(2,"0")}`;
+  const hhmm=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
   return days>0?`falta ${days}d ${hhmm}`:`falta ${hhmm}`;
 }
 
