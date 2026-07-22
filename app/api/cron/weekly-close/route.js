@@ -1,7 +1,6 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
 import { usMarketOpen } from "../../../lib/marketHours";
 import { fetchQuote } from "../../../lib/marketData";
-import { createNotification } from "../../../lib/notify";
 
 export const maxDuration = 30;
 
@@ -81,15 +80,33 @@ export async function GET(request){
     .from("weekly_baselines").upsert(nextBaselines,{onConflict:"period,ticker",ignoreDuplicates:true});
 
   // Notifica o VENCEDOR da semana (best-effort). Vencedor = melhor média (close/open-1), espelhado p/ shorts.
+  // Vencedor + DIGEST semanal (1 notificação por membro): rentab. da semana (open→close, espelhado p/
+  // shorts) + posição + melhor/pior ação. O 1º recebe "Ganhaste a semana"; os restantes o resumo.
+  // Best-effort (nunca rebenta o fecho) + bulk insert (1 escrita para todos). Idempotente com o guard do fecho.
   try{
     const oc=new Map(); for(const u of upserts) oc.set(norm(u.ticker),{o:Number(u.price),c:Number(u.close_price)});
     const {data:pfs}=await supabase.from("portfolios").select("user_id, portfolio_stocks(ticker, side)").eq("official",true);
-    let best=null;
-    for(const p of pfs||[]){ const st=p.portfolio_stocks||[]; if(!st.length) continue;
-      let sum=0,n=0; for(const s of st){ const x=oc.get(norm(s.ticker)); if(!x||!(x.o>0)||!(x.c>0)) continue; const raw=x.c/x.o-1; sum+=(s.side==="short"?-raw:raw); n++; }
-      if(n===0) continue; const ret=sum/n; if(!best||ret>best.ret) best={userId:p.user_id,ret}; }
-    if(best&&best.userId) await createNotification(supabase,{ userId:best.userId, type:"weekly_win",
-      title:"Ganhaste a semana! 🏆", body:`+${(best.ret*100).toFixed(2)}% esta semana`, link:"ranking-week" });
+    const pctS=(x)=>`${x>=0?"+":""}${(x*100).toFixed(2)}%`;
+    const results=[];
+    for(const p of pfs||[]){ const st=p.portfolio_stocks||[]; if(!st.length||!p.user_id) continue;
+      let sum=0,n=0; const per=[];
+      for(const s of st){ const x=oc.get(norm(s.ticker)); if(!x||!(x.o>0)||!(x.c>0)) continue; const raw=x.c/x.o-1; const r=s.side==="short"?-raw:raw; sum+=r; n++; per.push({ticker:s.ticker,r}); }
+      if(n===0) continue; per.sort((a,b)=>b.r-a.r);
+      results.push({ userId:p.user_id, ret:sum/n, best:per[0], worst:per[per.length-1] });
+    }
+    results.sort((a,b)=>b.ret-a.ret);
+    // Número da semana (Semana 1 = 29-jun) para o título do digest.
+    const weekN=Math.max(1,Math.round((Date.parse(period+"T00:00:00Z")-Date.parse("2026-06-29T00:00:00Z"))/(7*86400000))+1);
+    const total=results.length; const rows=[];
+    for(let i=0;i<total;i++){ const rr=results[i]; const rank=i+1;
+      if(rank===1){ rows.push({ user_id:rr.userId, type:"weekly_win", title:`Ganhaste a semana ${weekN}! 🏆`, body:`${pctS(rr.ret)} esta semana`, link:"ranking-week" }); continue; }
+      const sk=[];
+      if(rr.best) sk.push(`▲ melhor ${rr.best.ticker} ${pctS(rr.best.r)}`);
+      if(rr.worst&&rr.worst.ticker!==rr.best?.ticker) sk.push(`▼ pior ${rr.worst.ticker} ${pctS(rr.worst.r)}`);
+      const body=sk.length?`${rank}º/${total} da semana\n${sk.join(" ")}`:`${rank}º/${total} da semana`;
+      rows.push({ user_id:rr.userId, type:"weekly_digest", title:`Teu resumo da semana ${weekN}: ${pctS(rr.ret)}`, body, link:"ranking-week" });
+    }
+    for(let i=0;i<rows.length;i+=500){ await supabase.from("notifications").insert(rows.slice(i,i+500)); }
   }catch{}
 
   return Response.json({ok:true,period,captured:upserts.length,nextSeeded:nErr?0:nextBaselines.length,skippedTickers});

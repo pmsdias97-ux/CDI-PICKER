@@ -758,7 +758,7 @@ function NotifBell({myName,onLink,showToast}){
         )}
       </button>
       {open&&(
-        <div className="cdiBellMenu" style={{position:"absolute",top:"calc(100% + 8px)",width:"min(340px,92vw)",maxHeight:"70vh",overflowY:"auto",zIndex:9995,
+        <div className="cdiBellMenu" style={{position:"fixed",top:64,left:"50%",right:"auto",transform:"translateX(-50%)",width:"min(370px,94vw)",maxHeight:"70vh",overflowY:"auto",zIndex:9995,
           background:"rgba(17,26,45,0.92)",backdropFilter:"blur(22px) saturate(160%)",WebkitBackdropFilter:"blur(22px) saturate(160%)",
           border:"1px solid rgba(255,255,255,0.12)",boxShadow:"0 18px 48px rgba(0,0,0,0.55)",borderRadius:14}}>
           <div style={{padding:"11px 14px",borderBottom:"1px solid rgba(255,255,255,0.10)",fontSize:13,fontWeight:800,color:"#e2e8f0"}}>Notificações</div>
@@ -770,7 +770,7 @@ function NotifBell({myName,onLink,showToast}){
                   {n.type==="admin"&&!n.read&&<span aria-label="New" style={{writingMode:"vertical-rl",transform:"rotate(180deg)",fontSize:9,fontWeight:800,letterSpacing:"1.5px",textTransform:"uppercase",color:"#93c5fd",flexShrink:0,lineHeight:1}}>New</span>}
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",lineHeight:1.3,minWidth:0,overflowWrap:"anywhere"}}>{n.title}</div>
-                    {n.body&&<div style={{fontSize:12,color:"#94a3b8",lineHeight:1.3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.body}</div>}
+                    {n.body&&<div style={{fontSize:11.5,color:"#94a3b8",lineHeight:1.35,marginTop:2,display:"-webkit-box",WebkitLineClamp:4,WebkitBoxOrient:"vertical",overflow:"hidden",overflowWrap:"anywhere",whiteSpace:"pre-line"}}>{n.body}</div>}
                   </div>
                   <span style={{fontSize:10.5,color:"#64748b",flexShrink:0,whiteSpace:"nowrap"}}>{timeAgo(n.created_at)}</span>
                 </div>
@@ -2282,7 +2282,7 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
         <div className="cdiNavRow" style={{position:"relative",width:"max-content",maxWidth:"calc(100% - 16px)",margin:"0 auto",zIndex:3}}>
           <Nav page={page} nav={nav} navRank={navRank} rankPeriod={rankPeriod} submitted={submitted} onMyPortfolio={onMyPortfolio} myPortfolioActive={myPortfolioActive} tint={theme.tint} />
           {submitted&&(
-            <div style={{position:"absolute",left:"100%",top:"50%",transform:"translateY(-50%)",marginLeft:4}}>
+            <div style={{position:"absolute",left:"100%",top:"50%",marginTop:-19,marginLeft:4}}>{/* sem transform → o dropdown fixed centra na VIEWPORT, não neste wrapper */}
               <NotifBell myName={myName} onLink={onNotifLink} showToast={showToast}/>
             </div>
           )}
@@ -5747,11 +5747,70 @@ function GameStandings({standings,pf}){
     </div>
   );
 }
+// Cartão PARTILHÁVEL do portefólio (fundos SÓLIDOS → captura limpa com html-to-image). Usa os logótipos
+// reais (StockLogo → img.logo.dev, com fallback Monograma) e mostra os lugares Geral/Mensal/Semanal.
+function PortfolioShareCard({cardRef,name,total,stocks,ranks}){
+  const pos=total>=0;
+  const rankItems=[
+    ranks?.geral!=null&&{label:"Geral",v:ranks.geral},
+    ranks?.month!=null&&{label:"Mensal",v:ranks.month},
+    ranks?.week!=null&&{label:"Semanal",v:ranks.week},
+  ].filter(Boolean);
+  return(
+    <div ref={cardRef} style={{width:420,boxSizing:"border-box",padding:28,fontFamily:"var(--font-app), system-ui, sans-serif",
+      background:"linear-gradient(180deg,#0f1e3d 0%,#0a1428 100%)",color:"#e2e8f0",borderRadius:20,border:"1px solid rgba(255,255,255,0.10)"}}>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontSize:23,fontWeight:800,letterSpacing:"-0.4px"}}>{name}</div>
+        <div style={{fontSize:44,fontWeight:800,letterSpacing:"-1px",lineHeight:1.1,marginTop:8,color:pos?"#34d399":"#fb7185"}}>{pct(total)}</div>
+        {rankItems.length>0&&(
+          <div style={{display:"flex",justifyContent:"center",alignItems:"center",marginTop:12}}>
+            {rankItems.map((r,i)=>(
+              <span key={r.label} style={{fontSize:13,color:"#94a3b8",padding:"0 13px",borderLeft:i>0?"1px solid rgba(255,255,255,0.14)":"none"}}>
+                {r.label} <strong style={{color:"#e2e8f0",fontWeight:800}}>{r.v}º</strong>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div style={{marginTop:22,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        {(stocks||[]).map((s,i)=>(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:9,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:11,padding:"9px 11px"}}>
+            <StockLogo ticker={s.ticker} size={24}/>
+            <span style={{fontWeight:800,fontSize:13.5,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.ticker}{s.side==="short"?" ↓":""}</span>
+            <span style={{fontFamily:"ui-monospace,monospace",fontWeight:800,fontSize:12.5,color:(s.ret>=0)?"#34d399":"#fb7185"}}>{pct(s.ret)}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{fontSize:12,letterSpacing:"3px",color:"#64748b",fontWeight:800,textTransform:"uppercase",textAlign:"center",marginTop:20}}>CDI Picker</div>
+    </div>
+  );
+}
 function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,myNorm,myUserId,adminPw,preLaunch,competitionStarted,gameStartDate,winners,standings,monthBase,weekBase,reload,showToast,onOpenMember,focusRef}){
   const goBack=onBack||(()=>nav("ranking")); // voltar ao ranking (com destaque da linha, via onBack)
   // Coluna de rentabilidade da lista: "total" (desde a compra) ↔ "day" (diário).
   const [retMode,setRetMode]=useState("total");
   const rail=useBackRail();
+  // Cartão partilhável (hooks ANTES dos early returns → contagem de hooks estável).
+  const [shareOpen,setShareOpen]=useState(false);
+  const [shareUrl,setShareUrl]=useState("");
+  const [shareBlob,setShareBlob]=useState(null);
+  const [shareMsg,setShareMsg]=useState("");
+  const shareCardRef=useRef(null);
+  useEffect(()=>{
+    if(!shareOpen){ setShareUrl(""); setShareBlob(null); setShareMsg(""); return; }
+    let cancel=false;
+    const t=setTimeout(async()=>{
+      try{
+        if(!shareCardRef.current) return;
+        const blob=await toBlob(shareCardRef.current,{pixelRatio:2,cacheBust:true,backgroundColor:"#0a1428"});
+        if(cancel) return;
+        if(!blob){ setShareMsg("Falha ao gerar a imagem."); return; }
+        setShareBlob(blob);
+        const rd=new FileReader(); rd.onload=()=>{ if(!cancel) setShareUrl(String(rd.result||"")); }; rd.readAsDataURL(blob);
+      }catch{ if(!cancel) setShareMsg("Falha ao gerar a imagem."); }
+    },250);
+    return()=>{ cancel=true; clearTimeout(t); };
+  },[shareOpen]);
   if(!pf) return(
     <div style={{textAlign:"center",padding:80,color:"#4b5563"}}>
       Portefólio não encontrado. <button onClick={()=>nav("ranking")} style={{color:"#22c55e",background:"none",border:"none",cursor:"pointer"}}>Voltar</button>
@@ -5780,6 +5839,13 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
   const dayRet=pfDayRet(pf,dayChange);
   // Tabela: ordenada por rentabilidade desde a submissão (métrica do jogo).
   const bySorted=[...rows].sort((a,b)=>b.ret-a.ret);
+  // Cartão partilhável: dados + ações (download / copiar / partilha nativa em mobile).
+  const shareDate=new Date().toLocaleDateString("pt-PT",{day:"numeric",month:"short"});
+  const shareStocks=bySorted.map(s=>({ticker:s.ticker,side:s.side,ret:s.ret}));
+  const shareFileName=`cdi-picker-${String(pf.name||"portefolio").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"portefolio"}.png`;
+  const shareDownload=()=>{ if(!shareUrl) return; const a=document.createElement("a"); a.href=shareUrl; a.download=shareFileName; a.click(); };
+  const shareCopy=async()=>{ if(!shareBlob) return; try{ if(!navigator.clipboard||typeof window.ClipboardItem==="undefined") throw 0; await navigator.clipboard.write([new window.ClipboardItem({[shareBlob.type||"image/png"]:shareBlob})]); setShareMsg("Imagem copiada ✓"); }catch{ setShareMsg("O browser não deixou copiar — descarrega em vez disso."); } };
+  const shareNative=async()=>{ if(!shareBlob) return; try{ const file=new File([shareBlob],shareFileName,{type:shareBlob.type||"image/png"}); if(navigator.canShare&&navigator.canShare({files:[file]})) await navigator.share({files:[file],title:"CDI Picker",text:`${pf.name} · ${pct(st.total)} no CDI Picker`}); else shareDownload(); }catch{} };
   // Destaques: melhor/pior performance DO DIA (variação vs fecho anterior),
   // espelhada para shorts. Só inclui ações com variação diária disponível.
   const dc=dayChange||{};
@@ -5853,7 +5919,14 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
               imgStyle={{width:"100%",height:"auto"}}/>
           );
         })()}
-      <TiltCard style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:acc?acc.border:"1px solid rgba(255,255,255,0.10)",boxShadow:acc?`${acc.glow}, 0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.16)`:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,zIndex:1}}>
+      <TiltCard style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:acc?acc.border:"1px solid rgba(255,255,255,0.10)",boxShadow:acc?`${acc.glow}, 0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.16)`:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,zIndex:1,position:"relative"}}>
+        <button onClick={()=>setShareOpen(true)} title="Partilhar cartão" aria-label="Partilhar cartão"
+          style={{position:"absolute",top:14,right:14,width:24,height:24,padding:0,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",zIndex:3,
+            background:"none",border:"none",color:"#94a3b8",opacity:0.7,transition:"opacity .15s, color .15s"}}
+          onMouseEnter={e=>{e.currentTarget.style.opacity="1";e.currentTarget.style.color="#e2e8f0";}}
+          onMouseLeave={e=>{e.currentTarget.style.opacity="0.7";e.currentTarget.style.color="#94a3b8";}}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v13"/></svg>
+        </button>
         <div style={{textAlign:"center"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",flexWrap:"wrap",gap:14,marginBottom:16,minWidth:0}}>
             {rank>0&&(rank<=3
@@ -5886,6 +5959,30 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
         </div>
       </TiltCard>
       </div>
+
+      {shareOpen&&(<>
+        {/* Cartão escondido (off-screen) só para a captura */}
+        <div aria-hidden="true" style={{position:"fixed",left:-99999,top:0,pointerEvents:"none"}}>
+          <PortfolioShareCard cardRef={shareCardRef} name={pf.name} total={st.total} stocks={shareStocks} ranks={{geral:standings?.geral?.rank,month:standings?.mensal?.rank,week:standings?.semanal?.rank}}/>
+        </div>
+        <div onClick={()=>setShareOpen(false)} style={{position:"fixed",inset:0,zIndex:9998,background:"rgba(3,7,18,0.72)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#0a1428",border:"1px solid rgba(255,255,255,0.12)",borderRadius:16,padding:18,maxWidth:"min(94vw,440px)",width:"100%",maxHeight:"92vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <span style={{fontSize:15,fontWeight:800}}>Partilhar portefólio</span>
+              <button onClick={()=>setShareOpen(false)} style={{background:"none",border:"none",color:"#94a3b8",fontSize:22,cursor:"pointer",lineHeight:1}}>×</button>
+            </div>
+            {shareUrl
+              ? <img src={shareUrl} alt="Cartão do portefólio" style={{display:"block",width:"100%",borderRadius:12,border:"1px solid rgba(255,255,255,0.10)"}}/>
+              : <div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14}}>{shareMsg||"A gerar imagem…"}</div>}
+            <div style={{display:"flex",flexWrap:"wrap",gap:10,marginTop:14,justifyContent:"center"}}>
+              {typeof navigator!=="undefined"&&navigator.share&&<button onClick={shareNative} disabled={!shareBlob} style={{padding:"11px 20px",borderRadius:12,fontSize:14,fontWeight:800,cursor:shareBlob?"pointer":"default",background:"#22c55e",border:"none",color:"#06281a",opacity:shareBlob?1:0.5}}>Partilhar</button>}
+              <button onClick={shareDownload} disabled={!shareUrl} style={{padding:"11px 20px",borderRadius:12,fontSize:14,fontWeight:800,cursor:shareUrl?"pointer":"default",background:(typeof navigator!=="undefined"&&navigator.share)?"rgba(255,255,255,0.06)":"#22c55e",border:(typeof navigator!=="undefined"&&navigator.share)?"1px solid rgba(255,255,255,0.16)":"none",color:(typeof navigator!=="undefined"&&navigator.share)?"#e2e8f0":"#06281a",opacity:shareUrl?1:0.5}}>Descarregar</button>
+              <button onClick={shareCopy} disabled={!shareBlob} style={{padding:"11px 20px",borderRadius:12,fontSize:14,fontWeight:700,cursor:shareBlob?"pointer":"default",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.16)",color:"#e2e8f0",opacity:shareBlob?1:0.5}}>Copiar</button>
+            </div>
+            {shareMsg&&shareUrl&&<div style={{marginTop:10,textAlign:"center",fontSize:12.5,color:shareMsg.includes("✓")?"#4ade80":"#f87171"}}>{shareMsg}</div>}
+          </div>
+        </div>
+      </>)}
 
       <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
         <div style={{display:"grid",alignItems:"center",gridTemplateColumns:"1.6fr 1fr 1fr 1.4fr",
