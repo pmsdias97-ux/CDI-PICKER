@@ -126,14 +126,25 @@ def post_rows(rows):
         return
     for i in range(0, len(rows), 400):
         chunk = rows[i:i + 400]
-        r = requests.post(
-            INGEST_URL,
-            json={"rows": chunk},
-            headers={"Authorization": f"Bearer {CRON_SECRET}", "Content-Type": "application/json"},
-            timeout=60,
-        )
-        print(f"[ath] POST {i}-{i + len(chunk)} -> {r.status_code} {r.text[:160]}")
-        r.raise_for_status()
+        last_err = None
+        for attempt in range(3):  # retry a 5xx/timeout/rede transitórios antes de rebentar o run
+            try:
+                r = requests.post(
+                    INGEST_URL,
+                    json={"rows": chunk},
+                    headers={"Authorization": f"Bearer {CRON_SECRET}", "Content-Type": "application/json"},
+                    timeout=60,
+                )
+                print(f"[ath] POST {i}-{i + len(chunk)} -> {r.status_code} {r.text[:160]}")
+                r.raise_for_status()
+                last_err = None
+                break
+            except Exception as e:
+                last_err = e
+                print(f"[ath] POST {i} tentativa {attempt + 1}/3 falhou: {e}")
+                time.sleep(3 * (attempt + 1))
+        if last_err:
+            raise last_err
 
 
 def compute_rows(symbols, names, in_sp500):
@@ -379,12 +390,17 @@ def fetch_prices():
 
     # PASSAGEM 2: o resto do S&P (para a aba ATH / % abaixo). Se não houve lista de membros,
     # `rest` == todos os símbolos → comporta-se como a passagem única de antes.
-    print(f"[ath] prices passagem 2 (resto): {len(rest)} símbolos")
-    p, pv, mx = _dl_prices(rest)
-    if _feed_fresh(mx, "prices passagem 2 (resto)"):
-        rows = _price_rows(p, pv, shares, have_shares)
-        print(f"[ath] prices passagem 2: {len(rows)} linhas (marketcap: {have_shares}) -> POST")
-        post_rows(rows)
+    # NÃO-fatal: os preços dos MEMBROS (passagem 1) já foram atualizados; se a 2 falhar
+    # (blip transitório), não vale a pena derrubar o run (evita emails de falha por nada).
+    try:
+        print(f"[ath] prices passagem 2 (resto): {len(rest)} símbolos")
+        p, pv, mx = _dl_prices(rest)
+        if _feed_fresh(mx, "prices passagem 2 (resto)"):
+            rows = _price_rows(p, pv, shares, have_shares)
+            print(f"[ath] prices passagem 2: {len(rows)} linhas (marketcap: {have_shares}) -> POST")
+            post_rows(rows)
+    except Exception as e:
+        print(f"[ath] prices passagem 2 falhou (não-fatal): {e}")
 
 
 def fetch_positions():

@@ -6890,6 +6890,7 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
                               <button onClick={()=>setEditT({id:n.id,title:n.title,body:n.body||"",link:n.link||""})} style={lk}>editar</button>
                               <button onClick={()=>deleteNotif({id:n.id})} style={lkDel}>apagar</button>
                             </div>
+                            {n.body&&<div style={{fontSize:11.5,color:"#94a3b8",marginTop:2,whiteSpace:"pre-line"}}>{n.body}</div>}
                             <div style={{fontSize:11,color:"#64748b",marginTop:3}}>para <strong style={{color:"#94a3b8"}}>{n.userName}</strong> · {new Date(n.createdAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}</div>
                           </>)}
                         </div>

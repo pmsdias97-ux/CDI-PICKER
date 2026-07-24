@@ -43,7 +43,7 @@ export async function GET(request) {
     const prev = lastById.get(r.userId);
     if (prev != null && r.rank - prev >= THRESHOLD) {
       await createNotification(supabase, { userId: r.userId, type: "overtaken",
-        title: `Desceste ${r.rank - prev} lugares hoje`, body: `Agora ${r.rank}º no Ranking Geral`, link: "ranking" });
+        title: `Desceste ${r.rank - prev} lugares no Ranking Geral`, body: `Agora ${r.rank}º · antes ${prev}º`, link: "ranking" });
       notified++;
     }
   }
