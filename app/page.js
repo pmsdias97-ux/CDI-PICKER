@@ -6426,12 +6426,21 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
   const [notifLoading,setNotifLoading]=useState(false);
   const [readersOf,setReadersOf]=useState(null); // {createdAt, read:[], unread:[], loading}
   const [editT,setEditT]=useState(null);         // alvo em edição {batchCreatedAt|id, title, body, link}
+  // Corte VISUAL das automáticas (só no browser do admin): esconde os lançamentos até esta data.
+  // Os membros mantêm as notificações — não apaga nada na BD. Serve para "recomeçar" a vista.
+  const [autoSince,setAutoSince]=useState(()=>{ try{ return localStorage.getItem("cdi_admin_notif_since")||""; }catch{ return ""; } });
+  function clearAutoView(){
+    if(!confirm("Limpar a vista do admin (só aqui)? As notificações continuam nos membros — isto só esconde o histórico atual para recomeçares.")) return;
+    const t=new Date().toISOString();
+    try{ localStorage.setItem("cdi_admin_notif_since",t); }catch{}
+    setAutoSince(t);
+  }
   async function loadNotifList(){
     setNotifLoading(true);
     try{
       const r=await fetch("/api/admin/notifications",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,action:"list"})});
       const j=await r.json().catch(()=>({}));
-      if(r.ok&&j.ok) setNotifList({broadcasts:j.broadcasts||[],recent:j.recent||[]});
+      if(r.ok&&j.ok) setNotifList({broadcasts:j.broadcasts||[],autoGroups:j.autoGroups||[]});
       else showToast(j.error||"Não foi possível carregar.","error");
     }catch{ showToast("Falha de ligação.","error"); }
     finally{ setNotifLoading(false); }
@@ -6458,9 +6467,11 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
       setEditT(null); showToast("Notificação atualizada."); loadNotifList();
     }catch{ showToast("Falha de ligação.","error"); }
   }
-  async function deleteNotif(target){ // {batchCreatedAt}|{id}
-    const isBatch=!!target.batchCreatedAt;
-    if(!confirm(isBatch?"Apagar este broadcast em TODOS os membros? Não pode ser desfeito.":"Apagar esta notificação? Não pode ser desfeito.")) return;
+  async function deleteNotif(target){ // {batchCreatedAt}|{groupCreatedAt}|{id}
+    const msg=target.batchCreatedAt?"Apagar este broadcast em TODOS os membros? Não pode ser desfeito."
+      :target.groupCreatedAt?"Apagar este lote de notificações automáticas em todos os membros? Não pode ser desfeito."
+      :"Apagar esta notificação? Não pode ser desfeito.";
+    if(!confirm(msg)) return;
     try{
       const r=await fetch("/api/admin/notifications",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw,action:"delete",...target})});
       const j=await r.json().catch(()=>({}));
@@ -6468,6 +6479,8 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
       setReadersOf(null); setEditT(null); showToast("Notificação apagada."); loadNotifList();
     }catch{ showToast("Falha de ligação.","error"); }
   }
+  const NOTIF_TYPE_LABEL={overtaken:"Mudança de ranking",weekly_win:"Vencedor da semana",weekly_digest:"Resumo semanal",comment:"Comentário no perfil",reaction:"Reação",mention:"Menção no chat"};
+  const typeLabel=(t)=>NOTIF_TYPE_LABEL[t]||t;
   // Saúde operacional (só leitura).
   const [health,setHealth]=useState(null);
   const [loadingHealth,setLoadingHealth]=useState(false);
@@ -6877,27 +6890,42 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
                     })}
                   </div>
                 )}
-                <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:700,margin:"18px 0 8px"}}>Automáticas recentes</div>
-                {notifList.recent.length===0?<p style={{color:"#4b5563",fontSize:13}}>Nenhuma.</p>:(
+                <div style={{display:"flex",alignItems:"center",gap:10,margin:"18px 0 4px",flexWrap:"wrap"}}>
+                  <span style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:700}}>Automáticas (por lançamento)</span>
+                  {(()=>{const shown=notifList.autoGroups.filter(g=>!autoSince||g.createdAt>autoSince);return shown.length>0&&(
+                    <button onClick={clearAutoView} style={{...lkDel,marginLeft:"auto"}}>limpar vista</button>
+                  );})()}
+                </div>
+                <p style={{color:"#4b5563",fontSize:11,margin:"0 0 8px"}}>Cada linha é um lançamento (não cada notificação personalizada): quando saiu e quem leu. {autoSince&&<span style={{color:"#64748b"}}>Vista limpa em {new Date(autoSince).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})} — os membros mantêm tudo. <button onClick={()=>{try{localStorage.removeItem("cdi_admin_notif_since");}catch{} setAutoSince("");}} style={{...lk,padding:0}}>repor</button></span>}</p>
+                {(()=>{ const shown=notifList.autoGroups.filter(g=>!autoSince||g.createdAt>autoSince); return shown.length===0?<p style={{color:"#4b5563",fontSize:13}}>Nenhuma.</p>:(
                   <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                    {notifList.recent.map(n=>{ const isEdit=editT&&editT.id===n.id;
+                    {shown.map(g=>{ const isR=readersOf&&readersOf.createdAt===g.createdAt;
                       return(
-                        <div key={n.id} style={{border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"9px 11px"}}>
-                          {isEdit?editForm(false):(<>
-                            <div style={{display:"flex",alignItems:"center",gap:8}}>
-                              <span title={n.read?"lida":"não lida"} style={{width:7,height:7,borderRadius:"50%",background:n.read?"#4ade80":"#f87171",flexShrink:0}}/>
-                              <span style={{fontSize:12.5,fontWeight:700,color:"#e2e8f0",flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.title}</span>
-                              <button onClick={()=>setEditT({id:n.id,title:n.title,body:n.body||"",link:n.link||""})} style={lk}>editar</button>
-                              <button onClick={()=>deleteNotif({id:n.id})} style={lkDel}>apagar</button>
+                        <div key={g.createdAt} style={{border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"9px 11px"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                            <span style={{fontSize:12.5,fontWeight:700,color:"#e2e8f0",flex:1,minWidth:0}}>{g.types.map(typeLabel).join(" · ")}</span>
+                            <span style={{fontSize:11.5,color:"#4ade80",fontWeight:700,whiteSpace:"nowrap"}}>{g.read}/{g.total} lidas</span>
+                          </div>
+                          <div style={{display:"flex",alignItems:"center",gap:12,marginTop:6,fontSize:11.5,color:"#64748b",flexWrap:"wrap"}}>
+                            <span>{new Date(g.createdAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}</span>
+                            <button onClick={()=>openReaders(g.createdAt)} style={lk}>{isR?"ocultar":"quem leu"}</button>
+                            <button onClick={()=>deleteNotif({groupCreatedAt:g.createdAt})} style={lkDel}>apagar</button>
+                          </div>
+                          {isR&&(
+                            <div style={{marginTop:8,borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:8}}>
+                              {readersOf.loading?<span style={{fontSize:12,color:"#64748b"}}>A carregar…</span>:(<>
+                                <div style={{fontSize:11.5,color:"#4ade80",fontWeight:700,marginBottom:3}}>Leram ({readersOf.read.length})</div>
+                                <div style={{fontSize:12,color:"#cbd5e1",lineHeight:1.5}}>{readersOf.read.length?readersOf.read.join(", "):"—"}</div>
+                                <div style={{fontSize:11.5,color:"#f87171",fontWeight:700,margin:"8px 0 3px"}}>Por ler ({readersOf.unread.length})</div>
+                                <div style={{fontSize:12,color:"#94a3b8",lineHeight:1.5}}>{readersOf.unread.length?readersOf.unread.join(", "):"—"}</div>
+                              </>)}
                             </div>
-                            {n.body&&<div style={{fontSize:11.5,color:"#94a3b8",marginTop:2,whiteSpace:"pre-line"}}>{n.body}</div>}
-                            <div style={{fontSize:11,color:"#64748b",marginTop:3}}>para <strong style={{color:"#94a3b8"}}>{n.userName}</strong> · {new Date(n.createdAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}</div>
-                          </>)}
+                          )}
                         </div>
                       );
                     })}
                   </div>
-                )}
+                ); })()}
               </>)}
             </div>
           );

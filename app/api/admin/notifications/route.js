@@ -31,20 +31,28 @@ export async function POST(request) {
     }
     const broadcasts = [...groups.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 50);
 
-    // Automáticas recentes (individuais, com destinatário).
+    // Automáticas AGRUPADAS pelo created_at (o "lançamento"): não mostra cada notificação personalizada,
+    // só quando foi lançada, o tipo, quantas e quantas lidas. Crons em lote (rank/digest) partilham
+    // created_at → 1 grupo; eventos avulsos (comentário/reação) ficam 1 por grupo.
     const { data: auto } = await supabase.from("notifications")
-      .select("id, type, title, body, link, actor_name, user_id, read, created_at").neq("type", "admin")
-      .order("created_at", { ascending: false }).limit(40);
-    const names = await namesMap();
-    const recent = (auto || []).map((r) => ({ id: r.id, type: r.type, title: r.title, body: r.body, link: r.link, actorName: r.actor_name, userName: names.get(r.user_id) || "—", read: r.read, createdAt: r.created_at }));
-    return Response.json({ ok: true, broadcasts, recent });
+      .select("type, read, created_at").neq("type", "admin")
+      .order("created_at", { ascending: false }).limit(6000);
+    const ag = new Map();
+    for (const r of auto || []) {
+      let g = ag.get(r.created_at);
+      if (!g) { g = { createdAt: r.created_at, types: new Set(), total: 0, read: 0 }; ag.set(r.created_at, g); }
+      g.total++; if (r.read) g.read++; g.types.add(r.type);
+    }
+    const autoGroups = [...ag.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 40)
+      .map((g) => ({ createdAt: g.createdAt, types: [...g.types], total: g.total, read: g.read }));
+    return Response.json({ ok: true, broadcasts, autoGroups });
   }
 
   if (action === "readers") {
     const createdAt = String(body?.createdAt || "");
     if (!createdAt) return Response.json({ error: "Falta o envio." }, { status: 400 });
-    let { data, error } = await supabase.from("notifications").select("user_id, read, read_at").eq("type", "admin").eq("created_at", createdAt);
-    if (error) ({ data } = await supabase.from("notifications").select("user_id, read").eq("type", "admin").eq("created_at", createdAt)); // sem read_at
+    let { data, error } = await supabase.from("notifications").select("user_id, read, read_at").eq("created_at", createdAt);
+    if (error) ({ data } = await supabase.from("notifications").select("user_id, read").eq("created_at", createdAt)); // sem read_at (broadcast OU grupo de automáticas)
     const names = await namesMap();
     const readRows = [], unread = [];
     for (const r of data || []) {
@@ -79,6 +87,10 @@ export async function POST(request) {
   if (action === "delete") {
     if (body?.batchCreatedAt) {
       const { error } = await supabase.from("notifications").delete().eq("type", "admin").eq("created_at", String(body.batchCreatedAt));
+      if (error) return Response.json({ error: error.message }, { status: 500 });
+      return Response.json({ ok: true });
+    } else if (body?.groupCreatedAt) { // grupo de automáticas (qualquer type ≠ admin) por created_at
+      const { error } = await supabase.from("notifications").delete().neq("type", "admin").eq("created_at", String(body.groupCreatedAt));
       if (error) return Response.json({ error: error.message }, { status: 500 });
       return Response.json({ ok: true });
     } else if (body?.id) {
