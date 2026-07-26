@@ -2174,7 +2174,7 @@ export default function App(){
     onMyPortfolio={openMyPortfolio}
     myPortfolioActive={page==="detail" && !!detailPf && !!myPf && detailPf.key===myPf.key}>{children}</Shell>;
 
-  if(page==="home")   return sh(<Home nav={nav} submitted={submitted} settings={settings} ranking={ranking} livePrices={livePrices} onMyPortfolio={openMyPortfolio} myName={myName}/>);
+  if(page==="home")   return sh(<Home nav={nav} navRank={navRank} submitted={submitted} settings={settings} ranking={ranking} livePrices={livePrices} onMyPortfolio={openMyPortfolio} myName={myName}/>);
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} pickCounts={compStats.counts} compTickers={compStats.tickers} showToast={showToast}/>);
@@ -2444,7 +2444,7 @@ const NAV_ICONS={
 
 /* ---- Home: liga ao vivo -------------------------------------------------- */
 
-function WinnersGrid({top,livePrices,nav}){
+function WinnersGrid({top,livePrices,nav,navRank}){
   const [seriesById,setSeriesById]=useState({});
   useEffect(()=>{
     let cancel=false;
@@ -2497,13 +2497,13 @@ function WinnersGrid({top,livePrices,nav}){
           {main.map((p,i)=>(
             <div key={p.key} className={`cdiCell winP${i+1}`}>
               <WinnerCard p={p} rank={i+1} livePrices={livePrices}
-                series={seriesById[p.id]||[]} onClick={()=>nav("ranking")}/>
+                series={seriesById[p.id]||[]} onClick={()=>navRank("total")}/>
             </div>
           ))}
           {peek&&(
-            <div className="cdiPeek" onClick={()=>nav("ranking")} aria-hidden="true">
+            <div className="cdiPeek" onClick={()=>navRank("total")} aria-hidden="true">
               <div>
-                <WinnerCard p={peek} rank={5} livePrices={livePrices} series={seriesById[peek.id]||[]} onClick={()=>nav("ranking")}/>
+                <WinnerCard p={peek} rank={5} livePrices={livePrices} series={seriesById[peek.id]||[]} onClick={()=>navRank("total")}/>
               </div>
             </div>
           )}
@@ -2776,7 +2776,7 @@ function Reveal({children,delay=0,y=14,style}){
     }}>{children}</div>
   );
 }
-function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
+function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
   const officialCount=(ranking||[]).filter(p=>p.official).length;
   const compDay=(()=>{ const d=settings?.gameStartDate?new Date(settings.gameStartDate):null; if(!d||isNaN(d)) return 1; return Math.max(1,Math.min(365,Math.floor((Date.now()-d.getTime())/86400000)+1)); })();
   const iconProps={viewBox:"0 0 24 24",fill:"none",stroke:"#8ea2bf",strokeWidth:1.6,strokeLinecap:"round",strokeLinejoin:"round",width:22,height:22,"aria-hidden":true};
@@ -2845,7 +2845,7 @@ function Home({nav,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
               <span style={{width:7,height:7,borderRadius:"50%",background:"#ef4444",display:"inline-block"}}/>AO VIVO
             </span>
           </div>
-          <WinnersGrid top={ranking.filter(p=>Number.isFinite(p.total)).slice(0,5)} livePrices={livePrices} nav={nav}/>
+          <WinnersGrid top={ranking.filter(p=>Number.isFinite(p.total)).slice(0,5)} livePrices={livePrices} nav={nav} navRank={navRank}/>
           </Reveal>
         </section>
       )}
