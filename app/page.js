@@ -931,11 +931,15 @@ function UpdateBanner(){
 
 // Glow ambiente a respirar/derivar LENTAMENTE (Web Animations API, loop infinito; respeita
 // prefers-reduced-motion). BreatheGlow = só a camada de luz; GlowBehind = luz + conteúdo por cima.
+// CALM_MOTION: congela os brilhos AMBIENTE (Aurora + BreatheGlow). Animar blur por trás de painéis
+// com backdrop-filter obriga o vidro a re-compor a cada frame (pesado em páginas com muito vidro, ex.:
+// "Minhas 8"). Congelado = visual quase idêntico (ciclos de 22-50s), sem o custo contínuo. [TESTE local]
+const CALM_MOTION=true;
 function BreatheGlow({color="rgba(64,170,205,0.5)",mid="rgba(56,189,248,0.16)",inset="-14% -10%",blur=46,base=0.45,duration=22000}){
   const ref=useRef(null);
   useEffect(()=>{
     let reduce=false; try{ reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches; }catch{}
-    const el=ref.current; if(!el||reduce||!el.animate) return;
+    const el=ref.current; if(!el||reduce||CALM_MOTION||!el.animate) return;
     // Translação + opacidade (sem scale — evita re-rasterizar a desfocagem da própria camada).
     const anim=el.animate([
       {transform:"translate3d(-4%,-3%,0)",opacity:base*0.9},
@@ -978,7 +982,7 @@ function Aurora({page}){
   const r1=useRef(null), r2=useRef(null);
   useEffect(()=>{
     let reduce=false; try{ reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches; }catch{}
-    if(reduce) return;
+    if(reduce||CALM_MOTION) return;
     const mk=(el,frames,dur)=>el&&el.animate?el.animate(frames,{duration:dur,easing:"ease-in-out",iterations:Infinity}):null;
     const a1=mk(r1.current,[
       {transform:"translate3d(-7%,-5%,0)"},
