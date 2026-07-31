@@ -255,6 +255,21 @@ function weekKey(d){
   return t.toISOString().slice(0,10);
 }
 function nextWeek(key){ const t=new Date(key+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+7); return t.toISOString().slice(0,10); }
+// Fecho de um mês FECHADO (p/ apurar o "Campeão do mês"), por ordem de fiabilidade:
+//  1) abertura do mês SEGUINTE = o "fecho antes do dia 1" (permanente; o cron mensal captura-o no início
+//     do mês seguinte). É o mesmo mecanismo de sempre.
+//  2) se o mês terminou numa 6ª feira / fim de semana (último pregão = 6ª) e essa semana já foi FECHADA
+//     pela weekly-close, o fecho SEMANAL dessa semana serve de fecho do mês → revela o campeão LOGO, sem
+//     esperar pelo baseline do mês seguinte. Simétrico ao vencedor semanal (que revela à 6ª ao fecho).
+function monthCloseBase(per, pastBaselines, weekCloses){
+  const nxt = pastBaselines && pastBaselines[nextPeriod(per)];
+  if(nxt) return nxt;
+  const [y,m] = per.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m, 0));            // dia 0 do mês seguinte = último dia deste mês
+  const dow = last.getUTCDay();                        // 5=6ª, 6=Sáb, 0=Dom → último pregão do mês = 6ª dessa semana
+  if((dow===5||dow===6||dow===0) && weekCloses){ const wc = weekCloses[weekKey(last)]; if(wc) return wc; }
+  return null;
+}
 // Semanas numeradas ("Semana 1", "Semana 2", …). Semana 1 = semana de arranque (1–3 jul, parcial;
 // semana ISO de 29-jun). Semana 2 = 6–10 jul (1ª semana completa e ao vivo).
 const WEEK1_MONDAY="2026-06-29";
@@ -2022,10 +2037,12 @@ export default function App(){
   const winners=useMemo(()=>{
     const map={}; const add=(key,kind,label)=>{ (map[key]=map[key]||{monthly:[],weekly:[]})[kind].push(label); };
     const offs=ranking.filter(p=>p.official);
-    // Mensal: mês fechado = já existe o baseline do mês seguinte. Vencedor = melhor open→open seguinte.
+    // Mensal: medalha quando o mês tem fecho FROZEN (monthCloseBase != null) — abertura do mês seguinte OU,
+    // se o mês acabou à 6ª/fim de semana, o fecho semanal dessa semana. Inclui o mês ATUAL assim que o seu
+    // pregão termina (simétrico ao semanal, que premeia a semana atual quando fecha). Vencedor = melhor open→close.
     const curM=new Date().toISOString().slice(0,7);
-    for(const per of Object.keys(pastBaselines).sort()){ if(per>=curM) continue;
-      const from=pastBaselines[per], to=pastBaselines[nextPeriod(per)]; if(!from||!to) continue;
+    for(const per of Object.keys(pastBaselines).sort()){ if(per>curM) continue; // meses futuros nunca
+      const from=pastBaselines[per], to=monthCloseBase(per,pastBaselines,weekCloses); if(!from||!to) continue;
       let best=null; for(const p of offs){ const r=pfPeriodRet(p,from,to); if(r!=null&&(!best||r>best.r)) best={p,r}; }
       if(best) add(best.p.key,"monthly",periodLabel(per)); }
     // Semanal: medalha logo que a semana FECHA (não só na 2ª feira seguinte). Semana fechada = tem
@@ -4713,10 +4730,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   // Widget do campeão parametrizado por tipo (mês OU semana) — o resto do cartão é idêntico.
   const champCfg={
     month:{ liveOf:monthOf, fmt:periodLabel, title:`Campeão de ${monthNameCap}`,
-      pendHead:"Por apurar", pendSub:"Apurado no último dia do mês", emptyMsg:"Sem participantes ainda.", done:false, wonLabel:"", listTitle:"Campeões anteriores",
+      pendHead:"Por apurar", pendSub:"Apurado no último dia do mês", emptyMsg:"Sem participantes ainda.", done:false, promoteLatest:true, wonLabel:"", listTitle:"Campeões anteriores",
       champs:()=>{ const out=[], cur=new Date().toISOString().slice(0,7);
         for(const per of Object.keys(pastBaselines).sort()){ if(per>=cur) continue;
-          const from=pastBaselines[per], to=pastBaselines[nextPeriod(per)]; if(!from||!to) continue; // fim = início do mês seguinte
+          const from=pastBaselines[per], to=monthCloseBase(per,pastBaselines,weekCloses); if(!from||!to) continue; // fim = início do mês seguinte (ou fecho semanal se o mês acabou à 6ª)
           let best=null; for(const p of officials){ const r=pfPeriodRet(p,from,to); if(r!=null&&(!best||r>best.r)) best={p,r}; }
           if(best) out.push({period:per,...best}); }
         return out.reverse(); },
@@ -4742,16 +4759,35 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     const leaders=[...officials].map(p=>({p,m:cf.liveOf(p)})).filter(x=>x.m!=null).sort((a,b)=>b.m-a.m);
     const champs=cf.champs();
     const winner=cf.done&&leaders.length?leaders[0]:null; // semana fechada → revela o vencedor (preços de 6ª, congelados pelo mercado)
-    return railCard(cf.title,(
+    // Mensal (simétrico ao semanal, que revela à 6ª): revela o campeão quando o mês já não tem mais pregões.
+    //  (1) mês ATUAL fechado — o fecho FROZEN já existe (monthCloseBase: mês acaba 6ª/fim de semana já
+    //      capturado pela weekly-close, OU já há baseline do mês seguinte) → campeão do mês atual;
+    //  (2) logo após virar o mês, enquanto o novo mês ainda não tem corrida própria (baseline por capturar),
+    //      mantém em destaque o campeão do mês anterior. Depois passa a "por apurar" + campeão desce à lista.
+    let feat=null; // {p, r, period}
+    if(cf.promoteLatest){
+      const curClose=monthCloseBase(curMonthYM,pastBaselines,weekCloses);
+      if(curClose&&monthBase&&Object.keys(monthBase).length){
+        const t=officials.map(p=>({p,r:pfPeriodRet(p,monthBase,curClose)})).filter(x=>x.r!=null).sort((a,b)=>b.r-a.r)[0];
+        if(t) feat={p:t.p,r:t.r,period:curMonthYM};
+      }
+      if(!feat&&!hasMonth&&champs.length) feat={p:champs[0].p,r:champs[0].r,period:champs[0].period};
+    }
+    const listChamps=(feat&&champs.length&&feat.period===champs[0].period)?champs.slice(1):champs;
+    const cap=(s)=>s?s.charAt(0).toUpperCase()+s.slice(1):s;
+    // Linha de destaque (campeão revelado): semanal via `winner` (live-frozen), mensal via `feat` (mês fechado, frozen).
+    const prom=winner?{p:winner.p,r:winner.m,label:weekLabel(curWk)}:feat?{p:feat.p,r:feat.r,label:cf.fmt(feat.period)}:null;
+    const cardTitle=feat?`Campeão de ${cap(cf.fmt(feat.period))}`:cf.title;
+    return railCard(cardTitle,(
       <div>
-        {winner?(
-          <div onClick={()=>onSelect(winner.p.key)} title="Ver portefólio" style={{cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+        {prom?(
+          <div onClick={()=>prom.p.key&&onSelect(prom.p.key)} title={prom.p.key?"Ver portefólio":undefined} style={{cursor:prom.p.key?"pointer":"default",display:"flex",alignItems:"center",gap:10}}>
             <span style={{fontSize:24,lineHeight:1}}>🏆</span>
             <div style={{minWidth:0,flex:1}}>
-              <div style={{fontSize:9.5,color:"#facc15",fontWeight:800,textTransform:"uppercase",letterSpacing:".4px"}}>{weekLabel(curWk)}</div>
-              <div style={{fontSize:14,fontWeight:700,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{winner.p.name}</div>
+              <div style={{fontSize:9.5,color:"#facc15",fontWeight:800,textTransform:"uppercase",letterSpacing:".4px"}}>{prom.label}</div>
+              <div style={{fontSize:14,fontWeight:700,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{prom.p.name}</div>
             </div>
-            <span style={{fontFamily:"monospace",fontSize:13,fontWeight:800,color:winner.m>=0?"#4ade80":"#f87171",flexShrink:0}}>{pct(winner.m)}</span>
+            <span style={{fontFamily:"monospace",fontSize:13,fontWeight:800,color:prom.r>=0?"#4ade80":"#f87171",flexShrink:0}}>{pct(prom.r)}</span>
           </div>
         ):leaders.length?(
           // Em curso: o vencedor só é apurado no fim do período. Sem líder à vista → mais suspense.
@@ -4765,10 +4801,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
             </div>
           </div>
         ):<div style={{fontSize:12.5,color:"#94a3b8"}}>{cf.emptyMsg}</div>}
-        {champs.length>0&&(
+        {listChamps.length>0&&(
           <div style={{marginTop:10,borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:8}}>
             <div style={{fontSize:10,color:"#64748b",fontWeight:800,textTransform:"uppercase",letterSpacing:".4px",marginBottom:6}}>{cf.listTitle}</div>
-            {champs.slice(0,4).map(c=>(
+            {listChamps.slice(0,4).map(c=>(
               <div key={c.period} onClick={()=>c.p.key&&onSelect(c.p.key)} title={c.p.key?"Ver portefólio":undefined} style={{cursor:c.p.key?"pointer":"default",display:"flex",justifyContent:"space-between",gap:8,padding:"4px 0",fontSize:12.5}}>
                 <span style={{color:"#94a3b8",textTransform:"capitalize",flexShrink:0}}>{cf.fmt(c.period)}</span>
                 <span style={{color:"#e2e8f0",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,textAlign:"right"}}>{c.p.name}</span>
