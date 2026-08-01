@@ -70,6 +70,25 @@ def _feed_fresh(max_bar_date, label):
         print(f"[ath] {label}: FEED DESATUALIZADO — barra {max_bar_date} < último pregão {exp}. "
               f"NÃO escreve (evita clobber com dados velhos)."); return False
     return True
+
+def _us_market_open_now(now=None):
+    """Mercado US aberto AGORA (dia de pregão + 09:30–16:00 ET). Serve para decidir se a CRIPTO (ex.: BTC = ETF
+    Grayscale) é atualizada no sp500_ath — fora de horas fica congelada, como as ações (senão corria 24/7 e
+    mexia o ranking)."""
+    et = (now or dt.datetime.now(dt.timezone.utc)).astimezone(ZoneInfo("America/New_York"))
+    if not _is_trading_day(et.date()):
+        return False
+    mins = et.hour * 60 + et.minute
+    return 9 * 60 + 30 <= mins < 16 * 60  # 09:30–16:00 ET
+
+# Cripto que os membros podem ter (espelha app/lib/crypto.js). No jogo tipicamente só a BTC (ETF Grayscale ~$28,
+# que o yf.download não resolve → vai pelo chart-v8). Fica no sp500_ath para CONGELAR fora de horas.
+CRYPTO = {"BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "USDC", "ADA", "DOGE", "TRX", "AVAX", "SHIB", "LINK", "DOT",
+          "BCH", "NEAR", "LTC", "UNI", "ICP", "ETC", "XLM", "ATOM", "XMR", "APT", "FIL", "ARB", "OP", "HBAR",
+          "VET", "MKR", "AAVE", "ALGO", "SUI", "PEPE"}
+def _is_crypto(t):
+    return str(t or "").upper().replace("-USD", "").strip() in CRYPTO
+
 ENRICH_BUDGET_S = 300  # teto DURO (SIGALRM) p/ a fase de marketcap/nome — evita pendurar se o Yahoo limitar
 
 
@@ -310,7 +329,12 @@ def _chart_price(symbol):
 def _fill_missing_via_chart(missing, prices):
     """Para os tickers de MEMBROS que o download não trouxe, tenta o preço pelo chart v8 (teto de
     segurança p/ não martelar o Yahoo). Preenche `prices` in-place; sem prev_close → sem diário."""
+    mkt_open = _us_market_open_now()
     for sym in missing[:20]:
+        # Cripto (ex.: BTC): só atualiza com o MERCADO ABERTO → congela fora de horas como as ações (as ações
+        # já congelam porque o sp500_ath fica stale; a cripto correria 24/7 e mexia o ranking).
+        if _is_crypto(sym) and not mkt_open:
+            continue
         p = _chart_price(sym)
         if p:
             prices[sym] = p
@@ -387,6 +411,21 @@ def fetch_prices():
             rows = _price_rows(p, pv, shares, have_shares)
             print(f"[ath] prices passagem 1: {len(rows)} linhas -> POST")
             post_rows(rows)
+
+    # CRIPTO dos membros (ex.: BTC = ETF Grayscale que o yf.download não resolve e que pode ainda não estar no
+    # sp500_ath): via chart-v8 (mesma fonte do app), SÓ com o mercado aberto → entra no sp500_ath e depois
+    # CONGELA fora de horas como as ações (senão corria 24/7 e mexia o ranking). NÃO-fatal.
+    try:
+        crypto_held = [t for t in held if _is_crypto(t)]
+        if crypto_held and _us_market_open_now():
+            cp = {}
+            _fill_missing_via_chart(crypto_held, cp)
+            if cp:
+                rows = _price_rows(cp, {}, shares, False)
+                print(f"[ath] prices cripto (chart, mercado aberto): {len(rows)} linha(s) -> POST")
+                post_rows(rows)
+    except Exception as e:
+        print(f"[ath] prices cripto falhou (não-fatal): {e}")
 
     # PASSAGEM 2: o resto do S&P (para a aba ATH / % abaixo). Se não houve lista de membros,
     # `rest` == todos os símbolos → comporta-se como a passagem única de antes.
