@@ -256,12 +256,15 @@ function weekKey(d){
 }
 function nextWeek(key){ const t=new Date(key+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+7); return t.toISOString().slice(0,10); }
 // Fecho de um mês FECHADO (p/ apurar o "Campeão do mês"), por ordem de fiabilidade:
+//  0) close_price GRAVADO (cron monthly-close, no último dia útil do mês) — geral e permanente, revela o
+//     campeão logo que o mês fecha, seja qual for o dia. É a fonte principal.
 //  1) abertura do mês SEGUINTE = o "fecho antes do dia 1" (permanente; o cron mensal captura-o no início
-//     do mês seguinte). É o mesmo mecanismo de sempre.
+//     do mês seguinte). Fallback caso o close_price ainda não exista.
 //  2) se o mês terminou numa 6ª feira / fim de semana (último pregão = 6ª) e essa semana já foi FECHADA
-//     pela weekly-close, o fecho SEMANAL dessa semana serve de fecho do mês → revela o campeão LOGO, sem
-//     esperar pelo baseline do mês seguinte. Simétrico ao vencedor semanal (que revela à 6ª ao fecho).
-function monthCloseBase(per, pastBaselines, weekCloses){
+//     pela weekly-close, o fecho SEMANAL dessa semana serve de fecho do mês. Último recurso.
+function monthCloseBase(per, pastBaselines, weekCloses, monthCloses){
+  const stored = monthCloses && monthCloses[per];
+  if(stored) return stored;
   const nxt = pastBaselines && pastBaselines[nextPeriod(per)];
   if(nxt) return nxt;
   const [y,m] = per.split("-").map(Number);
@@ -1829,6 +1832,7 @@ export default function App(){
   const [spyHist,setSpyHist]=useState(null);
   const [monthBase,setMonthBase]=useState({}); // {ticker:preço} baseline do mês atual (mini-época mensal)
   const [pastBaselines,setPastBaselines]=useState({}); // {period:{ticker:preço}} p/ campeões de meses fechados
+  const [monthCloses,setMonthCloses]=useState({});     // {period:{ticker:fecho}} meses já fechados (close_price)
   const [rankPeriod,setRankPeriod]=useState("total"); // toggle Geral|Mensal|Semanal — elevado p/ o Shell trocar o fundo
   const [weekBase,setWeekBase]=useState({}); // {ticker:abertura} da semana atual (rentabilidade ao vivo)
   const [weekOpens,setWeekOpens]=useState({}); // {weekKey:{ticker:abertura}} todas as semanas
@@ -1953,14 +1957,14 @@ export default function App(){
     // unavailable, the benchmark simply doesn't render.
     fetchStockHistory("SPY").then(h=>setSpyHist(h&&h.length?h:null)).catch(()=>{});
 
-    // Baselines mensais (mini-época "Campeão do mês"). Falha em silêncio → cai no total.
-    supabase.from("monthly_baselines").select("period,ticker,price").then(({data})=>{
+    // Baselines mensais (mini-época "Campeão do mês"): abertura (price) + fecho (close_price). Falha em silêncio.
+    supabase.from("monthly_baselines").select("period,ticker,price,close_price").then(({data})=>{
       const period=new Date().toISOString().slice(0,7); // 'YYYY-MM' (UTC)
-      const cur={}, past={};
-      (data||[]).forEach(r=>{ const price=Number(r.price); if(!(price>0)) return;
-        (past[r.period]=past[r.period]||{})[r.ticker]=price;
-        if(r.period===period) cur[r.ticker]=price; });
-      setMonthBase(cur); setPastBaselines(past);
+      const cur={}, past={}, closes={};
+      (data||[]).forEach(r=>{ const price=Number(r.price); const c=r.close_price==null?null:Number(r.close_price);
+        if(price>0){ (past[r.period]=past[r.period]||{})[r.ticker]=price; if(r.period===period) cur[r.ticker]=price; }
+        if(c>0){ (closes[r.period]=closes[r.period]||{})[r.ticker]=c; } });
+      setMonthBase(cur); setPastBaselines(past); setMonthCloses(closes);
     }).catch(()=>{});
 
     // Baselines semanais (mini-época "Vencedor da Semana"): abertura (2ª) + fecho (6ª). Falha em silêncio.
@@ -2042,7 +2046,7 @@ export default function App(){
     // pregão termina (simétrico ao semanal, que premeia a semana atual quando fecha). Vencedor = melhor open→close.
     const curM=new Date().toISOString().slice(0,7);
     for(const per of Object.keys(pastBaselines).sort()){ if(per>curM) continue; // meses futuros nunca
-      const from=pastBaselines[per], to=monthCloseBase(per,pastBaselines,weekCloses); if(!from||!to) continue;
+      const from=pastBaselines[per], to=monthCloseBase(per,pastBaselines,weekCloses,monthCloses); if(!from||!to) continue;
       let best=null; for(const p of offs){ const r=pfPeriodRet(p,from,to); if(r!=null&&(!best||r>best.r)) best={p,r}; }
       if(best) add(best.p.key,"monthly",periodLabel(per)); }
     // Semanal: medalha logo que a semana FECHA (não só na 2ª feira seguinte). Semana fechada = tem
@@ -2058,7 +2062,7 @@ export default function App(){
     for(const seed of WEEK_SEED_CHAMPS){ if(seen.has(seed.period)) continue;
       const p=offs.find(x=>x.normName===norm(seed.name)); if(p) add(p.key,"weekly",weekLabel(seed.period)); }
     return map;
-  },[ranking,pastBaselines,weekOpens,weekCloses]);
+  },[ranking,pastBaselines,weekOpens,weekCloses,monthCloses]);
   // Popularidade por ação na competição (liga a aba ATH ao jogo): quantos oficiais têm cada ticker.
   const compStats=useMemo(()=>{
     const off=ranking.filter(p=>p.official); const counts={};
@@ -2199,7 +2203,7 @@ export default function App(){
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} pickCounts={compStats.counts} compTickers={compStats.tickers} showToast={showToast}/>);
-  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} monthBase={monthBase} pastBaselines={pastBaselines} weekBase={weekBase} weekOpens={weekOpens} weekCloses={weekCloses} period={rankPeriod} setPeriod={setRankPeriod} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)} winners={winners} showToast={showToast} recentComments={recentComments.filter(c=>portfolios.some(p=>p.id===c.portfolioId))} openComments={openComments}/>);
+  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} monthBase={monthBase} pastBaselines={pastBaselines} monthCloses={monthCloses} weekBase={weekBase} weekOpens={weekOpens} weekCloses={weekCloses} period={rankPeriod} setPeriod={setRankPeriod} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)} winners={winners} showToast={showToast} recentComments={recentComments.filter(c=>portfolios.some(p=>p.id===c.portfolioId))} openComments={openComments}/>);
   if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} dayChange={dayChange} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} myUserId={myPf?.userId||null} adminPw={adminPw} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} winners={winners} standings={detailStandings} monthBase={monthBase} weekBase={weekBase} reload={load} showToast={showToast} onOpenMember={openMember} focusRef={detailFocusRef}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast} adminPw={adminPw} setAdminPw={setAdminPw}/>);
@@ -2382,12 +2386,40 @@ function MarketStatus(){
 
 /* ---- Nav ----------------------------------------------------------------- */
 function Nav({page,nav,navRank,rankPeriod,submitted,onMyPortfolio,myPortfolioActive,tint}){
+  // Pílula ATIVA PARTILHADA que DESLIZA entre itens ao mudar de página (em vez de saltar). Mede o item
+  // ativo (`.cdiNavSel`) e anima transform/tamanho até ele; sem item ativo (duelo, perfil de outro) desvanece.
+  const navRef=useRef(null);
+  const [pill,setPill]=useState(null); // {left,top,width,height,visible}
+  const readyRef=useRef(false);         // 1º posicionamento sem animação de transform (não "voa" do canto)
+  useLayoutEffect(()=>{
+    const el=navRef.current; if(!el) return;
+    const measure=()=>{
+      const sel=el.querySelector(".cdiNavSel"); const cr=el.getBoundingClientRect();
+      if(!sel){ setPill(p=>p?{...p,visible:false}:null); return; }
+      const br=sel.getBoundingClientRect();
+      setPill({left:br.left-cr.left,top:br.top-cr.top,width:br.width,height:br.height,visible:true});
+    };
+    measure();
+    let reduce=false; try{ reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches; }catch{}
+    const raf=requestAnimationFrame(()=>{ readyRef.current=!reduce; }); // reduced-motion → salta (sem deslize)
+    const ro=new ResizeObserver(measure); ro.observe(el);
+    return()=>{ cancelAnimationFrame(raf); ro.disconnect(); };
+  },[page,myPortfolioActive,submitted]);
+  const ease="cubic-bezier(.34,1.1,.4,1)";
   return(
-    <div className="cdiNav" style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4,flexWrap:"nowrap",
+    <div ref={navRef} className="cdiNav" style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center",gap:4,flexWrap:"nowrap",
       width:"max-content",maxWidth:"calc(100% - 16px)",padding:"2px 6px",borderRadius:22,
       background:"var(--nav-tint, rgba(255,255,255,0.06))",transition:"background-color .6s ease",
       backdropFilter:"blur(42px) saturate(180%)",WebkitBackdropFilter:"blur(42px) saturate(180%)",
       border:"1px solid rgba(255,255,255,0.14)",boxShadow:"0 8px 28px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.16)","--nav-tint":tint}}>
+      {pill&&(
+        <div aria-hidden="true" style={{position:"absolute",left:0,top:0,width:pill.width,height:pill.height,
+          transform:`translate(${pill.left}px,${pill.top}px)`,borderRadius:999,
+          background:"rgba(255,255,255,0.10)",backdropFilter:"blur(16px) saturate(180%)",WebkitBackdropFilter:"blur(16px) saturate(180%)",
+          border:"1px solid rgba(255,255,255,0.14)",boxShadow:"0 4px 18px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.16)",opacity:pill.visible?1:0,
+          transition:readyRef.current?`transform .42s ${ease}, width .42s ${ease}, height .42s ${ease}, opacity .25s ease`:"opacity .25s ease",
+          zIndex:0,pointerEvents:"none"}}/>
+      )}
       <NavLink label="Início" active={page==="home"} onClick={()=>nav("home")} icon={NAV_ICONS.home}/>
       <RankingNav active={page==="ranking"} rankPeriod={rankPeriod} navToRanking={()=>nav("ranking")} navRank={navRank}/>
       <NavLink label="ATH" active={page==="ath"} onClick={()=>nav("ath")} icon={NAV_ICONS.mountain}/>
@@ -2400,7 +2432,7 @@ function RankingNav({active,rankPeriod,navToRanking,navRank}){
   const [open,setOpen]=useState(false);
   const items=[["total","Geral"],["month","Mensal"],["week","Semanal"]];
   return(
-    <div style={{position:"relative"}} onMouseEnter={()=>setOpen(true)} onMouseLeave={()=>setOpen(false)}>
+    <div style={{position:"relative",zIndex:1}} onMouseEnter={()=>setOpen(true)} onMouseLeave={()=>setOpen(false)}>
       {/* Vindo de outra aba → vai direto ao Ranking Geral (e fecha o submenu). Já no Ranking →
           mantém o separador atual. */}
       <NavLink label="Ranking" active={active} onClick={()=>{ setOpen(false); active?navToRanking():navRank("total"); }} caret icon={NAV_ICONS.trophy}/>
@@ -2440,12 +2472,8 @@ function NavLink({label,active,onClick,locked,caret,icon}){
       onMouseLeave={e=>{ if(!active) e.currentTarget.style.color="#9aa4b2"; }}
       style={{cursor:"pointer",fontSize:14,fontWeight:active?600:500,padding:"8px 16px",borderRadius:999,
         color:active?"#e2e8f0":"#9aa4b2",
-        background:active?"rgba(255,255,255,0.08)":"transparent",
-        backdropFilter:active?"blur(16px) saturate(180%)":"none",
-        WebkitBackdropFilter:active?"blur(16px) saturate(180%)":"none",
-        border:`1px solid ${active?"rgba(255,255,255,0.14)":"transparent"}`,
-        boxShadow:active?"0 4px 18px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.16)":"none",
-        transition:"color 0.15s",position:"relative",display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap",flexShrink:0}}>
+        background:"transparent",border:"1px solid transparent",
+        transition:"color 0.25s ease",position:"relative",zIndex:1,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap",flexShrink:0}}>
       {icon
         ? <svg viewBox="0 0 24 24" width={20} height={20} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon}</svg>
         : label}
@@ -4057,7 +4085,7 @@ function RecentCommentsCard({items,onOpen}){
     </div>
   );
 }
-function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunch,settings,monthBase,pastBaselines,weekBase,weekOpens,weekCloses,period,setPeriod,onSelect,onCompare,highlightKey,clearHighlight,winners,showToast,recentComments,openComments}){
+function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunch,settings,monthBase,pastBaselines,monthCloses,weekBase,weekOpens,weekCloses,period,setPeriod,onSelect,onCompare,highlightKey,clearHighlight,winners,showToast,recentComments,openComments}){
   const [cmp,setCmp]=useState(false);
   const [sel,setSel]=useState([]);
   // Mini-curva por linha: snapshots por portefólio (histórico). Recarrega só quando o
@@ -4583,6 +4611,11 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       {children}
     </div>
   );
+  // Acento cromático do ranking ativo: Geral=azul, Mensal=roxo/lilás, Semanal=verde-água.
+  const thA=period==="month"?"#a78bfa":period==="week"?"#2dd4bf":"#60a5fa";
+  const thL=period==="month"?"#c4b5fd":period==="week"?"#5eead4":"#93c5fd";
+  const thD=period==="month"?"#8b5cf6":period==="week"?"#14b8a6":"#3b82f6";
+  const thRGB=period==="month"?"167,139,250":period==="week"?"45,212,191":"96,165,250";
   const mono=(v,pos)=><span style={{fontFamily:"monospace",fontSize:13,fontWeight:800,color:pos?"#4ade80":"#f87171"}}>{v}</span>;
   const hiRow=(label,p,valueEl,first)=> p?(
     <div onClick={()=>onSelect(p.key)} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",padding:"5px 0",borderTop:first?"none":"1px solid rgba(255,255,255,0.07)"}}>
@@ -4592,24 +4625,64 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     </div>
   ):null;
   const myM=myRow?metricOf(myRow):null;
-  const wYou=myRow?railCard("A tua posição",(
-    <div onClick={preStartWk?undefined:scrollToMe} title={preStartWk?undefined:"Ver a minha posição no ranking"} style={{cursor:preStartWk?"default":"pointer"}}>
-      <div style={{display:"flex",alignItems:"baseline",gap:6,marginBottom:2}}>
-        <span style={{fontSize:32,fontWeight:800,letterSpacing:"-1px"}}>{preStartWk?"—":myRank}</span>
-        <span style={{fontSize:15,color:"#64748b",fontWeight:700}}>/ {stats?stats.n:officials.length}</span>
+  const wYou=myRow?railCard(
+    <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
+      <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:22,height:22,borderRadius:"50%",background:`rgba(${thRGB},0.12)`,border:`1px solid rgba(${thRGB},0.35)`}}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg>
+      </span>
+      A tua posição
+    </span>,(
+    <div style={{position:"relative"}}>
+      <div aria-hidden="true" style={{position:"absolute",top:-11,right:-14,bottom:-11,left:-14,overflow:"hidden",borderRadius:14,pointerEvents:"none"}}>
+        <svg viewBox="0 0 220 150" fill="none" style={{position:"absolute",right:-4,top:10,width:"60%",opacity:.9}}>
+          <defs>
+            <linearGradient id="wyouMtn" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#60a5fa" stopOpacity="0.28"/>
+              <stop offset="1" stopColor="#60a5fa" stopOpacity="0.02"/>
+            </linearGradient>
+          </defs>
+          <path d="M0 150 L52 96 Q56 91 61 96 L74 109 Q79 113 84 107 L136 41 Q143 32 150 41 L220 130 L220 150 Z" fill="url(#wyouMtn)"/>
+          <path d="M0 150 L52 96 Q56 91 61 96 L74 109 Q79 113 84 107 L136 41 Q143 32 150 41 L220 130" stroke="#93c5fd" strokeOpacity="0.35" strokeWidth="1.5"/>
+          <line x1="143" y1="37" x2="143" y2="5" stroke="#60a5fa" strokeWidth="2.5" strokeLinecap="round"/>
+          <path d="M143 7 L171 14.5 L143 23 Z" fill="#3b82f6"/>
+        </svg>
       </div>
-      <div style={{fontSize:13,color:"#cbd5e1",fontWeight:600,marginBottom:10,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{myRow.name}</div>
-      <div style={{display:"flex",gap:14,fontFamily:"monospace",fontSize:14,fontWeight:800,marginBottom:8}}>
-        <span style={{color:(myM??0)>=0?"#4ade80":"#f87171"}}>{myM==null?"—":pct(myM)}</span>
-        {!preStartWk&&myDay!=null&&<span title="Rentabilidade de hoje" style={{color:myDay>=0?"#4ade80":"#f87171"}}>Diário {pct(myDay)}</span>}
+    <div onClick={preStartWk?undefined:scrollToMe} title={preStartWk?undefined:"Ver a minha posição no ranking"} style={{position:"relative",zIndex:1,cursor:preStartWk?"default":"pointer"}}>
+      <div style={{display:"flex",alignItems:"baseline",gap:7,marginBottom:2}}>
+        <span style={{fontSize:44,fontWeight:800,letterSpacing:"-1.5px",lineHeight:1.05,color:"#f1f5f9"}}>{preStartWk?"—":myRank}</span>
+        <span style={{fontSize:17,color:"#475569",fontWeight:700}}>/</span>
+        <span style={{fontSize:17,color:"#60a5fa",fontWeight:800}}>{stats?stats.n:officials.length}</span>
       </div>
-      <div style={{fontSize:12,color:"#94a3b8",lineHeight:1.5}}>
-        {preStartWk
-          ? "Ranking semanal arranca 2ª feira."
-          : myRank===1
-            ? "És o líder do ranking."
-            : <>{((metricOf(rankedByMetric[myRank-2])-myM)*100).toFixed(2)}% do lugar acima<br/>{stats&&`${((stats.leaderM-myM)*100).toFixed(2)}% do 1º`}</>}
+      <div style={{fontSize:15,color:"#e2e8f0",fontWeight:600,marginBottom:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{myRow.name}</div>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+        {myM!=null&&(()=>{const pos=myM>=0,c=pos?"#4ade80":"#f87171";return(
+          <span style={{display:"inline-flex",alignItems:"center",gap:8,fontFamily:"monospace",fontSize:15,fontWeight:800,color:c,background:pos?"rgba(74,222,128,0.10)":"rgba(248,113,113,0.10)",border:`1px solid ${pos?"rgba(74,222,128,0.40)":"rgba(248,113,113,0.40)"}`,borderRadius:10,padding:"7px 14px"}}>
+            <svg width="10" height="10" viewBox="0 0 10 10" style={pos?undefined:{transform:"rotate(180deg)"}}><path d="M5 1.5 L9.2 8.5 L0.8 8.5 Z" fill={c}/></svg>{pct(myM)}
+          </span>);})()}
+        {!preStartWk&&myDay!=null&&<span title="Rentabilidade de hoje" style={{fontFamily:"monospace",fontSize:12.5,fontWeight:700,color:myDay>=0?"#4ade80":"#f87171",opacity:.85}}>Diário {pct(myDay)}</span>}
       </div>
+      {preStartWk
+        ? <div style={{fontSize:12,color:"#94a3b8",lineHeight:1.5}}>Ranking semanal arranca 2ª feira.</div>
+        : myRank===1
+          ? <div style={{fontSize:12,color:"#94a3b8",lineHeight:1.5}}>És o líder do ranking.</div>
+          : <>
+              <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginBottom:10}}/>
+              <div style={{display:"flex",gap:10}}>
+                {[
+                  {v:`${((metricOf(rankedByMetric[myRank-2])-myM)*100).toFixed(2)}%`,l:"do lugar acima",icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.4" strokeLinecap="round"><line x1="5" y1="20" x2="5" y2="14"/><line x1="12" y1="20" x2="12" y2="9"/><line x1="19" y1="20" x2="19" y2="4"/></svg>},
+                  stats&&{v:`${((stats.leaderM-myM)*100).toFixed(2)}%`,l:"do 1º lugar",icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h12v5a6 6 0 0 1-12 0V3z"/><path d="M6 5H3.5v1a3 3 0 0 0 3 3H6M18 5h2.5v1a3 3 0 0 1-3 3H18"/><path d="M12 14v3M8.5 21h7M10 17h4v4h-4z"/></svg>},
+                ].filter(Boolean).map((s,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:9,flex:1,minWidth:0}}>
+                    <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:30,height:30,borderRadius:"50%",flexShrink:0,background:`rgba(${thRGB},0.10)`,border:`1px solid rgba(${thRGB},0.30)`}}>{s.icon}</span>
+                    <span style={{minWidth:0}}>
+                      <span style={{display:"block",fontFamily:"monospace",fontSize:14.5,fontWeight:800,color:"#e2e8f0"}}>{s.v}</span>
+                      <span style={{display:"block",fontSize:11,color:"#94a3b8"}}>{s.l}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>}
+    </div>
     </div>
   )):null;
   const wHi=(!preStartWk&&stats)?railCard("Destaques",(
@@ -4620,18 +4693,75 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       {topClimber?.best&&hiRow("Maior subida",topClimber.best.p,<span title={`Subiu ${topClimber.best.climb} ${topClimber.best.climb===1?"lugar":"lugares"} ${period==="week"?"esta semana":period==="month"?"este mês":"desde o arranque"}`} style={{fontFamily:"monospace",fontSize:13,fontWeight:800,color:"#4ade80",whiteSpace:"nowrap"}}>▲ {topClimber.best.climb}</span>)}
     </div>
   )):null;
-  const wVsSp=(!preStartWk&&stats)?railCard("Comunidade vs S&P 500",(
+  const wVsSp=(!preStartWk&&stats)?railCard(
+    <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
+      <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:22,height:22,borderRadius:7,background:`rgba(${thRGB},0.12)`,border:`1px solid rgba(${thRGB},0.35)`}}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg>
+      </span>
+      Comunidade vs S&P 500
+    </span>,(
     <div>
-      <div style={{display:"flex",alignItems:"baseline",gap:6,marginBottom:7}}>
-        <span style={{fontSize:26,fontWeight:800,letterSpacing:"-1px",color:"#4ade80"}}>{stats.beating!=null?Math.round(stats.beating/stats.n*100):"—"}%</span>
-        <span style={{fontSize:12.5,color:"#94a3b8"}}>batem o mercado</span>
-      </div>
-      <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,padding:"5px 0",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
-        <span style={{color:"#94a3b8"}}>Média comunidade</span><span style={{fontFamily:"monospace",fontWeight:800,color:stats.avg>=0?"#4ade80":"#f87171"}}>{pct(stats.avg)}</span>
-      </div>
-      <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,padding:"5px 0",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
-        <span style={{color:"#94a3b8"}}>S&P 500</span><span style={{fontFamily:"monospace",fontWeight:800,color:stats.spyRet==null?"#64748b":stats.spyRet>=0?"#4ade80":"#f87171"}}>{stats.spyRet!=null?pct(stats.spyRet):"—"}</span>
-      </div>
+      {(()=>{const beatPct=stats.beating!=null?Math.round(stats.beating/stats.n*100):null;
+        const fx=beatPct!=null?Math.min(0.999,Math.max(0.001,beatPct/100)):0.001;
+        const CX=46,CY=33,H=10,RXo=34,RYo=20,RXi=18,RYi=10.5,D=Math.PI/180;
+        const P=(rx,ry,a,dy=0)=>`${(CX+rx*Math.cos(a*D)).toFixed(1)} ${(CY+ry*Math.sin(a*D)+dy).toFixed(1)}`;
+        const L=(s,e)=>(e-s)>180?1:0;
+        const sector=(s,e)=>`M ${P(RXo,RYo,s)} A ${RXo} ${RYo} 0 ${L(s,e)} 1 ${P(RXo,RYo,e)} L ${P(RXi,RYi,e)} A ${RXi} ${RYi} 0 ${L(s,e)} 0 ${P(RXi,RYi,s)} Z`;
+        const wallO=(s,e)=>`M ${P(RXo,RYo,s)} A ${RXo} ${RYo} 0 ${L(s,e)} 1 ${P(RXo,RYo,e)} L ${P(RXo,RYo,e,H)} A ${RXo} ${RYo} 0 ${L(s,e)} 0 ${P(RXo,RYo,s,H)} Z`;
+        const wallI=(s,e)=>`M ${P(RXi,RYi,s)} A ${RXi} ${RYi} 0 ${L(s,e)} 1 ${P(RXi,RYi,e)} L ${P(RXi,RYi,e,H)} A ${RXi} ${RYi} 0 ${L(s,e)} 0 ${P(RXi,RYi,s,H)} Z`;
+        const cut=(a)=>`M ${P(RXo,RYo,a)} L ${P(RXi,RYi,a)} L ${P(RXi,RYi,a,H)} L ${P(RXo,RYo,a,H)} Z`;
+        const edge=(s,e)=>`M ${P(RXo,RYo,s)} A ${RXo} ${RYo} 0 ${L(s,e)} 1 ${P(RXo,RYo,e)}`;
+        const gs=-90,ge=-90+fx*360;return(
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+        <span style={{fontSize:34,fontWeight:800,letterSpacing:"-1px",color:"#4ade80",lineHeight:1}}>{beatPct!=null?`${beatPct}%`:"—"}</span>
+        <div style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#e2e8f0"}}>batem o mercado</div>
+        <svg width="92" height="80" viewBox="0 0 92 80" style={{flexShrink:0}} aria-hidden="true">
+          <defs>
+            <linearGradient id="vspTop" x1="0.2" y1="0" x2="0.7" y2="1">
+              <stop offset="0" stopColor="#8FF9CB"/><stop offset="0.55" stopColor="#2EEB8A"/><stop offset="1" stopColor="#25D477"/>
+            </linearGradient>
+            <linearGradient id="vspBlue" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#2A5288"/><stop offset="1" stopColor="#17345C"/>
+            </linearGradient>
+            <linearGradient id="vspGloss" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="rgba(255,255,255,0.34)"/><stop offset="0.5" stopColor="rgba(255,255,255,0)"/>
+            </linearGradient>
+            <filter id="vspSoft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="4"/></filter>
+          </defs>
+          <ellipse cx={CX} cy={CY+RYo+H+3} rx={RXo-3} ry="6" fill="rgba(46,235,138,0.20)" filter="url(#vspSoft)"/>
+          <circle cx="12" cy="18" r="1.1" fill="#2EEB8A" opacity="0.5"/>
+          <circle cx="82" cy="30" r="1.3" fill="#2EEB8A" opacity="0.6"/>
+          <circle cx="74" cy="8" r="0.9" fill="#2EEB8A" opacity="0.4"/>
+          {/* azul escuro: paredes, cortes, topo */}
+          <path d={wallO(ge,270)} fill="#0F1E38"/>
+          <path d={wallI(ge,270)} fill="#132A4C"/>
+          <path d={cut(ge)} fill="#102544"/>
+          <path d={sector(ge,270)} fill="url(#vspBlue)"/>
+          <path d={edge(ge,270)} fill="none" stroke="rgba(150,190,240,0.30)" strokeWidth="1.1"/>
+          {/* verde neon: paredes, cortes, topo, gloss */}
+          <path d={wallO(gs,ge)} fill="#149B5A"/>
+          <path d={wallI(gs,ge)} fill="#0E6B3F"/>
+          <path d={cut(gs)} fill="#0E6B3F"/>
+          <path d={cut(ge)} fill="#0E6B3F"/>
+          <path d={sector(gs,ge)} fill="url(#vspTop)"/>
+          <path d={sector(gs,ge)} fill="url(#vspGloss)"/>
+          <path d={edge(gs,ge)} fill="none" stroke="rgba(190,255,220,0.55)" strokeWidth="1.2"/>
+        </svg>
+      </div>);})()}
+      {[
+        {label:"Média comunidade",v:stats.avg,icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="7" r="4"/><path d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/><path d="M16 3.5a4 4 0 0 1 0 7M21.5 21v-2a4 4 0 0 0-3-3.85"/></svg>},
+        {label:"S&P 500",v:stats.spyRet,icon:<span style={{fontSize:7.5,fontWeight:800,color:"#60a5fa",lineHeight:1.05,textAlign:"center"}}>S&P<br/>500</span>},
+      ].map((r,i)=>{const pos=(r.v??0)>=0,c=r.v==null?"#64748b":pos?"#4ade80":"#f87171";return(
+        <div key={i} style={{display:"flex",alignItems:"center",gap:9,padding:"6px 0",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+          <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:24,height:24,borderRadius:"50%",flexShrink:0,background:`rgba(${thRGB},0.10)`,border:`1px solid rgba(${thRGB},0.30)`}}>{r.icon}</span>
+          <span style={{flex:1,minWidth:0,fontSize:12.5,color:"#94a3b8"}}>{r.label}</span>
+          {r.v==null
+            ? <span style={{fontFamily:"monospace",fontWeight:800,color:"#64748b"}}>—</span>
+            : <span style={{display:"inline-flex",alignItems:"center",gap:6,fontFamily:"monospace",fontSize:12.5,fontWeight:800,color:c,background:pos?"rgba(74,222,128,0.10)":"rgba(248,113,113,0.10)",border:`1px solid ${pos?"rgba(74,222,128,0.30)":"rgba(248,113,113,0.30)"}`,borderRadius:8,padding:"3px 9px"}}>
+                {pct(r.v)}
+                <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke={c} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">{pos?<polyline points="2.5 7.5 6 4 9.5 7.5"/>:<polyline points="2.5 4.5 6 8 9.5 4.5"/>}</svg>
+              </span>}
+        </div>);})}
     </div>
   )):null;
   const wPicks=topPicks.length?railCard("Mais escolhidas",(
@@ -4648,19 +4778,39 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       ))}
     </div>
   )):null;
-  const perfRow=(o)=>(
+  const perfRow=(o)=>{const pos=o.ret>=0,c=pos?"#4ade80":"#f87171";return(
     <div key={o.ticker} style={{display:"flex",alignItems:"center",gap:8}}>
-      <StockLogo ticker={o.ticker} size={20}/>
-      <span style={{fontWeight:700,fontSize:12.5,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.ticker}</span>
-      <span style={{fontFamily:"ui-monospace, monospace",fontWeight:800,fontSize:12.5,color:o.ret>=0?"#4ade80":"#f87171"}}>{o.ret>=0?"+":""}{(o.ret*100).toFixed(2)}%</span>
-    </div>
-  );
-  const wStocks=(!preStartWk&&(stockPerf.best.length||stockPerf.worst.length))?railCard("Performance",(
+      <StockLogo ticker={o.ticker} size={17}/>
+      <span style={{fontWeight:700,fontSize:12,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.ticker}</span>
+      <span style={{fontFamily:"ui-monospace, monospace",fontWeight:800,fontSize:11.5,color:c,background:pos?"rgba(74,222,128,0.10)":"rgba(248,113,113,0.10)",border:`1px solid ${pos?"rgba(74,222,128,0.30)":"rgba(248,113,113,0.30)"}`,borderRadius:7,padding:"1px 7px"}}>{o.ret>=0?"+":""}{(o.ret*100).toFixed(2)}%</span>
+    </div>);};
+  const perfSpark=(up)=>(
+    <svg viewBox="0 0 90 28" width="64" height="20" fill="none" style={{opacity:.8}} aria-hidden="true">
+      <path d={up?"M2 24 Q22 23 36 18 T66 9 T88 3":"M2 4 Q22 5 36 10 T66 19 T88 25"} stroke={up?"#4ade80":"#f87171"} strokeOpacity="0.55" strokeWidth="1.6" strokeLinecap="round"/>
+      <circle cx="88" cy={up?3:25} r="5" fill={up?"#4ade80":"#f87171"} fillOpacity="0.18"/>
+      <circle cx="88" cy={up?3:25} r="2.4" fill={up?"#4ade80":"#f87171"}/>
+    </svg>);
+  const perfSection=(up,label,rows)=>(
+    <div style={{display:"flex",alignItems:"center",gap:10,marginTop:up?0:14}}>
+      <div style={{width:96,flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",gap:7}}>
+        {perfSpark(up)}
+        <div style={{display:"flex",alignItems:"center",gap:7}}>
+          <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:18,height:18,borderRadius:"50%",flexShrink:0,background:up?"rgba(74,222,128,0.10)":"rgba(248,113,113,0.10)",border:`1px solid ${up?"rgba(74,222,128,0.35)":"rgba(248,113,113,0.35)"}`}}><Tri up={up} size={8}/></span>
+          <span style={{fontSize:10,color:up?"#4ade80":"#f87171",fontWeight:800,textTransform:"uppercase",letterSpacing:"1px"}}>{label}</span>
+        </div>
+      </div>
+      <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:5}}>{rows.map(perfRow)}</div>
+    </div>);
+  const wStocks=(!preStartWk&&(stockPerf.best.length||stockPerf.worst.length))?railCard(
+    <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
+      <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:22,height:22,borderRadius:"50%",background:`rgba(${thRGB},0.12)`,border:`1px solid rgba(${thRGB},0.35)`}}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.4" strokeLinecap="round"><line x1="4" y1="20" x2="20" y2="20"/><line x1="7" y1="20" x2="7" y2="13"/><line x1="12" y1="20" x2="12" y2="8"/><line x1="17" y1="20" x2="17" y2="4"/></svg>
+      </span>
+      Performance
+    </span>,(
     <div>
-      <div style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"#4ade80",fontWeight:800,textTransform:"uppercase",letterSpacing:".5px",marginBottom:8}}><Tri size={9}/> Melhores</div>
-      <div style={{display:"flex",flexDirection:"column",gap:8}}>{stockPerf.best.map(perfRow)}</div>
-      <div style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"#f87171",fontWeight:800,textTransform:"uppercase",letterSpacing:".5px",margin:"14px 0 8px"}}><Tri up={false} size={9}/> Piores</div>
-      <div style={{display:"flex",flexDirection:"column",gap:8}}>{stockPerf.worst.map(perfRow)}</div>
+      {perfSection(true,"Melhores",stockPerf.best)}
+      {perfSection(false,"Piores",stockPerf.worst)}
     </div>
   ),period==="week"?"Ações escolhidas pelos membros com melhor e pior rentabilidade esta semana.":period==="month"?"Ações escolhidas pelos membros com melhor e pior rentabilidade este mês.":"Ações escolhidas pelos membros com melhor e pior rentabilidade desde o arranque da competição."):null;
   // "Últimos comentários": comentários recentes feitos em perfis de OUTROS membros (carrossel).
@@ -4689,40 +4839,40 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     else if(mc<0) feedNotifs.push({t:"down",el:<>Desceste <strong style={{color:"#e2e8f0"}}>{-mc}</strong> {(-mc)===1?"lugar":"lugares"}.</>});
   }
   const feedAct=[];
-  if(topClimber?.best&&(!myRow||topClimber.best.p.id!==myRow.id)) feedAct.push({t:"up",p:topClimber.best.p,el:<><strong style={{color:"#e2e8f0"}}>{topClimber.best.p.name}</strong> subiu {topClimber.best.climb} {topClimber.best.climb===1?"lugar":"lugares"}</>});
+  if(topClimber?.best&&(!myRow||topClimber.best.p.id!==myRow.id)) feedAct.push({t:"up",p:topClimber.best.p,el:<><strong style={{color:"#e2e8f0"}}>{topClimber.best.p.name}</strong> subiu <strong style={{color:"#4ade80"}}>{topClimber.best.climb}</strong> {topClimber.best.climb===1?"lugar":"lugares"}</>});
   if(dayExtremes?.best&&dayExtremes.best.day>0) feedAct.push({t:"up",p:dayExtremes.best.p,el:<><strong style={{color:"#e2e8f0"}}>{dayExtremes.best.p.name}</strong> é a maior subida do dia ({pct(dayExtremes.best.day)})</>});
   if(stockPerf.best&&stockPerf.best.length&&stockPerf.best[0].ret>0) feedAct.push({t:"star",el:<>A <strong style={{color:"#e2e8f0"}}>{stockPerf.best[0].ticker}</strong> é a ação mais rentável {period==="week"?"da semana":period==="month"?"do mês":"da competição"}</>});
-  const feedRow=(it,i)=>(
+  const feedRow=(it,i)=>{const col=it.t==="up"?"#4ade80":it.t==="down"?"#f87171":"#facc15";return(
     <div key={i} onClick={it.p?()=>onSelect(it.p.key):undefined}
-      style={{display:"flex",alignItems:"flex-start",gap:8,padding:"6px 0",cursor:it.p?"pointer":"default",borderTop:i===0?"none":"1px solid rgba(255,255,255,0.06)"}}>
-      <span style={{marginTop:1}}>{feedIco(it.t)}</span>
+      style={{display:"flex",alignItems:"center",gap:10,cursor:it.p?"pointer":"default",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"8px 10px"}}>
+      <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:26,height:26,borderRadius:"50%",flexShrink:0,background:`${col}1A`,border:`1px solid ${col}59`,boxShadow:`0 0 10px ${col}40`}}>{feedIco(it.t)}</span>
       <span style={{fontSize:12.5,color:"#cbd5e1",lineHeight:1.4}}>{it.el}</span>
-    </div>
-  );
+    </div>);};
   // Cartão do FEED (moldura partilhada pelo skeleton e pelo conteúdo real → mesma largura/altura mínima,
   // por isso NÃO salta ao trocar). minHeight cobre o caso comum (1 notificação + 3 atividades).
   const feedCard=(inner)=>(
     <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:"11px 14px",boxShadow:"0 6px 20px rgba(0,0,0,0.22)",minHeight:150,boxSizing:"border-box"}}>
-      <div style={{fontSize:10.5,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:800,marginBottom:9}}>Feed</div>
-      {inner}
+      <div style={{fontSize:10.5,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:800,marginBottom:9,display:"flex",alignItems:"center",gap:8}}>
+        <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:22,height:22,borderRadius:"50%",background:`rgba(${thRGB},0.12)`,border:`1px solid rgba(${thRGB},0.35)`,boxShadow:"0 0 10px rgba(96,165,250,0.30)"}}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.4" strokeLinecap="round"><path d="M5 11a8 8 0 0 1 8 8"/><path d="M5 4a15 15 0 0 1 15 15"/><circle cx="6" cy="18" r="1.3" fill="#60a5fa" stroke="none"/></svg>
+        </span>
+        Feed
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>{inner}</div>
     </div>
   );
-  // Separador subtil entre as notificações (o próprio) e a atividade (comunidade) — sem etiquetas.
-  const feedSep={marginTop:4,paddingTop:4,borderTop:"1px solid rgba(255,255,255,0.06)"};
   // O FEED depende de várias fontes assíncronas (preços, snapshots, diário) que chegam em ONDAS. Só o
   // mostramos quando os dados assentaram → aparece de uma vez, não aos poucos (e não re-centra a cada item).
   const feedReady=(!pricesLoading&&seriesLoaded&&Object.keys(livePrices||{}).length>0)||feedTimeout;
   const feedSkeleton=feedCard(<>
-    <div style={{padding:"5px 0"}}><Skeleton w="82%" h={12} r={6}/></div>
-    <div style={feedSep}>
-      {["92%","70%","86%"].map((w,i)=><div key={i} style={{padding:"5px 0"}}><Skeleton w={w} h={12} r={6}/></div>)}
-    </div>
+    <div style={{padding:"9px 10px"}}><Skeleton w="82%" h={12} r={6}/></div>
+    {["92%","70%","86%"].map((w,i)=><div key={i} style={{padding:"9px 10px"}}><Skeleton w={w} h={12} r={6}/></div>)}
   </>);
   const wFeed=!feedReady
     ? feedSkeleton
     : ((feedNotifs.length||feedAct.length)?feedCard(<>
         {feedNotifs.map(feedRow)}
-        {feedAct.length>0&&<div style={feedNotifs.length?feedSep:undefined}>{feedAct.map(feedRow)}</div>}
+        {feedAct.map(feedRow)}
       </>):null);
   // "Campeão do mês" (mini-época mensal): líder ao vivo deste mês + campeões dos meses fechados
   // (recalculados on-the-fly a partir dos baselines de início de cada mês).
@@ -4733,7 +4883,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       pendHead:"Por apurar", pendSub:"Apurado no último dia do mês", emptyMsg:"Sem participantes ainda.", done:false, promoteLatest:true, wonLabel:"", listTitle:"Campeões anteriores",
       champs:()=>{ const out=[], cur=new Date().toISOString().slice(0,7);
         for(const per of Object.keys(pastBaselines).sort()){ if(per>=cur) continue;
-          const from=pastBaselines[per], to=monthCloseBase(per,pastBaselines,weekCloses); if(!from||!to) continue; // fim = início do mês seguinte (ou fecho semanal se o mês acabou à 6ª)
+          const from=pastBaselines[per], to=monthCloseBase(per,pastBaselines,weekCloses,monthCloses); if(!from||!to) continue; // close_price gravado, senão início do mês seguinte, senão fecho semanal
           let best=null; for(const p of officials){ const r=pfPeriodRet(p,from,to); if(r!=null&&(!best||r>best.r)) best={p,r}; }
           if(best) out.push({period:per,...best}); }
         return out.reverse(); },
@@ -4766,7 +4916,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     //      mantém em destaque o campeão do mês anterior. Depois passa a "por apurar" + campeão desce à lista.
     let feat=null; // {p, r, period}
     if(cf.promoteLatest){
-      const curClose=monthCloseBase(curMonthYM,pastBaselines,weekCloses);
+      const curClose=monthCloseBase(curMonthYM,pastBaselines,weekCloses,monthCloses);
       if(curClose&&monthBase&&Object.keys(monthBase).length){
         const t=officials.map(p=>({p,r:pfPeriodRet(p,monthBase,curClose)})).filter(x=>x.r!=null).sort((a,b)=>b.r-a.r)[0];
         if(t) feat={p:t.p,r:t.r,period:curMonthYM};
@@ -4781,13 +4931,16 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     return railCard(cardTitle,(
       <div>
         {prom?(
-          <div onClick={()=>prom.p.key&&onSelect(prom.p.key)} title={prom.p.key?"Ver portefólio":undefined} style={{cursor:prom.p.key?"pointer":"default",display:"flex",alignItems:"center",gap:10}}>
-            <span style={{fontSize:24,lineHeight:1}}>🏆</span>
+          <div onClick={()=>prom.p.key&&onSelect(prom.p.key)} title={prom.p.key?"Ver portefólio":undefined} style={{cursor:prom.p.key?"pointer":"default",display:"flex",alignItems:"center",gap:12}}>
+            <img src="/cup.webp" alt="" width={46} height={46} style={{flexShrink:0,objectFit:"contain",filter:"drop-shadow(0 0 12px rgba(250,204,21,0.35))"}}/>
             <div style={{minWidth:0,flex:1}}>
-              <div style={{fontSize:9.5,color:"#facc15",fontWeight:800,textTransform:"uppercase",letterSpacing:".4px"}}>{prom.label}</div>
-              <div style={{fontSize:14,fontWeight:700,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{prom.p.name}</div>
+              <div style={{fontSize:10,color:"#facc15",fontWeight:800,textTransform:"uppercase",letterSpacing:".8px"}}>{prom.label}</div>
+              <div style={{fontSize:16,fontWeight:700,color:"#f1f5f9",lineHeight:1.2,overflowWrap:"anywhere"}}>{prom.p.name}</div>
             </div>
-            <span style={{fontFamily:"monospace",fontSize:13,fontWeight:800,color:prom.r>=0?"#4ade80":"#f87171",flexShrink:0}}>{pct(prom.r)}</span>
+            {(()=>{const pos=prom.r>=0,c=pos?"#4ade80":"#f87171";return(
+              <span style={{display:"inline-flex",alignItems:"center",gap:5,fontFamily:"monospace",fontSize:11.5,fontWeight:800,color:c,flexShrink:0,background:pos?"rgba(74,222,128,0.10)":"rgba(248,113,113,0.10)",border:`1px solid ${pos?"rgba(74,222,128,0.35)":"rgba(248,113,113,0.35)"}`,borderRadius:7,padding:"2px 7px"}}>
+                <svg width="7" height="7" viewBox="0 0 10 10" style={pos?undefined:{transform:"rotate(180deg)"}}><path d="M5 1.5 L9.2 8.5 L0.8 8.5 Z" fill={c}/></svg>{pct(prom.r)}
+              </span>);})()}
           </div>
         ):leaders.length?(
           // Em curso: o vencedor só é apurado no fim do período. Sem líder à vista → mais suspense.
