@@ -1,0 +1,26 @@
+name: Campeão do mês — fecho (backup)
+
+# BACKUP do cron da Vercel /api/cron/monthly-close (último dia útil do mês, ~22:00 UTC, após o fecho US).
+# Grava o close_price do mês → o campeão do mês é revelado LOGO, sem esperar pelo baseline do mês seguinte.
+# Corre nos dias 28-31 às 22:00 UTC; o endpoint só grava no ÚLTIMO dia útil do mês e é IDEMPOTENTE (só se
+# ainda não houver close_price no período), por isso correr em ambos (Vercel + GitHub) não duplica. No plano
+# Hobby da Vercel os crons têm imprecisão ±59min (e podem falhar) — este gatilho INDEPENDENTE cobre isso.
+# Também disparável à mão. Segredo: CRON_SECRET (mesmo valor da Vercel).
+
+on:
+  schedule:
+    - cron: "0 22 28-31 * *"
+  workflow_dispatch:
+
+jobs:
+  monthly-close:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger monthly-close endpoint
+        run: |
+          code=$(curl -s -o /tmp/out.txt -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://cdi-picker.vercel.app/api/cron/monthly-close)
+          echo "HTTP $code"
+          cat /tmp/out.txt; echo
+          test "$code" = "200"
