@@ -25,12 +25,12 @@ export async function fetchStockPrices(tickers) {
   const unique = [...new Set(
     tickers.map((t) => String(t || "").trim().toUpperCase()).filter(Boolean)
   )];
-  if (!unique.length) return { prices: {}, changes: {} };
+  if (!unique.length) return { prices: {}, changes: {}, marketClosed: false };
 
   const res = await fetch(`/api/stocks/prices?tickers=${encodeURIComponent(unique.join(","))}`);
   const data = await res.json();
-  if (!res.ok) return { prices: {}, changes: {} };
-  return { prices: data.prices || {}, changes: data.changes || {} };
+  if (!res.ok) return { prices: {}, changes: {}, marketClosed: false };
+  return { prices: data.prices || {}, changes: data.changes || {}, marketClosed: !!data.marketClosed };
 }
 
 // Daily close history [{date,close}] for a ticker (used for the S&P benchmark).

@@ -145,26 +145,35 @@ export async function GET(request) {
   //    tickers da competição no FECHO OFICIAL (weekly_baselines). Imune a qualquer tick mau do pipeline
   //    ao fim de semana (foi o que estragou o ranking com a ATLN).
   //  - Durante a semana: tickers instáveis (ATLN) são protegidos de desvios absurdos (>30%) da abertura.
-  //  - Cripto (BTC…) negoceia 24/7 → fica SEMPRE de fora do congelamento.
+  //  - Cripto (BTC = ETF Grayscale): fica DENTRO do congelamento de fim de semana (fecho oficial), para não
+  //    "correr" e mexer o ranking enquanto as ações estão paradas. Fica de fora só do guard dos instáveis.
+  let marketOpen = true;
   try {
     const now = new Date();
     const curWk = weekKey(now);
     const weekDone = weekTradingDone(now);
-    const marketOpen = usMarketOpen(now);
+    marketOpen = usMarketOpen(now);
     const wref = await weekRefMap(curWk);
     if (wref.size) {
       for (const ticker of tickers) {
-        if (prices[ticker] == null || isCrypto(ticker)) continue;
+        if (prices[ticker] == null) continue;
+        const cr = isCrypto(ticker);
         const r = wref.get(norm(ticker));
         if (!r) continue;
         if (weekDone && r.close > 0) {
-          prices[ticker] = r.close; delete changes[ticker];                 // semana fechada → fecho oficial (todos)
-        } else if (UNSTABLE_TICKERS.has(norm(ticker)) && r.open > 0 && (!marketOpen || Math.abs(prices[ticker] / r.open - 1) > UNSTABLE_DEV)) {
-          prices[ticker] = r.open; delete changes[ticker];                  // instável, mercado FECHADO (pré-abertura 2ª/fora de horas) OU tick absurdo → âncora (abertura da semana)
+          prices[ticker] = r.close;                                         // semana fechada → fecho oficial (TODOS, incl. BTC)
+          // Preserva a variação do ÚLTIMO PREGÃO (fecho oficial ÷ fecho-anterior do pipeline, ambos congelados)
+          // → a coluna "Último dia" e os widgets do dia mostram a % do último pregão em vez de "—".
+          const a = ath.get(norm(ticker));
+          if (!cr && a && a.prev > 0) changes[ticker] = r.close / a.prev - 1;
+          else delete changes[ticker];                                      // cripto/sem fecho-anterior fiável → sem variação
+        } else if (!cr && UNSTABLE_TICKERS.has(norm(ticker)) && r.open > 0 && (!marketOpen || Math.abs(prices[ticker] / r.open - 1) > UNSTABLE_DEV)) {
+          prices[ticker] = r.open; delete changes[ticker];                  // instável, mercado FECHADO OU tick absurdo → âncora (abertura da semana)
         }
       }
     }
   } catch { /* guarda best-effort */ }
 
-  return Response.json({ prices, changes, errors });
+  // marketClosed → a UI mostra "Último dia" (variação do último pregão congelada) em vez de "Diário".
+  return Response.json({ prices, changes, errors, marketClosed: !marketOpen });
 }

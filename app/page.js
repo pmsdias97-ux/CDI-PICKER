@@ -1688,7 +1688,8 @@ function CompetitionTimer({settings,period,hasWeek}){
   if(!settings||now==null) return null;
   const started=settings.competitionStarted;
   const dayDiff=(a,b)=>Math.floor((Date.UTC(a.getUTCFullYear(),a.getUTCMonth(),a.getUTCDate())-Date.UTC(b.getUTCFullYear(),b.getUTCMonth(),b.getUTCDate()))/86400000);
-  let label, d;
+  // `pre` = prefixo (muted, ex.: "Vencedor a", "Arranca 2ª feira,"); `dateStr` = data (bold); `d` = dias.
+  let pre="", dateStr=null, d;
   if(started&&period==="week"){
     // Mini-época semanal: arranca 2ª feira (abertura US) → fecha 6ª (fecho US); só ao fecho de 6ª é
     // apurado o vencedor. A mensagem segue o CALENDÁRIO (não só o hasWeek): na 2ª de manhã, antes da
@@ -1697,21 +1698,21 @@ function CompetitionTimer({settings,period,hasWeek}){
     const wk=weekKey(nd);          // 2ª feira (UTC) desta semana
     const dowUTC=nd.getUTCDay();   // 0=dom … 6=sáb
     // "Arranca": conta até uma 2ª feira; se essa 2ª for hoje, mostra "Arranca hoje" (sem contagem).
-    const arranca=(mon)=>{ const dd=dayDiff(new Date(mon+"T00:00:00Z"),nd);
-      if(dd>0){ d=dd; label=`Arranca 2ª feira, ${fmtDateShort(mon)}`; } else { d=null; label=`Arranca hoje, ${fmtDateShort(mon)}`; } };
+    const arranca=(mon)=>{ const dd=dayDiff(new Date(mon+"T00:00:00Z"),nd); dateStr=fmtDateShort(mon);
+      if(dd>0){ d=dd; pre="Arranca 2ª feira,"; } else { d=null; pre="Arranca hoje,"; } };
     if(wk<WEEK_LIVE_FROM){
       arranca(WEEK_LIVE_FROM);                    // antes do 1º arranque semanal (Semana 2, 06-jul)
     }else if(weekTradingDone(nd)){
       // Trading da semana terminou (hora US): 6ª pós-fecho → vencedor apurado; fim de semana → próxima 2ª.
       const nyWd=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",weekday:"short"}).format(nd);
-      if(nyWd==="Fri"){ label=`${weekLabel(wk)} · vencedor apurado`; d=null; }
+      if(nyWd==="Fri"){ pre=`${weekLabel(wk)} · vencedor apurado`; dateStr=null; d=null; }
       else arranca(dowUTC===1?wk:nextWeek(wk));   // fim de semana → 2ª seguinte (madrugada 2ª UTC = ainda hoje)
     }else if(!hasWeek&&dowUTC===1){
-      d=null; label=`Arranca hoje, ${fmtDateShort(wk)}`; // 2ª de manhã, antes da abertura (baseline por capturar)
+      d=null; pre="Arranca hoje,"; dateStr=fmtDateShort(wk); // 2ª de manhã, antes da abertura (baseline por capturar)
     }else{
       const fri=weekFriday(wk);                   // semana a rolar → vencedor apura-se 6ª ao fecho
       d=dayDiff(new Date(fri+"T00:00:00Z"),nd);
-      label=`Vencedor a ${fmtDateShort(fri)}`;
+      pre="Vencedor a"; dateStr=fmtDateShort(fri);
     }
   }else if(started&&period==="month"){
     // Mini-época mensal: vencedor apurado no ÚLTIMO dia do mês. Faltam = (último dia − dia de hoje).
@@ -1719,7 +1720,7 @@ function CompetitionTimer({settings,period,hasWeek}){
     const lastNum=new Date(nd.getFullYear(),nd.getMonth()+1,0).getDate(); // ex.: 31 (julho)
     d=lastNum-nd.getDate();                                               // 31 − 3 = 28
     const endStr=`${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,"0")}-${String(lastNum).padStart(2,"0")}`;
-    label=`Vencedor a ${fmtDateShort(endStr)}`;
+    pre="Vencedor a"; dateStr=fmtDateShort(endStr);
   }else{
     const targetStr=started?settings.gameEndDate:settings.gameStartDate;
     if(!targetStr) return null;
@@ -1728,16 +1729,44 @@ function CompetitionTimer({settings,period,hasWeek}){
     const diff=target-now;
     if(diff<=0) return null;
     d=Math.ceil(diff/86400000);
-    label=started?`Vencedor a ${fmtDateShort(settings.gameEndDate)}`:"";
+    if(started){ pre="Vencedor a"; dateStr=fmtDateShort(settings.gameEndDate); }
   }
+  if(!pre&&dateStr==null&&d==null) return null;
+  // Acento cromático do ranking ativo (Geral=azul, Mensal=roxo/lilás, Semanal=verde-água) — igual ao thA/thRGB do Ranking.
+  const thA=period==="month"?"#a78bfa":period==="week"?"#2dd4bf":"#60a5fa";
+  const thRGB=period==="month"?"167,139,250":period==="week"?"45,212,191":"96,165,250";
   return(
     <div style={{display:"flex",justifyContent:"center"}}>
-      <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:10,flexWrap:"wrap",
-        maxWidth:"100%",padding:"8px 16px",borderRadius:999,textAlign:"center",
-        background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",
-        border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 6px 22px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"}}>
-        {label&&<span style={{fontSize:13,color:"#cbd5e1",fontWeight:600,whiteSpace:"nowrap"}}>{label}</span>}
-        {d!=null&&<span style={{fontSize:13,fontWeight:800,fontFamily:"monospace",color:"#e2e8f0",whiteSpace:"nowrap"}}>{d<=0?"apura-se hoje":`faltam ${d===1?"1 dia":`${d} dias`}`}</span>}
+      <div style={{display:"inline-flex",alignItems:"center",gap:14,flexWrap:"wrap",justifyContent:"center",maxWidth:"100%",
+        padding:"9px 22px 9px 11px",borderRadius:999,
+        background:"linear-gradient(180deg, rgba(16,28,52,0.9), rgba(8,15,30,0.94))",
+        backdropFilter:"blur(14px) saturate(160%)",WebkitBackdropFilter:"blur(14px) saturate(160%)",
+        border:`1px solid rgba(${thRGB},0.30)`,
+        boxShadow:`0 8px 30px rgba(0,0,0,0.42), 0 0 20px rgba(${thRGB},0.15), inset 0 1px 0 rgba(255,255,255,0.07)`}}>
+        {/* Círculo com ícone de calendário (brilho do tema) */}
+        <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:38,height:38,borderRadius:"50%",flexShrink:0,
+          background:`rgba(${thRGB},0.10)`,border:`1px solid rgba(${thRGB},0.40)`,boxShadow:`0 0 14px rgba(${thRGB},0.22), inset 0 0 10px rgba(${thRGB},0.10)`}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={thA} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{filter:`drop-shadow(0 0 5px rgba(${thRGB},0.75))`}}>
+            <rect x="3" y="5" width="18" height="16" rx="2.4"/><path d="M3 9.5h18M8 3v4M16 3v4"/>
+            <circle cx="8" cy="14" r="0.75" fill={thA} stroke="none"/><circle cx="12" cy="14" r="0.75" fill={thA} stroke="none"/><circle cx="16" cy="14" r="0.75" fill={thA} stroke="none"/><circle cx="8" cy="17.5" r="0.75" fill={thA} stroke="none"/><circle cx="12" cy="17.5" r="0.75" fill={thA} stroke="none"/>
+          </svg>
+        </span>
+        {/* Prefixo (muted) + data (bold branco) */}
+        <span style={{display:"inline-flex",alignItems:"baseline",gap:8,whiteSpace:"nowrap"}}>
+          {pre&&<span style={{fontSize:14.5,color:"#94a3b8",fontWeight:600}}>{pre}</span>}
+          {dateStr&&<span style={{fontSize:18.5,color:"#f1f5f9",fontWeight:800,letterSpacing:"-0.3px"}}>{dateStr}</span>}
+        </span>
+        {/* Divisor + "faltam N dias" (número grande no acento do tema) */}
+        {d!=null&&<>
+          <span aria-hidden="true" style={{width:1,height:28,flexShrink:0,background:`linear-gradient(180deg, transparent, rgba(${thRGB},0.5), transparent)`}}/>
+          {d>0
+            ? <span style={{display:"inline-flex",alignItems:"baseline",gap:7,whiteSpace:"nowrap"}}>
+                <span style={{fontSize:14,color:"#94a3b8",fontWeight:600}}>faltam</span>
+                <span style={{fontSize:20,color:thA,fontWeight:800,letterSpacing:"-0.3px"}}>{d}</span>
+                <span style={{fontSize:14,color:"#94a3b8",fontWeight:600}}>{d===1?"dia":"dias"}</span>
+              </span>
+            : <span style={{fontSize:14.5,color:thA,fontWeight:800,whiteSpace:"nowrap"}}>apura-se hoje</span>}
+        </>}
       </div>
     </div>
   );
@@ -1843,6 +1872,7 @@ export default function App(){
   const detailFocusRef=useRef(null); // {commentId} — intenção de aterrar num comentário ao abrir um perfil
   const [livePrices,setLivePrices]=useState({});
   const [dayChange,setDayChange]=useState({}); // variação do dia por ticker
+  const [marketClosed,setMarketClosed]=useState(false); // mercado US fechado → coluna/widgets mostram "Último dia" (último pregão)
   const [pricesLoading,setPricesLoading]=useState(false);
   const [detailSlug,setDetailSlug]=useState(null);
   const [duelSlugs,setDuelSlugs]=useState(null); // [slugA, slugB] para o duelo 1v1
@@ -1881,9 +1911,10 @@ export default function App(){
     if(!tickers.length){ setLivePrices({}); setDayChange({}); return; }
     setPricesLoading(true);
     try{
-      const { prices, changes }=await fetchStockPrices(tickers);
+      const { prices, changes, marketClosed:mc }=await fetchStockPrices(tickers);
       setLivePrices(prices);
       setDayChange(changes||{});
+      setMarketClosed(!!mc);
     }catch(err){
       console.error(err);
     }finally{
@@ -2203,9 +2234,9 @@ export default function App(){
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} pickCounts={compStats.counts} compTickers={compStats.tickers} showToast={showToast}/>);
-  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} monthBase={monthBase} pastBaselines={pastBaselines} monthCloses={monthCloses} weekBase={weekBase} weekOpens={weekOpens} weekCloses={weekCloses} period={rankPeriod} setPeriod={setRankPeriod} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)} winners={winners} showToast={showToast} recentComments={recentComments.filter(c=>portfolios.some(p=>p.id===c.portfolioId))} openComments={openComments}/>);
+  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} marketClosed={marketClosed} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} monthBase={monthBase} pastBaselines={pastBaselines} monthCloses={monthCloses} weekBase={weekBase} weekOpens={weekOpens} weekCloses={weekCloses} period={rankPeriod} setPeriod={setRankPeriod} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)} winners={winners} showToast={showToast} recentComments={recentComments.filter(c=>portfolios.some(p=>p.id===c.portfolioId))} openComments={openComments}/>);
   if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} dayChange={dayChange} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
-  if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} myUserId={myPf?.userId||null} adminPw={adminPw} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} winners={winners} standings={detailStandings} monthBase={monthBase} weekBase={weekBase} reload={load} showToast={showToast} onOpenMember={openMember} focusRef={detailFocusRef}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} marketClosed={marketClosed} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} myUserId={myPf?.userId||null} adminPw={adminPw} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} winners={winners} standings={detailStandings} monthBase={monthBase} weekBase={weekBase} reload={load} showToast={showToast} onOpenMember={openMember} focusRef={detailFocusRef}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast} adminPw={adminPw} setAdminPw={setAdminPw}/>);
   return null;
 }
@@ -2397,7 +2428,8 @@ function Nav({page,nav,navRank,rankPeriod,submitted,onMyPortfolio,myPortfolioAct
       const sel=el.querySelector(".cdiNavSel"); const cr=el.getBoundingClientRect();
       if(!sel){ setPill(p=>p?{...p,visible:false}:null); return; }
       const br=sel.getBoundingClientRect();
-      setPill({left:br.left-cr.left,top:br.top-cr.top,width:br.width,height:br.height,visible:true});
+      // border-box → padding-box (a pílula absolute parte do padding-box, dentro da borda): subtrai a borda.
+      setPill({left:br.left-cr.left-el.clientLeft,top:br.top-cr.top-el.clientTop,width:br.width,height:br.height,visible:true});
     };
     measure();
     let reduce=false; try{ reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches; }catch{}
@@ -4085,7 +4117,47 @@ function RecentCommentsCard({items,onOpen}){
     </div>
   );
 }
-function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunch,settings,monthBase,pastBaselines,monthCloses,weekBase,weekOpens,weekCloses,period,setPeriod,onSelect,onCompare,highlightKey,clearHighlight,winners,showToast,recentComments,openComments}){
+// Toggle Geral/Mensal/Semanal com PÍLULA VERDE DESLIZANTE (mede o botão ativo e anima até ele), igual
+// à pílula da nav de topo. Respeita prefers-reduced-motion (salta, sem deslize).
+function PeriodToggle({period,setPeriod}){
+  const items=[["total","Geral"],["month","Mensal"],["week","Semanal"]];
+  const ref=useRef(null);
+  const [pill,setPill]=useState(null); // {left,top,width,height}
+  const readyRef=useRef(false);
+  useLayoutEffect(()=>{
+    const el=ref.current; if(!el) return;
+    const measure=()=>{
+      const sel=el.querySelector("[data-on='1']"); const cr=el.getBoundingClientRect();
+      if(!sel){ setPill(null); return; }
+      const br=sel.getBoundingClientRect();
+      // a pílula é position:absolute (origem = padding-box, dentro da borda); getBoundingClientRect dá o
+      // border-box → subtrai a borda (clientTop/Left) senão fica 1px baixo/à-direita (assimétrico em cima/baixo).
+      setPill({left:br.left-cr.left-el.clientLeft,top:br.top-cr.top-el.clientTop,width:br.width,height:br.height});
+    };
+    measure();
+    let reduce=false; try{ reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches; }catch{}
+    const raf=requestAnimationFrame(()=>{ readyRef.current=!reduce; });
+    const ro=new ResizeObserver(measure); ro.observe(el);
+    return()=>{ cancelAnimationFrame(raf); ro.disconnect(); };
+  },[period]);
+  const ease="cubic-bezier(.34,1.1,.4,1)";
+  return(
+    <div ref={ref} className="rkHeadToggle" style={{position:"relative",display:"inline-flex",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:999,padding:2}}>
+      {pill&&(
+        <div aria-hidden="true" style={{position:"absolute",left:0,top:0,width:pill.width,height:pill.height,
+          transform:`translate(${pill.left}px,${pill.top}px)`,borderRadius:999,background:"#4ade80",
+          boxShadow:"0 2px 10px rgba(74,222,128,0.35)",zIndex:0,pointerEvents:"none",
+          transition:readyRef.current?`transform .34s ${ease}, width .34s ${ease}, height .34s ${ease}`:"none"}}/>
+      )}
+      {items.map(([k,lbl])=>{ const on=period===k; return(
+        <button key={k} data-on={on?"1":undefined} onClick={()=>setPeriod(k)}
+          style={{position:"relative",zIndex:1,cursor:"pointer",fontSize:12.5,fontWeight:700,borderRadius:999,padding:"6px 14px",border:"none",whiteSpace:"nowrap",background:"transparent",
+            color:on?"#0a0a0a":"#cbd5e1",transition:"color .28s ease"}}>{lbl}</button>
+      );})}
+    </div>
+  );
+}
+function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePrices,preLaunch,settings,monthBase,pastBaselines,monthCloses,weekBase,weekOpens,weekCloses,period,setPeriod,onSelect,onCompare,highlightKey,clearHighlight,winners,showToast,recentComments,openComments}){
   const [cmp,setCmp]=useState(false);
   const [sel,setSel]=useState([]);
   // Mini-curva por linha: snapshots por portefólio (histórico). Recarrega só quando o
@@ -4143,6 +4215,16 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   const curMonthStartIso=`${curMonthYM}-01T00:00:00.000Z`;         // abertura do mês (p/ spy.priceAt)
   const curMonthDateOnly=`${curMonthYM}-01`;                        // início do mês (p/ periodStart do gráfico)
   const preStartWk=period==="week"&&!hasWeek;                       // Semanal antes de arrancar (fim de semana)
+  // Mensal antes de arrancar: mês novo cujo 1º PREGÃO ainda não abriu (fim de semana / pré-abertura de 2ª).
+  // Até à abertura US (~13:30 UTC = 14:30 Portugal), a corrida do mês novo não tem dados reais → o Mensal
+  // mostra por defeito o MÊS ANTERIOR CONGELADO (o último vencedor), em vez de um ranking vazio.
+  const monthPreStart=(()=>{
+    const now=new Date();
+    let d=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1)); // 1º do mês
+    while(d.getUTCDay()===0||d.getUTCDay()===6) d.setUTCDate(d.getUTCDate()+1); // 1º dia útil
+    const openMs=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),13,30,0); // abertura US (~13:30 UTC, verão)
+    return now.getTime()<openMs;
+  })();
   // 1º DIA DE SESSÃO da semana (normalmente 2ª feira; salta feriados): nesse dia o DIÁRIO = o SEMANAL,
   // porque ambos medem desde o fecho de 6ª. Antes da abertura o semanal está a 0% (baseline reconciliado)
   // → o diário também mostra 0%; durante a sessão fica ao vivo. Nos dias 2-5, o diário é o normal.
@@ -4179,7 +4261,13 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   };
   // ── HISTÓRICO: escolher uma semana/mês PASSADO e ver o Top 10 + vencedor desse período.
   const [histKey,setHistKey]=useState(null);
-  useEffect(()=>{ setHistKey(null); },[period]); // trocar de aba limpa a seleção histórica
+  useEffect(()=>{ // trocar de aba limpa a seleção; MÊS novo por arrancar → mostra o mês anterior congelado por defeito
+    let def=null;
+    if(period==="month"&&monthPreStart){ const [y,m]=curMonthYM.split("-").map(Number);
+      const prev=m===1?`${y-1}-12`:`${y}-${String(m-1).padStart(2,"0")}`;
+      if(pastMonths.includes(prev)) def=prev; }
+    setHistKey(def);
+  },[period,monthPreStart]);// eslint-disable-line (pastMonths lido na callback, pós-render — sem TDZ)
   const gameStartYMD=String(settings?.gameStartDate||"").slice(0,10);
   const seedWeeks=WEEK_SEED_CHAMPS.map(s=>s.period).filter(w=>w<curWk); // semanas semeadas passadas (Semana 1)
   const pastWeeks=useMemo(()=>{ const base=Object.keys(weekCloses||{}).filter(w=>w<curWk&&weekOpens[w]&&weekCloses[w]);
@@ -4403,7 +4491,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         ) : (<><span style={{textAlign:"center"}}>#</span><span>Membro</span></>)}
         <span className="rkSpark"></span>
         {searchable?<SortHd k="total">{period==="week"?"Semana":period==="month"?"Mês":"Rentab."}</SortHd>:<span style={{textAlign:"center"}}>Rentab.</span>}
-        {searchable?<SortHd k="day">Diário</SortHd>:<span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>Diário<InfoTip text="Rentabilidade do portefólio hoje (média diária das ações; espelhada para shorts)."/></span>}
+        {searchable?<SortHd k="day">{marketClosed?"Último dia":"Diário"}</SortHd>:<span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>{marketClosed?"Último dia":"Diário"}<InfoTip text={marketClosed?"Rentabilidade do último pregão (mercado fechado) — variação congelada do último dia de sessão.":"Rentabilidade do portefólio hoje (média diária das ações; espelhada para shorts)."}/></span>}
         <span style={{display:"flex",alignItems:"center",justifyContent:"center"}}><InfoTip text="🟢/🔴 = nº de ações em ganho / em perda (não são posições long/short).">🟢/🔴</InfoTip></span>
         {searchable ? (
           <span className="rkHide" style={{position:"relative",display:"flex",alignItems:"center",minWidth:0}}>
@@ -4628,30 +4716,31 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   const wYou=myRow?railCard(
     <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
       <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:22,height:22,borderRadius:"50%",background:`rgba(${thRGB},0.12)`,border:`1px solid rgba(${thRGB},0.35)`}}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={thA} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg>
       </span>
       A tua posição
     </span>,(
     <div style={{position:"relative"}}>
       <div aria-hidden="true" style={{position:"absolute",top:-11,right:-14,bottom:-11,left:-14,overflow:"hidden",borderRadius:14,pointerEvents:"none"}}>
-        <svg viewBox="0 0 220 150" fill="none" style={{position:"absolute",right:-4,top:10,width:"60%",opacity:.9}}>
+        <svg viewBox="0 0 220 150" fill="none" style={{position:"absolute",right:-4,top:10,width:"60%",opacity:.9,
+          WebkitMaskImage:"linear-gradient(to right, transparent 0%, transparent 22%, #000 40%)",maskImage:"linear-gradient(to right, transparent 0%, transparent 22%, #000 40%)"}}>
           <defs>
             <linearGradient id="wyouMtn" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#60a5fa" stopOpacity="0.28"/>
-              <stop offset="1" stopColor="#60a5fa" stopOpacity="0.02"/>
+              <stop offset="0" stopColor={thA} stopOpacity="0.28"/>
+              <stop offset="1" stopColor={thA} stopOpacity="0.02"/>
             </linearGradient>
           </defs>
           <path d="M0 150 L52 96 Q56 91 61 96 L74 109 Q79 113 84 107 L136 41 Q143 32 150 41 L220 130 L220 150 Z" fill="url(#wyouMtn)"/>
-          <path d="M0 150 L52 96 Q56 91 61 96 L74 109 Q79 113 84 107 L136 41 Q143 32 150 41 L220 130" stroke="#93c5fd" strokeOpacity="0.35" strokeWidth="1.5"/>
-          <line x1="143" y1="37" x2="143" y2="5" stroke="#60a5fa" strokeWidth="2.5" strokeLinecap="round"/>
-          <path d="M143 7 L171 14.5 L143 23 Z" fill="#3b82f6"/>
+          <path d="M0 150 L52 96 Q56 91 61 96 L74 109 Q79 113 84 107 L136 41 Q143 32 150 41 L220 130" stroke={thL} strokeOpacity="0.35" strokeWidth="1.5"/>
+          <line x1="143" y1="37" x2="143" y2="5" stroke={thA} strokeWidth="2.5" strokeLinecap="round"/>
+          <path d="M143 7 L171 14.5 L143 23 Z" fill={thD}/>
         </svg>
       </div>
     <div onClick={preStartWk?undefined:scrollToMe} title={preStartWk?undefined:"Ver a minha posição no ranking"} style={{position:"relative",zIndex:1,cursor:preStartWk?"default":"pointer"}}>
       <div style={{display:"flex",alignItems:"baseline",gap:7,marginBottom:2}}>
         <span style={{fontSize:44,fontWeight:800,letterSpacing:"-1.5px",lineHeight:1.05,color:"#f1f5f9"}}>{preStartWk?"—":myRank}</span>
         <span style={{fontSize:17,color:"#475569",fontWeight:700}}>/</span>
-        <span style={{fontSize:17,color:"#60a5fa",fontWeight:800}}>{stats?stats.n:officials.length}</span>
+        <span style={{fontSize:17,color:thA,fontWeight:800}}>{stats?stats.n:officials.length}</span>
       </div>
       <div style={{fontSize:15,color:"#e2e8f0",fontWeight:600,marginBottom:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{myRow.name}</div>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
@@ -4669,8 +4758,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
               <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginBottom:10}}/>
               <div style={{display:"flex",gap:10}}>
                 {[
-                  {v:`${((metricOf(rankedByMetric[myRank-2])-myM)*100).toFixed(2)}%`,l:"do lugar acima",icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.4" strokeLinecap="round"><line x1="5" y1="20" x2="5" y2="14"/><line x1="12" y1="20" x2="12" y2="9"/><line x1="19" y1="20" x2="19" y2="4"/></svg>},
-                  stats&&{v:`${((stats.leaderM-myM)*100).toFixed(2)}%`,l:"do 1º lugar",icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h12v5a6 6 0 0 1-12 0V3z"/><path d="M6 5H3.5v1a3 3 0 0 0 3 3H6M18 5h2.5v1a3 3 0 0 1-3 3H18"/><path d="M12 14v3M8.5 21h7M10 17h4v4h-4z"/></svg>},
+                  {v:`${((metricOf(rankedByMetric[myRank-2])-myM)*100).toFixed(2)}%`,l:"do lugar acima",icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={thA} strokeWidth="2.4" strokeLinecap="round"><line x1="5" y1="20" x2="5" y2="14"/><line x1="12" y1="20" x2="12" y2="9"/><line x1="19" y1="20" x2="19" y2="4"/></svg>},
+                  stats&&{v:`${((stats.leaderM-myM)*100).toFixed(2)}%`,l:"do 1º lugar",icon:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={thA} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h12v5a6 6 0 0 1-12 0V3z"/><path d="M6 5H3.5v1a3 3 0 0 0 3 3H6M18 5h2.5v1a3 3 0 0 1-3 3H18"/><path d="M12 14v3M8.5 21h7M10 17h4v4h-4z"/></svg>},
                 ].filter(Boolean).map((s,i)=>(
                   <div key={i} style={{display:"flex",alignItems:"center",gap:9,flex:1,minWidth:0}}>
                     <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:30,height:30,borderRadius:"50%",flexShrink:0,background:`rgba(${thRGB},0.10)`,border:`1px solid rgba(${thRGB},0.30)`}}>{s.icon}</span>
@@ -4696,7 +4785,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   const wVsSp=(!preStartWk&&stats)?railCard(
     <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
       <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:22,height:22,borderRadius:7,background:`rgba(${thRGB},0.12)`,border:`1px solid rgba(${thRGB},0.35)`}}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={thA} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg>
       </span>
       Comunidade vs S&P 500
     </span>,(
@@ -4749,8 +4838,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
         </svg>
       </div>);})()}
       {[
-        {label:"Média comunidade",v:stats.avg,icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="7" r="4"/><path d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/><path d="M16 3.5a4 4 0 0 1 0 7M21.5 21v-2a4 4 0 0 0-3-3.85"/></svg>},
-        {label:"S&P 500",v:stats.spyRet,icon:<span style={{fontSize:7.5,fontWeight:800,color:"#60a5fa",lineHeight:1.05,textAlign:"center"}}>S&P<br/>500</span>},
+        {label:"Média comunidade",v:stats.avg,icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={thA} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="7" r="4"/><path d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/><path d="M16 3.5a4 4 0 0 1 0 7M21.5 21v-2a4 4 0 0 0-3-3.85"/></svg>},
+        {label:"S&P 500",v:stats.spyRet,icon:<span style={{fontSize:7.5,fontWeight:800,color:thA,lineHeight:1.05,textAlign:"center"}}>S&P<br/>500</span>},
       ].map((r,i)=>{const pos=(r.v??0)>=0,c=r.v==null?"#64748b":pos?"#4ade80":"#f87171";return(
         <div key={i} style={{display:"flex",alignItems:"center",gap:9,padding:"6px 0",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
           <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:24,height:24,borderRadius:"50%",flexShrink:0,background:`rgba(${thRGB},0.10)`,border:`1px solid rgba(${thRGB},0.30)`}}>{r.icon}</span>
@@ -4804,7 +4893,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   const wStocks=(!preStartWk&&(stockPerf.best.length||stockPerf.worst.length))?railCard(
     <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
       <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:22,height:22,borderRadius:"50%",background:`rgba(${thRGB},0.12)`,border:`1px solid rgba(${thRGB},0.35)`}}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.4" strokeLinecap="round"><line x1="4" y1="20" x2="20" y2="20"/><line x1="7" y1="20" x2="7" y2="13"/><line x1="12" y1="20" x2="12" y2="8"/><line x1="17" y1="20" x2="17" y2="4"/></svg>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={thA} strokeWidth="2.4" strokeLinecap="round"><line x1="4" y1="20" x2="20" y2="20"/><line x1="7" y1="20" x2="7" y2="13"/><line x1="12" y1="20" x2="12" y2="8"/><line x1="17" y1="20" x2="17" y2="4"/></svg>
       </span>
       Performance
     </span>,(
@@ -4853,8 +4942,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   const feedCard=(inner)=>(
     <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:"11px 14px",boxShadow:"0 6px 20px rgba(0,0,0,0.22)",minHeight:150,boxSizing:"border-box"}}>
       <div style={{fontSize:10.5,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:800,marginBottom:9,display:"flex",alignItems:"center",gap:8}}>
-        <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:22,height:22,borderRadius:"50%",background:`rgba(${thRGB},0.12)`,border:`1px solid rgba(${thRGB},0.35)`,boxShadow:"0 0 10px rgba(96,165,250,0.30)"}}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.4" strokeLinecap="round"><path d="M5 11a8 8 0 0 1 8 8"/><path d="M5 4a15 15 0 0 1 15 15"/><circle cx="6" cy="18" r="1.3" fill="#60a5fa" stroke="none"/></svg>
+        <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:22,height:22,borderRadius:"50%",background:`rgba(${thRGB},0.12)`,border:`1px solid rgba(${thRGB},0.35)`,boxShadow:`0 0 10px rgba(${thRGB},0.30)`}}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={thA} strokeWidth="2.4" strokeLinecap="round"><path d="M5 11a8 8 0 0 1 8 8"/><path d="M5 4a15 15 0 0 1 15 15"/><circle cx="6" cy="18" r="1.3" fill={thA} stroke="none"/></svg>
         </span>
         Feed
       </div>
@@ -4880,7 +4969,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
   // Widget do campeão parametrizado por tipo (mês OU semana) — o resto do cartão é idêntico.
   const champCfg={
     month:{ liveOf:monthOf, fmt:periodLabel, title:`Campeão de ${monthNameCap}`,
-      pendHead:"Por apurar", pendSub:"Apurado no último dia do mês", emptyMsg:"Sem participantes ainda.", done:false, promoteLatest:true, wonLabel:"", listTitle:"Campeões anteriores",
+      pendHead:"Por apurar", pendSub:"Apurado no último dia do mês", emptyMsg:"Sem participantes ainda.", done:false, promoteLatest:true, wonLabel:"", listTitle:"Campeões anteriores", lastTitle:"Último campeão",
       champs:()=>{ const out=[], cur=new Date().toISOString().slice(0,7);
         for(const per of Object.keys(pastBaselines).sort()){ if(per>=cur) continue;
           const from=pastBaselines[per], to=monthCloseBase(per,pastBaselines,weekCloses,monthCloses); if(!from||!to) continue; // close_price gravado, senão início do mês seguinte, senão fecho semanal
@@ -4890,7 +4979,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       info:"Melhor rentabilidade do mês, com o ponto de partida reposto no início de cada mês.\nO campeão mensal só é apurado no último dia do mês." },
     week:{ liveOf:weekOf, fmt:weekLabel, title:`Vencedor da ${weekLabel(hasWeek?curWk:frameWk)}`,
       pendHead:"Por apurar", pendSub:"Apura 6ª feira ao fecho", emptyMsg:hasWeek?"Sem participantes ainda.":"Arranca 2ª feira.",
-      done:hasWeek&&weekTradingDone(new Date()), wonLabel:`🏆 ${weekLabel(curWk)}`, listTitle:"Vencedores anteriores",
+      done:hasWeek&&weekTradingDone(new Date()), wonLabel:`🏆 ${weekLabel(curWk)}`, listTitle:"Vencedores anteriores", lastTitle:"Último vencedor",
       champs:()=>{ const out=[]; // semana fechada = open→close (6ª feira). Congelado e exato.
         for(const per of Object.keys(weekCloses).sort()){ if(per>=curWk) continue;
           const from=weekOpens[per], to=weekCloses[per]; if(!from||!to) continue;
@@ -4908,26 +4997,25 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
     const cf=champCfg[kind];
     const leaders=[...officials].map(p=>({p,m:cf.liveOf(p)})).filter(x=>x.m!=null).sort((a,b)=>b.m-a.m);
     const champs=cf.champs();
-    const winner=cf.done&&leaders.length?leaders[0]:null; // semana fechada → revela o vencedor (preços de 6ª, congelados pelo mercado)
-    // Mensal (simétrico ao semanal, que revela à 6ª): revela o campeão quando o mês já não tem mais pregões.
-    //  (1) mês ATUAL fechado — o fecho FROZEN já existe (monthCloseBase: mês acaba 6ª/fim de semana já
-    //      capturado pela weekly-close, OU já há baseline do mês seguinte) → campeão do mês atual;
-    //  (2) logo após virar o mês, enquanto o novo mês ainda não tem corrida própria (baseline por capturar),
-    //      mantém em destaque o campeão do mês anterior. Depois passa a "por apurar" + campeão desce à lista.
-    let feat=null; // {p, r, period}
-    if(cf.promoteLatest){
-      const curClose=monthCloseBase(curMonthYM,pastBaselines,weekCloses,monthCloses);
-      if(curClose&&monthBase&&Object.keys(monthBase).length){
-        const t=officials.map(p=>({p,r:pfPeriodRet(p,monthBase,curClose)})).filter(x=>x.r!=null).sort((a,b)=>b.r-a.r)[0];
+    // "ÚLTIMO vencedor/campeão": o mais recente APURADO fica SEMPRE em destaque — nunca volta a "Por apurar"
+    // ao começar um novo período; só é substituído quando um novo período FECHA. Fonte por ordem:
+    //  (a) período ATUAL, se o seu pregão já terminou (semanal: 6ª ao fecho, via live-frozen; mensal: fecho
+    //      frozen do mês, via monthCloseBase); (b) senão, o mais recente da lista de anteriores (champs[0]).
+    // A lista "anteriores" mostra os restantes (exclui o destacado só quando este vem da própria lista).
+    let feat=null, featFromList=false;
+    if(kind==="week"){
+      if(weekTradingDone(new Date())&&leaders.length) feat={p:leaders[0].p,r:leaders[0].m,period:curWk};
+    }else{
+      const cc=monthCloseBase(curMonthYM,pastBaselines,weekCloses,monthCloses);
+      if(cc&&monthBase&&Object.keys(monthBase).length){
+        const t=officials.map(p=>({p,r:pfPeriodRet(p,monthBase,cc)})).filter(x=>x.r!=null).sort((a,b)=>b.r-a.r)[0];
         if(t) feat={p:t.p,r:t.r,period:curMonthYM};
       }
-      if(!feat&&!hasMonth&&champs.length) feat={p:champs[0].p,r:champs[0].r,period:champs[0].period};
     }
-    const listChamps=(feat&&champs.length&&feat.period===champs[0].period)?champs.slice(1):champs;
-    const cap=(s)=>s?s.charAt(0).toUpperCase()+s.slice(1):s;
-    // Linha de destaque (campeão revelado): semanal via `winner` (live-frozen), mensal via `feat` (mês fechado, frozen).
-    const prom=winner?{p:winner.p,r:winner.m,label:weekLabel(curWk)}:feat?{p:feat.p,r:feat.r,label:cf.fmt(feat.period)}:null;
-    const cardTitle=feat?`Campeão de ${cap(cf.fmt(feat.period))}`:cf.title;
+    if(!feat&&champs.length){ feat={p:champs[0].p,r:champs[0].r,period:champs[0].period}; featFromList=true; }
+    const listChamps=featFromList?champs.slice(1):champs;
+    const prom=feat?{p:feat.p,r:feat.r,label:cf.fmt(feat.period)}:null;
+    const cardTitle=feat?cf.lastTitle:cf.title;
     return railCard(cardTitle,(
       <div>
         {prom?(
@@ -5232,13 +5320,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,livePrices,preLaunc
       <div className="rkHeadRow">
         <h1 className="rkHeadTitle" style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px",margin:0,whiteSpace:"nowrap"}}>{period==="week"?"Ranking Semanal":period==="month"?"Ranking Mensal":"Ranking Geral"}</h1>
         {(hasMonth||hasWeek)&&!preLaunch?(
-          <div className="rkHeadToggle" style={{display:"inline-flex",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:999,padding:2}}>
-            {[["total","Geral"],["month","Mensal"],["week","Semanal"]].map(([k,lbl])=>(
-              <button key={k} onClick={()=>setPeriod(k)}
-                style={{cursor:"pointer",fontSize:12.5,fontWeight:700,borderRadius:999,padding:"6px 14px",border:"none",whiteSpace:"nowrap",transition:"all .15s",
-                  color:period===k?"#0a0a0a":"#cbd5e1",background:period===k?"#4ade80":"transparent"}}>{lbl}</button>
-            ))}
-          </div>
+          <PeriodToggle period={period} setPeriod={setPeriod}/>
         ):<span className="rkHeadToggle" aria-hidden="true"/>}
         {ranking.length>=2?(
           <button className="rkHeadV1" onClick={()=>{ setCmp(v=>!v); setSel([]); }}
@@ -5978,7 +6060,7 @@ function PortfolioShareCard({cardRef,name,total,stocks,ranks}){
     </div>
   );
 }
-function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,myNorm,myUserId,adminPw,preLaunch,competitionStarted,gameStartDate,winners,standings,monthBase,weekBase,reload,showToast,onOpenMember,focusRef}){
+function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,spy,nav,onBack,myNorm,myUserId,adminPw,preLaunch,competitionStarted,gameStartDate,winners,standings,monthBase,weekBase,reload,showToast,onOpenMember,focusRef}){
   const goBack=onBack||(()=>nav("ranking")); // voltar ao ranking (com destaque da linha, via onBack)
   // Coluna de rentabilidade da lista: "total" (desde a compra) ↔ "day" (diário).
   const [retMode,setRetMode]=useState("total");
@@ -6138,8 +6220,8 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
             <span style={{color:"#4ade80"}}><Tri size={11}/> {st.pos} positivas</span>
             <span style={{color:"#f87171"}}><Tri up={false} size={11}/> {st.neg} negativas</span>
             {dayRet!=null&&(
-              <span title="Rentabilidade do portefólio hoje">
-                Diário: <strong style={{color:dayRet>=0?"#4ade80":"#f87171"}}><Rolling text={pct(dayRet)}/></strong>
+              <span title={marketClosed?"Rentabilidade no último pregão":"Rentabilidade do portefólio hoje"}>
+                {marketClosed?"Último dia":"Diário"}: <strong style={{color:dayRet>=0?"#4ade80":"#f87171"}}><Rolling text={pct(dayRet)}/></strong>
               </span>
             )}
           </div>
@@ -6185,9 +6267,9 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,spy,nav,onBack,
           <span style={{textAlign:"center"}}>Preço inicial</span>
           <span style={{textAlign:"center"}}>Preço atual</span>
           <span onClick={()=>setRetMode(m=>m==="total"?"day":"total")}
-            title="Clica para alternar entre 'Desde o início' e 'Diário'"
+            title={`Clica para alternar entre 'Desde o início' e '${marketClosed?"Último dia":"Diário"}'`}
             style={{textAlign:"center",cursor:"pointer",userSelect:"none",lineHeight:1.2,display:"block"}}>
-            {retMode==="day"?"Diário":"Desde o início"}
+            {retMode==="day"?(marketClosed?"Último dia":"Diário"):"Desde o início"}
             <span style={{fontSize:9,opacity:0.85,marginLeft:4}}>▾</span>
           </span>
         </div>
