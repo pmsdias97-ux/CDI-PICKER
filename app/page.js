@@ -1739,7 +1739,7 @@ function CompetitionTimer({settings,period,hasWeek}){
     <div style={{display:"flex",justifyContent:"center"}}>
       <div style={{display:"inline-flex",alignItems:"center",gap:14,flexWrap:"wrap",justifyContent:"center",maxWidth:"100%",
         padding:"9px 22px 9px 11px",borderRadius:999,
-        background:"linear-gradient(180deg, rgba(16,28,52,0.9), rgba(8,15,30,0.94))",
+        background:`linear-gradient(180deg, rgba(${thRGB},0.14), rgba(${thRGB},0.05)), linear-gradient(180deg, rgba(10,16,30,0.92), rgba(6,10,20,0.95))`,
         backdropFilter:"blur(14px) saturate(160%)",WebkitBackdropFilter:"blur(14px) saturate(160%)",
         border:`1px solid rgba(${thRGB},0.30)`,
         boxShadow:`0 8px 30px rgba(0,0,0,0.42), 0 0 20px rgba(${thRGB},0.15), inset 0 1px 0 rgba(255,255,255,0.07)`}}>
@@ -4261,13 +4261,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
   };
   // ── HISTÓRICO: escolher uma semana/mês PASSADO e ver o Top 10 + vencedor desse período.
   const [histKey,setHistKey]=useState(null);
-  useEffect(()=>{ // trocar de aba limpa a seleção; MÊS novo por arrancar → mostra o mês anterior congelado por defeito
-    let def=null;
-    if(period==="month"&&monthPreStart){ const [y,m]=curMonthYM.split("-").map(Number);
-      const prev=m===1?`${y-1}-12`:`${y}-${String(m-1).padStart(2,"0")}`;
-      if(pastMonths.includes(prev)) def=prev; }
-    setHistKey(def);
-  },[period,monthPreStart]);// eslint-disable-line (pastMonths lido na callback, pós-render — sem TDZ)
+  useEffect(()=>{ setHistKey(null); },[period]); // trocar de aba limpa a seleção histórica
   const gameStartYMD=String(settings?.gameStartDate||"").slice(0,10);
   const seedWeeks=WEEK_SEED_CHAMPS.map(s=>s.period).filter(w=>w<curWk); // semanas semeadas passadas (Semana 1)
   const pastWeeks=useMemo(()=>{ const base=Object.keys(weekCloses||{}).filter(w=>w<curWk&&weekOpens[w]&&weekCloses[w]);
