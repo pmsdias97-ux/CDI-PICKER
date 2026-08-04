@@ -5558,7 +5558,8 @@ function SectorDonut({stocks}){
             strokeDasharray={`${len.toFixed(2)} ${(C-len).toFixed(2)}`} strokeDashoffset={(-off).toFixed(2)}/>
         ); off+=len; return el; })}
       </svg>
-      <div style={{width:"100%",display:"flex",flexDirection:"column",gap:3,maxHeight:132,overflowY:"auto"}}>
+      {/* Há no máximo 6 linhas (MAX acima), por isso mostramos a legenda completa sem scroll interno. */}
+      <div style={{width:"100%",display:"flex",flexDirection:"column",gap:3}}>
         {segs.map((s,i)=>(
           <div key={i} onMouseEnter={()=>setHi(i)} onMouseLeave={()=>setHi(null)}
             style={{display:"flex",alignItems:"center",gap:9,fontSize:12.5,padding:"1px 6px",borderRadius:7,cursor:"pointer",
