@@ -1,13 +1,14 @@
 name: Campeão do mês — baselines (backup)
 
 # BACKUP do cron da Vercel /api/cron/monthly-baselines: no 1º dia útil do mês (à abertura US) grava
-# o preço de início do mês de cada ticker → mini-época "Campeão do mês". Corre nos dias 1-5 às 13:00 UTC;
-# o endpoint só grava uma vez por mês (idempotente) e salta os outros dias. Gatilho independente da Vercel
+# o preço de início do mês de cada ticker → mini-época "Campeão do mês". Corre nos dias 1-5 às 12:00 UTC
+# (margem para continuar pré-abertura mesmo com atraso). O endpoint completa os tickers ainda ausentes.
+# Gatilho independente da Vercel
 # (Hobby: imprecisão ±59min). Disparável à mão. Segredo: CRON_SECRET.
 
 on:
   schedule:
-    - cron: "0 13 1-5 * *"
+    - cron: "0 12 1-5 * *"
   workflow_dispatch:
 
 jobs:

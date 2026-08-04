@@ -2,14 +2,14 @@ name: Baselines semanais (backup)
 
 # BACKUP dos crons da Vercel para o arranque da semana (2ª feira):
 #  - weekly-baselines-sync: reconcilia o baseline com o fecho já assente (TEM de correr ANTES da
-#    abertura US das 13:30 UTC → agendado 12:00 UTC; o endpoint salta sozinho se o mercado estiver aberto).
+#    abertura US das 13:30 UTC → agendado 11:00 UTC, antes do mensal; o endpoint salta se o mercado abrir).
 #  - weekly-baselines: semeia/garante o baseline da semana (a partir do fecho da anterior).
-# Ambos IDEMPOTENTES → chamar nos dois horários (12:00 e 15:00) não duplica. Gatilho independente da
+# Ambos IDEMPOTENTES → chamar nos dois horários (11:00 e 15:00) não duplica. Gatilho independente da
 # Vercel (que no Hobby tem imprecisão ±59min). Disparável à mão. Segredo: CRON_SECRET.
 
 on:
   schedule:
-    - cron: "0 12 * * 1"   # pré-abertura → sync + baselines
+    - cron: "0 11 * * 1"   # pré-abertura → sync + baselines (antes do mensal às 12:00)
     - cron: "0 15 * * 1"   # pós-abertura → baselines (sync salta sozinho)
   workflow_dispatch:
 

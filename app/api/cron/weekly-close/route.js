@@ -45,18 +45,20 @@ export async function GET(request){
     .from("weekly_baselines").select("ticker, price, close_price").eq("period",period);
   if(error) return Response.json({error:"Falha a ler weekly_baselines."},{status:500});
   if(!rows||!rows.length) return Response.json({ok:true,period,captured:0,skipped:"semana sem baseline de abertura"});
-  // Idempotência: já fechada?
-  if(rows.some(r=>r.close_price!=null)) return Response.json({ok:true,period,captured:0,skipped:"semana já fechada"});
+  // Idempotência por ticker: um retry completa apenas os fechos ainda ausentes.
+  const pendingRows=rows.filter(r=>!(Number(r.close_price)>0));
 
-  // Preços de FECHO do sp500_ath.
-  const {data:ath,error:athErr}=await supabase.from("sp500_ath").select("symbol, price");
-  if(athErr) return Response.json({error:"Falha a ler sp500_ath."},{status:500});
   const priceMap=new Map();
-  for(const r of ath||[]){ const p=Number(r.price); if(Number.isFinite(p)&&p>0) priceMap.set(norm(r.symbol),p); }
+  if(pendingRows.length){
+    // Preços de FECHO do sp500_ath.
+    const {data:ath,error:athErr}=await supabase.from("sp500_ath").select("symbol, price");
+    if(athErr) return Response.json({error:"Falha a ler sp500_ath."},{status:500});
+    for(const r of ath||[]){ const p=Number(r.price); if(Number.isFinite(p)&&p>0) priceMap.set(norm(r.symbol),p); }
+  }
 
   const capturedAt=now.toISOString();
   const upserts=[]; const skippedTickers=[];
-  for(const r of rows){
+  for(const r of pendingRows){
     let close=priceMap.get(norm(r.ticker));
     if(!(Number.isFinite(close)&&close>0)){
       // Fora do sp500_ath (ex.: BTC ETF) → cotação ao vivo (a MESMA fonte do livePrices do cliente),
@@ -66,25 +68,37 @@ export async function GET(request){
     if(Number.isFinite(close)&&close>0) upserts.push({period,ticker:r.ticker,price:r.price,close_price:close,captured_at:capturedAt});
     else skippedTickers.push(r.ticker);
   }
-  if(!upserts.length) return Response.json({ok:true,period,captured:0,skipped:"sem preços de fecho"});
+  if(upserts.length){
+    const {error:upErr}=await supabase
+      .from("weekly_baselines").upsert(upserts,{onConflict:"period,ticker"});
+    if(upErr) return Response.json({error:upErr.message},{status:500});
+  }
 
-  const {error:upErr}=await supabase
-    .from("weekly_baselines").upsert(upserts,{onConflict:"period,ticker"});
-  if(upErr) return Response.json({error:upErr.message},{status:500});
+  // Visão completa (fechos antigos + capturados agora). Serve tanto para reparar a semente da
+  // próxima semana em QUALQUER retry como para calcular o vencedor apenas com a semana completa.
+  const closedByTicker=new Map();
+  for(const r of rows){ const close=Number(r.close_price); if(close>0) closedByTicker.set(norm(r.ticker),{ticker:r.ticker,o:Number(r.price),c:close}); }
+  for(const u of upserts) closedByTicker.set(norm(u.ticker),{ticker:u.ticker,o:Number(u.price),c:Number(u.close_price)});
+  const fullyClosed=closedByTicker.size===rows.length&&skippedTickers.length===0;
 
   // Adianta o BASELINE da próxima semana = este fecho (o "fecho anterior" a 2ª feira). Assim o jogo
-  // semanal fica ao vivo logo à abertura de 2ª feira, sem esperar pelo cron de 2ª. Idempotente.
+  // semanal fica ao vivo logo à abertura de 2ª feira. Semeia TODOS os fechos conhecidos em cada
+  // tentativa: se um bulk anterior falhou, o retry reconstrói a semente completa.
   const next=nextWeek(period);
-  const nextBaselines=upserts.map(u=>({period:next,ticker:u.ticker,price:u.close_price,captured_at:capturedAt}));
-  const {error:nErr}=await supabase
-    .from("weekly_baselines").upsert(nextBaselines,{onConflict:"period,ticker",ignoreDuplicates:true});
+  const nextBaselines=[...closedByTicker.values()].map(u=>({period:next,ticker:u.ticker,price:u.c,captured_at:capturedAt}));
+  let nErr=null;
+  if(nextBaselines.length){
+    const seeded=await supabase
+      .from("weekly_baselines").upsert(nextBaselines,{onConflict:"period,ticker",ignoreDuplicates:true});
+    nErr=seeded.error;
+  }
 
   // Notifica o VENCEDOR da semana (best-effort). Vencedor = melhor média (close/open-1), espelhado p/ shorts.
   // Vencedor + DIGEST semanal (1 notificação por membro): rentab. da semana (open→close, espelhado p/
   // shorts) + posição + melhor/pior ação. O 1º recebe "Ganhaste a semana"; os restantes o resumo.
-  // Best-effort (nunca rebenta o fecho) + bulk insert (1 escrita para todos). Idempotente com o guard do fecho.
-  try{
-    const oc=new Map(); for(const u of upserts) oc.set(norm(u.ticker),{o:Number(u.price),c:Number(u.close_price)});
+  // Best-effort (nunca rebenta o fecho) + bulk insert (1 escrita para todos).
+  if(pendingRows.length&&fullyClosed) try{
+    const oc=closedByTicker;
     const {data:pfs}=await supabase.from("portfolios").select("user_id, portfolio_stocks(ticker, side)").eq("official",true);
     const pctS=(x)=>`${x>=0?"+":""}${(x*100).toFixed(2)}%`;
     const results=[];
@@ -109,5 +123,6 @@ export async function GET(request){
     for(let i=0;i<rows.length;i+=500){ await supabase.from("notifications").insert(rows.slice(i,i+500)); }
   }catch{}
 
-  return Response.json({ok:true,period,captured:upserts.length,nextSeeded:nErr?0:nextBaselines.length,skippedTickers});
+  return Response.json({ok:true,period,captured:upserts.length,fullyClosed,nextSeeded:nErr?0:nextBaselines.length,
+    skipped:!pendingRows.length?"semana já fechada":(!upserts.length?"sem preços de fecho":undefined),skippedTickers});
 }

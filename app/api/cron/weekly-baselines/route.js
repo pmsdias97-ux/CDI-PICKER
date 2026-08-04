@@ -44,13 +44,13 @@ export async function GET(request) {
     return Response.json({ ok: true, period, captured: 0, skipped: "competição não começou" });
   }
 
-  // Idempotência: se esta semana já tem baseline, não repete.
+  // Idempotência por ticker: uma semente parcial não bloqueia a reparação no retry.
   const { data: existing, error: exErr } = await supabase
-    .from("weekly_baselines").select("ticker").eq("period", period).limit(1);
+    .from("weekly_baselines").select("ticker, price").eq("period", period);
   if (exErr) return Response.json({ error: "Falha a ler weekly_baselines." }, { status: 500 });
-  if (existing && existing.length) {
-    return Response.json({ ok: true, period, captured: 0, skipped: "semana já capturada" });
-  }
+  const existingTickers = new Set(
+    (existing || []).filter((r) => Number(r.price) > 0).map((r) => r.ticker)
+  );
 
   // Baseline = FECHO da semana ANTERIOR (o fecho antes de 2ª feira → soma dos retornos diários).
   const prev = prevWeek(period);
@@ -65,10 +65,15 @@ export async function GET(request) {
   }
 
   const capturedAt = now.toISOString();
-  const baselines = closes.map((r) => ({ period, ticker: r.ticker, price: Number(r.close_price), captured_at: capturedAt }));
+  const baselines = closes
+    .filter((r) => !existingTickers.has(r.ticker))
+    .map((r) => ({ period, ticker: r.ticker, price: Number(r.close_price), captured_at: capturedAt }));
+  if (!baselines.length) {
+    return Response.json({ ok: true, period, prev, captured: 0, covered: existingTickers.size, skipped: "semana completa" });
+  }
   const { error: upErr } = await supabase
     .from("weekly_baselines").upsert(baselines, { onConflict: "period,ticker", ignoreDuplicates: true });
   if (upErr) return Response.json({ error: upErr.message }, { status: 500 });
 
-  return Response.json({ ok: true, period, prev, captured: baselines.length });
+  return Response.json({ ok: true, period, prev, captured: baselines.length, covered: existingTickers.size + baselines.length });
 }

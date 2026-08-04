@@ -50,8 +50,9 @@ export async function GET(request) {
   const { data: rows, error } = await supabase.from("monthly_baselines").select("ticker, price, close_price").eq("period", period);
   if (error) return Response.json({ error: "Falha a ler monthly_baselines." }, { status: 500 });
   if (!rows || !rows.length) return Response.json({ ok: true, period, captured: 0, skipped: "mês sem baseline de abertura" });
-  // Idempotência: já fechado?
-  if (rows.some((r) => r.close_price != null)) return Response.json({ ok: true, period, captured: 0, skipped: "mês já fechado" });
+  // Idempotência por ticker: se um fecho ficar parcial, um retry completa apenas os ausentes.
+  const pendingRows = rows.filter((r) => !(Number(r.close_price) > 0));
+  if (!pendingRows.length) return Response.json({ ok: true, period, captured: 0, skipped: "mês já fechado" });
 
   // Preços de FECHO do sp500_ath.
   const { data: ath, error: athErr } = await supabase.from("sp500_ath").select("symbol, price");
@@ -61,7 +62,7 @@ export async function GET(request) {
 
   const capturedAt = now.toISOString();
   const upserts = []; const skippedTickers = [];
-  for (const r of rows) {
+  for (const r of pendingRows) {
     let close = priceMap.get(norm(r.ticker));
     if (!(Number.isFinite(close) && close > 0)) {
       // Fora do sp500_ath (ex.: BTC) → cotação ao vivo (a MESMA fonte do livePrices do cliente).

@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 import { BUILD_VERSION } from "./version";
 import { supabase } from "./supabase";
+import { buildPeriodSparklineSeries, fetchPaginatedRows, prepareSparklinePoints } from "./lib/ranking-sparkline.mjs";
 import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } from "./lib/stocks";
 import { searchCryptos, isCrypto, cryptoNameFor } from "./lib/crypto";
 import { searchPopular } from "./lib/popular";
@@ -2652,11 +2653,7 @@ function WinnerCard({p,rank,livePrices,series,onClick}){
 function MiniSparkline({series,current,height=48,fill=true,flat=false}){
   const uid=useId();
   const today=new Date().toISOString().slice(0,10);
-  const pts=(series||[]).map(s=>({date:s.date,r:s.r}));
-  if(typeof current==="number"){
-    if(pts.length&&pts[pts.length-1].date===today) pts[pts.length-1].r=current;
-    else pts.push({date:today,r:current});
-  }
+  const pts=prepareSparklinePoints(series,current,today);
   const isEx=pts.length<2;
   const drawn=isEx?[0,0.004,-0.002,0.006,0.003,0.009,0.007,0.013].map(r=>({r})):pts;
   const W=300,H=52,P=4;
@@ -4166,18 +4163,34 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
   const [seriesLoaded,setSeriesLoaded]=useState(false); // snapshots já chegaram (p/ o FEED não piscar aos poucos)
   const [feedTimeout,setFeedTimeout]=useState(false);    // rede de segurança: mostra o FEED ao fim de 3.5s mesmo sem tudo pronto
   useEffect(()=>{ const t=setTimeout(()=>setFeedTimeout(true),3500); return()=>clearTimeout(t); },[]);
-  const idsKey=ranking.map(p=>p.id).filter(Boolean).join(",");
+  const idsKey=[...new Set(ranking.map(p=>p.id).filter(Boolean))].sort().join(",");
   useEffect(()=>{
     let cancel=false;
     const ids=idsKey?idsKey.split(","):[];
     if(!ids.length){ setSeriesById({}); setSeriesLoaded(true); return; }
     (async()=>{
-      const { data }=await supabase
-        .from("portfolio_snapshots").select("portfolio_id,date,total_return")
-        .in("portfolio_id",ids).order("date",{ascending:true});
-      if(cancel) return;
+      const snapshotUntil=new Date().toISOString();
+      const { data, error, cancelled }=await fetchPaginatedRows(
+        (cursor,limit)=>{
+          let query=supabase
+            .from("portfolio_snapshots").select("id,portfolio_id,date,captured_at,total_return")
+            .in("portfolio_id",ids)
+            .lte("captured_at",snapshotUntil)
+            .order("id",{ascending:true})
+            .limit(limit);
+          if(cursor!=null) query=query.gt("id",cursor);
+          return query;
+        },
+        {isCancelled:()=>cancel},
+      );
+      if(cancel||cancelled) return;
+      if(error){
+        console.error("Falha ao carregar snapshots do ranking:",error);
+        setSeriesLoaded(true); return;
+      }
       const m={};
-      (data||[]).forEach(r=>{ (m[r.portfolio_id]=m[r.portfolio_id]||[]).push({date:r.date,r:Number(r.total_return)}); });
+      data.forEach(r=>{ (m[r.portfolio_id]=m[r.portfolio_id]||[]).push({snapshotId:r.id,date:r.date,capturedAt:r.captured_at,r:Number(r.total_return)}); });
+      Object.values(m).forEach(points=>points.sort((a,b)=>String(a.capturedAt||a.date).localeCompare(String(b.capturedAt||b.date))||a.snapshotId-b.snapshotId));
       setSeriesById(m); setSeriesLoaded(true);
     })();
     return()=>{ cancel=true; };
@@ -4554,11 +4567,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
                 if(!perActive) return <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24}/>;
                 const ps=period==="week"?curWk:curMonthDateOnly; // início do período (YYYY-MM-DD)
                 const all=seriesById[p.id]||[];
-                const before=all.filter(s=>s.date<ps), inP=all.filter(s=>s.date>=ps);
-                const r0=before.length?before[before.length-1].r:(inP.length?inP[0].r:((p.total??0)-(rentVal??0))); // total no início
                 // Arranca a linha a 0% no início do período → o ponto final (rentab. do período) fica
                 // acima do de entrada quando é positivo (e abaixo quando negativo), como deve ser.
-                const ser=[{date:ps,r:0},...inP.map(s=>({date:s.date,r:s.r-r0}))];
+                const ser=buildPeriodSparklineSeries(all,ps,p.total,rentVal);
                 return <MiniSparkline series={ser} current={rentVal} height={24}/>;
               })()}
             </span>
