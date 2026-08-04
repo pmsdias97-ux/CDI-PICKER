@@ -4369,7 +4369,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
       // As duas células estão na mesma linha (mesmo topo). Mede a partir do campeão (sempre presente).
       const champA=railChampRef.current;
       if(champA && champA.offsetParent!==null){
-        setRailH(Math.max(0, Math.round(r.bottom - champA.getBoundingClientRect().top)));
+        const toRaceBottom=Math.max(0,Math.round(r.bottom-champA.getBoundingClientRect().top));
+        // O destaque vertical pode ser mais alto do que o estado curto do Race (sem histórico).
+        // A célula acompanha pelo menos a altura do cartão para nunca o sobrepor à tabela abaixo.
+        setRailH(Math.max(toRaceBottom,champStickyRef.current?.offsetHeight||0));
       }
       const place=(aside,card,set)=>{
         if(!aside||!card) return;
@@ -5021,21 +5024,52 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
     const listChamps=featFromList?champs.slice(1):champs;
     const prom=feat?{p:feat.p,r:feat.r,label:cf.fmt(feat.period)}:null;
     const cardTitle=feat?cf.lastTitle:cf.title;
+    const champRows=(style)=>(listChamps.length>0&&(
+      <div style={style}>
+        <div style={{fontSize:10,color:"#64748b",fontWeight:800,textTransform:"uppercase",letterSpacing:".4px",marginBottom:6}}>{cf.listTitle}</div>
+        {listChamps.slice(0,4).map(c=>(
+          <div key={c.period} onClick={()=>c.p.key&&onSelect(c.p.key)} title={c.p.key?"Ver portefólio":undefined} style={{cursor:c.p.key?"pointer":"default",display:"flex",justifyContent:"space-between",gap:8,padding:"4px 0",fontSize:12.5}}>
+            <span style={{color:"#94a3b8",textTransform:"capitalize",flexShrink:0}}>{cf.fmt(c.period)}</span>
+            <span style={{color:"#e2e8f0",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,textAlign:"right"}}>{c.p.name}</span>
+            <span style={{fontFamily:"monospace",fontWeight:800,color:c.r==null?"#64748b":c.r>=0?"#4ade80":"#f87171",flexShrink:0}}>{c.r==null?"—":pct(c.r)}</span>
+          </div>
+        ))}
+      </div>
+    ));
+    if(prom){
+      const hasRet=Number.isFinite(prom.r), pos=!hasRet||prom.r>=0;
+      const retColor=hasRet?(pos?"#4ade80":"#f87171"):"#64748b";
+      const accent=kind==="week"?"#34d399":"#a78bfa";
+      const accentRGB=kind==="week"?"52,211,153":"167,139,250";
+      return(
+        <div style={{background:`linear-gradient(180deg,rgba(${accentRGB},0.11),rgba(6,25,28,0.88) 72%)`,border:`1px solid rgba(${accentRGB},0.26)`,borderRadius:18,boxShadow:`0 10px 30px rgba(0,0,0,0.32), inset 0 1px 0 rgba(${accentRGB},0.12)`}}>
+          <div style={{padding:"14px 14px 18px"}}>
+            <div style={{fontSize:10.5,color:"#a8b4c5",textTransform:"uppercase",letterSpacing:"1.25px",fontWeight:800,marginBottom:12,display:"flex",alignItems:"center",justifyContent:"center",gap:7,textAlign:"center"}}>
+              {cardTitle}<InfoTip text={cf.info}/>
+            </div>
+            <div onClick={()=>prom.p.key&&onSelect(prom.p.key)} title={prom.p.key?"Ver portefólio":undefined}
+              style={{cursor:prom.p.key?"pointer":"default",display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center",gap:9}}>
+              <span style={{color:accent,background:`rgba(${accentRGB},0.10)`,border:`1px solid rgba(${accentRGB},0.42)`,borderRadius:9,padding:"5px 12px",fontSize:11.5,fontWeight:900,textTransform:"uppercase",letterSpacing:".8px",boxShadow:`0 0 16px rgba(${accentRGB},0.10)`}}>{prom.label}</span>
+              <div style={{position:"relative",height:108,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <span aria-hidden="true" style={{position:"absolute",width:84,height:84,borderRadius:"50%",background:"rgba(250,204,21,0.17)",filter:"blur(17px)"}}/>
+                <GoldGlow src="/cup.webp" alt="" maskSrc="/cup.webp" glow={22}
+                  wrapStyle={{width:86,position:"relative"}}
+                  imgStyle={{width:"100%",height:"auto",objectFit:"contain"}}
+                  baseFilter="drop-shadow(0 8px 14px rgba(0,0,0,0.38)) drop-shadow(0 0 11px rgba(250,204,21,0.28))"/>
+              </div>
+              <div style={{maxWidth:150,fontSize:23,fontWeight:800,color:"#f8fafc",lineHeight:1.08,letterSpacing:"-.35px",textWrap:"balance",overflowWrap:"anywhere"}}>{prom.p.name}</div>
+              <span style={{display:"inline-flex",alignItems:"center",gap:7,fontFamily:"monospace",fontSize:16,fontWeight:900,color:retColor,background:hasRet?(pos?"rgba(74,222,128,0.10)":"rgba(248,113,113,0.10)"):"rgba(100,116,139,0.10)",border:`1px solid ${hasRet?(pos?"rgba(74,222,128,0.38)":"rgba(248,113,113,0.38)"):"rgba(100,116,139,0.35)"}`,borderRadius:10,padding:"6px 11px",boxShadow:hasRet?`0 0 16px ${pos?"rgba(74,222,128,0.08)":"rgba(248,113,113,0.08)"}`:"none"}}>
+                {hasRet&&<svg width="9" height="9" viewBox="0 0 10 10" style={pos?undefined:{transform:"rotate(180deg)"}}><path d="M5 1.5 L9.2 8.5 L0.8 8.5 Z" fill={retColor}/></svg>}{hasRet?pct(prom.r):"—"}
+              </span>
+            </div>
+          </div>
+          {champRows({borderTop:`1px solid rgba(${accentRGB},0.14)`,background:`rgba(${accentRGB},0.055)`,borderRadius:"0 0 18px 18px",padding:"12px 14px 14px"})}
+        </div>
+      );
+    }
     return railCard(cardTitle,(
       <div>
-        {prom?(
-          <div onClick={()=>prom.p.key&&onSelect(prom.p.key)} title={prom.p.key?"Ver portefólio":undefined} style={{cursor:prom.p.key?"pointer":"default",display:"flex",alignItems:"center",gap:12}}>
-            <img src="/cup.webp" alt="" width={46} height={46} style={{flexShrink:0,objectFit:"contain",filter:"drop-shadow(0 0 12px rgba(250,204,21,0.35))"}}/>
-            <div style={{minWidth:0,flex:1}}>
-              <div style={{fontSize:10,color:"#facc15",fontWeight:800,textTransform:"uppercase",letterSpacing:".8px"}}>{prom.label}</div>
-              <div style={{fontSize:16,fontWeight:700,color:"#f1f5f9",lineHeight:1.2,overflowWrap:"anywhere"}}>{prom.p.name}</div>
-            </div>
-            {(()=>{const pos=prom.r>=0,c=pos?"#4ade80":"#f87171";return(
-              <span style={{display:"inline-flex",alignItems:"center",gap:5,fontFamily:"monospace",fontSize:11.5,fontWeight:800,color:c,flexShrink:0,background:pos?"rgba(74,222,128,0.10)":"rgba(248,113,113,0.10)",border:`1px solid ${pos?"rgba(74,222,128,0.35)":"rgba(248,113,113,0.35)"}`,borderRadius:7,padding:"2px 7px"}}>
-                <svg width="7" height="7" viewBox="0 0 10 10" style={pos?undefined:{transform:"rotate(180deg)"}}><path d="M5 1.5 L9.2 8.5 L0.8 8.5 Z" fill={c}/></svg>{pct(prom.r)}
-              </span>);})()}
-          </div>
-        ):leaders.length?(
+        {leaders.length?(
           // Em curso: o vencedor só é apurado no fim do período. Sem líder à vista → mais suspense.
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <svg viewBox="0 0 24 24" width={20} height={20} fill="none" stroke="#94a3b8" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{flexShrink:0}}>
@@ -5047,18 +5081,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
             </div>
           </div>
         ):<div style={{fontSize:12.5,color:"#94a3b8"}}>{cf.emptyMsg}</div>}
-        {listChamps.length>0&&(
-          <div style={{marginTop:10,borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:8}}>
-            <div style={{fontSize:10,color:"#64748b",fontWeight:800,textTransform:"uppercase",letterSpacing:".4px",marginBottom:6}}>{cf.listTitle}</div>
-            {listChamps.slice(0,4).map(c=>(
-              <div key={c.period} onClick={()=>c.p.key&&onSelect(c.p.key)} title={c.p.key?"Ver portefólio":undefined} style={{cursor:c.p.key?"pointer":"default",display:"flex",justifyContent:"space-between",gap:8,padding:"4px 0",fontSize:12.5}}>
-                <span style={{color:"#94a3b8",textTransform:"capitalize",flexShrink:0}}>{cf.fmt(c.period)}</span>
-                <span style={{color:"#e2e8f0",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,textAlign:"right"}}>{c.p.name}</span>
-                <span style={{fontFamily:"monospace",fontWeight:800,color:c.r==null?"#64748b":c.r>=0?"#4ade80":"#f87171",flexShrink:0}}>{c.r==null?"—":pct(c.r)}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        {champRows({marginTop:10,borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:8})}
       </div>
     ),cf.info);
   };
