@@ -24,9 +24,6 @@ const PORTFOLIO_SIZE = 8;
 const MAX_SHORTS = 2;
 const STARTING_VALUE = 10000;
 const PER_STOCK = STARTING_VALUE / PORTFOLIO_SIZE;
-// Base navy sólida dos widgets do detalhe. Não deixa o tema ambiente do pódio
-// tingir os cartões de dourado, cinzento ou bronze.
-const DETAIL_WIDGET_BG="linear-gradient(155deg,#0B2045 0%,#071A3A 100%)";
 
 // Feriados do mercado US (NYSE/NASDAQ). Atualizar ~1×/ano. Datas em ET (YYYY-MM-DD).
 const MARKET_HOLIDAYS_US = new Set([
@@ -82,6 +79,29 @@ function msUntilMarketOpen(){
     }
     return 0;
   }catch{ return 0; }
+}
+// Rótulo da coluna diária conforme o "dia" mostrado: "Hoje" se a sessão de HOJE já começou (mercado aberto,
+// ou fechado à tarde depois do fecho de hoje); "Ontem" se o último pregão foi mesmo ontem; senão "Último dia"
+// (domingo/2ª feira mostram sexta, dia a seguir a feriado, etc.).
+function lastDayLabel(){
+  try{
+    const now=new Date();
+    const g=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",weekday:"short",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(now);
+    const gv=t=>g.find(p=>p.type===t)?.value;
+    const todayET=new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit"}).format(now);
+    let h=parseInt(gv("hour"),10); if(h===24) h=0; const mins=h*60+parseInt(gv("minute"),10);
+    const [y,mo,d]=todayET.split("-").map(Number);
+    const key=c=>`${c.getUTCFullYear()}-${String(c.getUTCMonth()+1).padStart(2,"0")}-${String(c.getUTCDate()).padStart(2,"0")}`;
+    const isTrading=c=>{ const dow=c.getUTCDay(); return dow!==0&&dow!==6&&!MARKET_HOLIDAYS_US.has(key(c)); };
+    let last=null;
+    // Sessão de HOJE já começou (dia de pregão e >= 09:30 ET) → o "dia" mostrado é hoje (ao vivo ou já fechado).
+    if(isTrading(new Date(Date.UTC(y,mo-1,d)))&&mins>=570){ last=todayET; }
+    else { for(let i=1;i<=10;i++){ const c=new Date(Date.UTC(y,mo-1,d-i)); if(isTrading(c)){ last=key(c); break; } } } // senão, recua ao pregão anterior
+    const yst=key(new Date(Date.UTC(y,mo-1,d-1)));
+    if(last===todayET) return "Hoje";
+    if(last===yst) return "Ontem";
+    return "Último dia";
+  }catch{ return "Último dia"; }
 }
 // "falta HH:mm" no formato 01:02 (<24h) ou "falta Nd 01:02" (>=24h). Sem segundos.
 function fmtCountdown(ms){
@@ -3902,7 +3922,7 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
             <XAxis dataKey="t" tickFormatter={raceTick} ticks={dayTicks} tick={{fill:"#94a3b8",fontSize:11}} minTickGap={28} axisLine={false} tickLine={false}/>
             <YAxis domain={[raceYMin,raceYMax]} tickFormatter={(v)=>`${v>0?"+":""}${v}%`} tick={{fill:"#94a3b8",fontSize:11}} width={46} axisLine={false} tickLine={false}/>
             <ReferenceLine y={0} stroke="rgba(255,255,255,0.30)" strokeDasharray="4 4"/>
-            <Tooltip content={<SeasonRaceTooltip/>}/>
+            <Tooltip content={<SeasonRaceTooltip/>} offset={80}/>
             {(()=>{ const lastIdx=data.length-1; const live=mktLive&&!frameMode&&!hist&&animDone;
               // Render em ordem INVERSA (último lugar primeiro) → o 1º lugar pinta por cima: a sua
               // bolinha tem prioridade sobre a do 2º, a do 2º sobre a do 3º, etc.
@@ -4361,6 +4381,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
   const meRowRef=useRef(null);
   const [meFlash,setMeFlash]=useState(false);
   const [cvOff,setCvOff]=useState(false); // desliga content-visibility durante o scroll → alturas reais à 1ª
+  // ULTRAPASSAGENS: indicador ▲N/▼N por linha (lugares ganhos/perdidos vs sessão anterior) + reordenação
+  // animada ao carregar/trocar de período.
+  const rowsWrapRef=useRef(null);         // cartão das linhas oficiais (p/ medir a passada e animar)
+  const animatedPeriodRef=useRef(null);   // último período já animado → anima 1× por período
   // Cartão do campeão (direita) e medalhão de vencedor (esquerda) alinhados ao CENTRO do gráfico
   // (medido em runtime; a legenda varia). Ambos mantêm o sticky — só desloca a posição inicial para
   // o meio do gráfico. Partilham o mesmo topo de célula (linha 1), só diferem na altura do conteúdo.
@@ -4488,7 +4512,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
       if(!q&&!pq) shown=shown.slice(0,shownRows);
     }
     return(
-    <div className={cvOff?"rkNoCV":undefined} style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"clip"}}>
+    <div ref={searchable?rowsWrapRef:null} className={cvOff?"rkNoCV":undefined} style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"clip"}}>
       <div className="rkRow rkStickyHead" style={{padding:"10px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",
         fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,alignItems:"center"}}>
         {searchable ? (
@@ -4509,13 +4533,13 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
               </button>
             )}
           </span>
-          <span className="rkNarrowHd" style={{textAlign:"center"}}>#</span>
+          <span className="rkNarrowHd" style={{textAlign:"right"}}>#</span>
           <span className="rkNarrowHd">Membro</span>
           </>
-        ) : (<><span style={{textAlign:"center"}}>#</span><span>Membro</span></>)}
+        ) : (<><span style={{textAlign:"right"}}>#</span><span>Membro</span></>)}
         <span className="rkSpark"></span>
         {searchable?<SortHd k="total">{period==="week"?"Semana":period==="month"?"Mês":"Rentab."}</SortHd>:<span style={{textAlign:"center"}}>Rentab.</span>}
-        {searchable?<SortHd k="day">{marketClosed?"Último dia":"Diário"}</SortHd>:<span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>{marketClosed?"Último dia":"Diário"}<InfoTip text={marketClosed?"Rentabilidade do último pregão (mercado fechado) — variação congelada do último dia de sessão.":"Rentabilidade do portefólio hoje (média diária das ações; espelhada para shorts)."}/></span>}
+        {searchable?<SortHd k="day">{lastDayLabel()}</SortHd>:<span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>{lastDayLabel()}<InfoTip text={marketClosed?"Rentabilidade do último pregão (mercado fechado) — variação congelada do último dia de sessão.":"Rentabilidade do portefólio hoje (média diária das ações; espelhada para shorts)."}/></span>}
         <span style={{display:"flex",alignItems:"center",justifyContent:"center"}}><InfoTip text="🟢/🔴 = nº de ações em ganho / em perda (não são posições long/short).">🟢/🔴</InfoTip></span>
         {searchable ? (
           <span className="rkHide" style={{position:"relative",display:"flex",alignItems:"center",minWidth:0}}>
@@ -4541,9 +4565,11 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
           <strong style={{color:"#e2e8f0",fontWeight:800}}>{posCount}</strong> {posCount===1?"membro tem":"membros têm"} <strong style={{color:"#4ade80",fontWeight:700}}>{posQuery.trim()}</strong>
         </div>
       )}
-      {shown.map((p)=>{
+      {shown.map((p,idx)=>{
         const i=p._rank-1; // rank real (mantém nº do lugar e estilos Top 3/Top 10 mesmo ao filtrar)
         const me=p.normName===myNorm;
+        const climb=dailyClimb?.get(p.id)??0;      // indicador ▲N/▼N — movimento DIÁRIO no ranking geral
+        const slide=topClimber?.map?.get(p.id)??0; // deslize — por período (correto na ordem da aba ativa)
         const dayRet=pfDayReturn(p);
         const rentVal=perActive?valForPeriod(p):p.total; // valor mostrado na coluna Rentab./Mês/Semana
         // 🟢/🔴 do PERÍODO: ações em ganho/perda desde o baseline do período (semana/mês), não o total.
@@ -4561,17 +4587,20 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
         const baseBg=picked?"rgba(59,130,246,0.16)":me?"rgba(34,197,94,0.04)":"transparent";
         const hoverBg=picked?baseBg:rr?rr.hov:inTop10?"rgba(34,197,94,0.10)":me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)";
         return(
-          <div key={p.key} ref={(me||p.key===highlightKey)?((el)=>{ if(me) meRowRef.current=el; if(p.key===highlightKey) highlightRef.current=el; }):null} className={"rkRow rkDataRow"+((p.key===highlightKey||(me&&meFlash))?" rkHiFlash":"")} onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
+          <div key={p.key} data-climb={slide} ref={(me||p.key===highlightKey)?((el)=>{ if(me) meRowRef.current=el; if(p.key===highlightKey) highlightRef.current=el; }):null} className={"rkRow rkDataRow"+((p.key===highlightKey||(me&&meFlash))?" rkHiFlash":"")} onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
             style={{padding:"14px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",cursor:"pointer",
               background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":barColor?`inset 3px 0 0 ${barColor}`:"none",transition:"background 0.15s"}}
             onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=hoverBg; }}
             onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
-            <span style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <span style={{display:"flex",alignItems:"center",justifyContent:"flex-end"}}>
               {(!preStartWk&&i<3)
                 ? <span className="rankShine rankBreathe" style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0,...RANK_BADGE[i+1],"--shine-delay":`${i*1.2}s`}}>{i+1}</span>
                 : <span style={{fontSize:13,color:"#94a3b8",fontWeight:700}}>{preStartWk?"·":i+1}</span>}
             </span>
             <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
+              <span title={(!preStartWk&&climb!==0)?`${climb>0?"Subiu":"Desceu"} ${Math.abs(climb)} ${Math.abs(climb)===1?"lugar":"lugares"} ${dref.adv}`:undefined} style={{width:26,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"flex-start"}}>
+                {preStartWk?null:!seriesLoaded?<Skeleton w={16} h={11} r={4}/>:(climb!==0?<span style={{display:"inline-flex",alignItems:"center",gap:1,fontSize:11.5,fontWeight:800,fontFamily:"monospace",color:climb>0?"#4ade80":"#f87171"}}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{climb>0?<path d="M5 15l7-7 7 7"/>:<path d="M5 9l7 7 7-7"/>}</svg>{Math.abs(climb)}</span>:null)}
+              </span>
               <span style={{minWidth:0,overflowWrap:"normal",wordBreak:"normal",lineHeight:1.2}}>{p.name}</span>
               {winners&&winners[p.key]&&<span style={{display:"inline-flex",alignItems:"center",gap:4,flexShrink:0}}><WinnerMedals w={winners[p.key]} size={20}/></span>}
               {me&&<span style={{flexShrink:0,fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700}}>Tu</span>}
@@ -4580,7 +4609,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
               {/* Sem sparkline no pré-arranque semanal — ainda não há histórico da semana.
                   Em mini-época (semana/mês): só os snapshots DENTRO do período, rebaseados ao início
                   (r − total_no_início) → a curva mostra a evolução DA SEMANA/MÊS, não do total. */}
-              {!preStartWk&&(()=>{
+              {preStartWk?null:!seriesLoaded?<Skeleton w="100%" h={14} r={6}/>:(()=>{
                 if(!perActive) return <MiniSparkline series={seriesById[p.id]||[]} current={p.total} height={24}/>;
                 const ps=period==="week"?curWk:curMonthDateOnly; // início do período (YYYY-MM-DD)
                 const all=seriesById[p.id]||[];
@@ -4683,27 +4712,98 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
   const topClimber=useMemo(()=>{
     if(preStartWk) return null;
     const periodStart=period==="week"?curWk:period==="month"?curMonthDateOnly:null;
+    // GERAL (sem período): a âncora é o fecho da SESSÃO ANTERIOR — NÃO o 1º snapshot de sempre. No
+    // arranque toda a gente está a ~0%, logo o ranking inicial é ruído e daria subidas de +40/+50 falsas.
+    // "today" = dia do snapshot mais recente. Regra da âncora de cada membro:
+    //  • mercado ABERTO e ainda sem snapshot de hoje (janela ~13:30–15:00 UTC) → o último snapshot já É o
+    //    fecho de ontem → âncora = último ponto.
+    //  • caso contrário (já há snapshot de hoje, ou mercado fechado) → âncora = último ponto ANTES de "today".
+    let today=null;
+    if(!periodStart){ for(const p of officials){ const s=seriesById[p.id]; if(s&&s.length){ const d=s[s.length-1].date; if(!today||d>today) today=d; } } }
+    const cal=new Date().toISOString().slice(0,10);
+    const anchorIsLast=!periodStart&&!marketClosed&&!!today&&today<cal;
     const nowOrder=[...officials].sort((a,b)=>{ const va=metricOf(a),vb=metricOf(b);
       if(va==null&&vb==null)return 0; if(va==null)return 1; if(vb==null)return -1; return vb-va; });
     const nowRank=new Map(nowOrder.map((p,i)=>[p.id,i+1]));
     const startRet=new Map(); let withHist=0;
     for(const p of officials){
       const s=seriesById[p.id]; let sr=null;
-      if(s&&s.length){ if(!periodStart){ sr=s[0].r; withHist++; } else { const first=s.find(x=>x.date>=periodStart); if(first){ sr=first.r; withHist++; } } }
+      if(s&&s.length){
+        if(!periodStart){ // Geral → fecho da sessão anterior
+          let pt=null;
+          if(anchorIsLast){ pt=s[s.length-1]; }
+          else { for(const x of s){ if(today&&x.date<today) pt=x; else break; } }
+          if(pt){ sr=pt.r; withHist++; }
+        } else { const first=s.find(x=>x.date>=periodStart); if(first){ sr=first.r; withHist++; } }
+      }
       const m=metricOf(p);
       startRet.set(p.id, sr!=null?sr:(Number.isFinite(m)?m:0));
     }
     if(withHist<3) return null; // histórico insuficiente → não mostra
     const startOrder=[...officials].sort((a,b)=>startRet.get(b.id)-startRet.get(a.id));
     const startRank=new Map(startOrder.map((p,i)=>[p.id,i+1]));
-    let best=null; const map=new Map();
+    let best=null,worst=null; const map=new Map();
     for(const p of officials){
       const climb=startRank.get(p.id)-nowRank.get(p.id); // >0 = subiu lugares
       map.set(p.id,climb);
       if(climb>0&&(!best||climb>best.climb)) best={p,climb};
+      if(climb<0&&(!worst||climb<worst.climb)) worst={p,climb};
     }
-    return {best,map};
-  },[officials,seriesById,period,monthBase,weekBase,livePrices,hasWeek]);
+    return {best,worst,map};
+  },[officials,seriesById,period,monthBase,weekBase,livePrices,hasWeek,marketClosed]);
+  // Referência de dia ADAPTATIVA (Geral) — partilhada pelo widget Destaques e pelo FEED. lastSnapDay = último
+  // pregão (maior date dos snapshots). {adv} p/ "subiu X lugares ___"; {ext} p/ "a maior subida ___".
+  // Mercado aberto (ou fechado mas o último pregão é hoje = fim de tarde) → "hoje"/"do dia"; senão "ontem", ou o
+  // dia da semana (ex.: "na sexta-feira") p/ domingo/2ª feira. Nunca "no último dia" (só fallback sem histórico).
+  const _cal=new Date().toISOString().slice(0,10);
+  const _yCal=new Date(Date.now()-864e5).toISOString().slice(0,10);
+  let _lastSnapDay=null; for(const p of officials){ const s=seriesById[p.id]; if(s&&s.length){ const d=s[s.length-1].date; if(!_lastSnapDay||d>_lastSnapDay) _lastSnapDay=d; } }
+  const dref=(!marketClosed||_lastSnapDay===_cal)?{adv:"hoje",ext:"do dia"}
+    :!_lastSnapDay?{adv:"no último dia",ext:"do último dia"}
+    :_lastSnapDay===_yCal?{adv:"ontem",ext:"ontem"}
+    :(()=>{ const wd=new Date(_lastSnapDay+"T12:00:00Z").toLocaleDateString("pt-PT",{weekday:"long"}); return {adv:"na "+wd,ext:"na "+wd}; })();
+  const dayVerb=marketClosed?"foi":"é";               // "é/foi a maior subida…"
+  const climbWhen=period==="week"?"esta semana":period==="month"?"este mês":dref.adv; // lugares (Geral = dia adaptativo)
+  const dayExt=dref.ext;                               // maior subida/descida do dia (sempre diário)
+  // MOVIMENTO DIÁRIO de lugares no ranking GERAL (rentab. total): lugar agora vs lugar no fecho da sessão
+  // anterior. Independente da aba → o indicador ▲N/▼N usa SEMPRE isto (movimento de hoje), em Geral/Semanal/Mensal.
+  const dailyClimb=useMemo(()=>{
+    if(preStartWk) return null;
+    const order=[...officials].sort((a,b)=>{ const va=a.total,vb=b.total; if(va==null&&vb==null)return 0; if(va==null)return 1; if(vb==null)return -1; return vb-va; });
+    const nowRank=new Map(order.map((p,i)=>[p.id,i+1]));
+    let today=null; for(const p of officials){ const s=seriesById[p.id]; if(s&&s.length){ const d=s[s.length-1].date; if(!today||d>today) today=d; } }
+    const anchorIsLast=!marketClosed&&!!today&&today<_cal;
+    const startRet=new Map(); let withHist=0;
+    for(const p of officials){ const s=seriesById[p.id]; let sr=null;
+      if(s&&s.length){ let pt=null; if(anchorIsLast){ pt=s[s.length-1]; } else { for(const x of s){ if(today&&x.date<today) pt=x; else break; } } if(pt){ sr=pt.r; withHist++; } }
+      startRet.set(p.id, sr!=null?sr:(Number.isFinite(p.total)?p.total:0)); }
+    if(withHist<3) return null;
+    const so=[...officials].sort((a,b)=>startRet.get(b.id)-startRet.get(a.id));
+    const startRank=new Map(so.map((p,i)=>[p.id,i+1]));
+    const map=new Map(); for(const p of officials) map.set(p.id, startRank.get(p.id)-nowRank.get(p.id));
+    return map;
+  },[officials,seriesById,livePrices,marketClosed]);
+  // ULTRAPASSAGENS — reordenação animada (pseudo-FLIP) ao carregar / trocar de período. Cada linha começa
+  // deslocada pela sua variação de lugar (climb × altura da linha) e desliza até 0 → vê-se X a passar Y.
+  // Só o topo (perf), só transform (compositor), só na ordem-de-ranking, e nunca durante pesquisa/regresso.
+  useIsoLayoutEffect(()=>{
+    if(animatedPeriodRef.current===period) return;                        // já decidido/animado este período
+    if(highlightKey){ animatedPeriodRef.current=period; return; }         // regresso do detalhe → sem animação (o realce manda)
+    if(!topClimber||pricesLoading) return;                                // dados ainda não prontos / pré-arranque
+    if(norm(query)||norm(posQuery)) return;                               // a pesquisar → adia (anima ao limpar)
+    if(sortKey!=="total"||sortDir!=="desc") return;                       // ordem ≠ métrica de ranking → offsets errados
+    const wrap=rowsWrapRef.current; if(!wrap) return;
+    if(typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches){ animatedPeriodRef.current=period; return; }
+    const rows=wrap.querySelectorAll(".rkDataRow"); if(rows.length<2) return;
+    const rowH=rows[1].offsetTop-rows[0].offsetTop; if(!(rowH>0)) return;
+    animatedPeriodRef.current=period;
+    const CAP=Math.min(rows.length,60);
+    for(let i=0;i<CAP;i++){
+      const climb=Number(rows[i].dataset.climb)||0; if(!climb) continue;
+      const off=Math.max(-16,Math.min(16,climb))*rowH;                    // parte da posição anterior e desliza até 0
+      rows[i].animate([{transform:`translateY(${off}px)`,opacity:0.5},{transform:"translateY(0)",opacity:1}],{duration:720,easing:"cubic-bezier(.34,1.06,.4,1)",delay:Math.min(i*12,300)});
+    }
+  },[period,seriesLoaded,sortKey,sortDir,query,posQuery,highlightKey,pricesLoading]);
   // Melhores/piores AÇÕES do JOGO ATIVO (retorno da própria ação desde o baseline do período).
   const stockPerf=useMemo(()=>{
     const seen={};
@@ -4801,7 +4901,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
       {hiRow("Líder",stats.leader,mono(pct(stats.leaderM),stats.leaderM>=0),true)}
       {dayExtremes?.best&&hiRow("Subida do dia",dayExtremes.best.p,mono(pct(dayExtremes.best.day),dayExtremes.best.day>=0))}
       {dayExtremes?.worst&&dayExtremes.worst.p.id!==dayExtremes.best?.p.id&&hiRow("Queda do dia",dayExtremes.worst.p,mono(pct(dayExtremes.worst.day),dayExtremes.worst.day>=0))}
-      {topClimber?.best&&hiRow("Maior subida",topClimber.best.p,<span title={`Subiu ${topClimber.best.climb} ${topClimber.best.climb===1?"lugar":"lugares"} ${period==="week"?"esta semana":period==="month"?"este mês":"desde o arranque"}`} style={{fontFamily:"monospace",fontSize:13,fontWeight:800,color:"#4ade80",whiteSpace:"nowrap"}}>▲ {topClimber.best.climb}</span>)}
+      {topClimber?.best&&hiRow("Maior subida",topClimber.best.p,<span title={`Subiu ${topClimber.best.climb} ${topClimber.best.climb===1?"lugar":"lugares"} ${climbWhen}`} style={{fontFamily:"monospace",fontSize:13,fontWeight:800,color:"#4ade80",whiteSpace:"nowrap"}}>▲ {topClimber.best.climb}</span>)}
     </div>
   )):null;
   const wVsSp=(!preStartWk&&stats)?railCard(
@@ -4940,18 +5040,23 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
     if(t==="star") return sv(<path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9 6.8 19l1-5.8L3.5 9.2l5.9-.9z"/>,"#facc15");
     return sv(<><path d="M7 4h10v4a5 5 0 0 1-10 0V4z"/><path d="M12 13v4M9 21h6"/></>,"#facc15"); // trophy
   };
+  // climbWhen / dayExt / dayVerb / dref definidos acima (após topClimber) — partilhados com o widget Destaques.
   const feedNotifs=[];
   if(myRow&&!preStartWk){
     if(myRank===1) feedNotifs.push({t:"trophy",el:<>És o <strong style={{color:"#e2e8f0"}}>líder</strong> do Ranking Geral!</>});
     else if(myRank<=3) feedNotifs.push({t:"trophy",el:<>Estás no <strong style={{color:"#e2e8f0"}}>top 3</strong> ({myRank}º)!</>});
     else if(myRank<=10) feedNotifs.push({t:"trophy",el:<>Estás no <strong style={{color:"#e2e8f0"}}>top 10</strong> ({myRank}º).</>});
     const mc=topClimber?.map?.get(myRow.id);
-    if(mc>0) feedNotifs.push({t:"up",el:<>Subiste <strong style={{color:"#e2e8f0"}}>{mc}</strong> {mc===1?"lugar":"lugares"}!</>});
-    else if(mc<0) feedNotifs.push({t:"down",el:<>Desceste <strong style={{color:"#e2e8f0"}}>{-mc}</strong> {(-mc)===1?"lugar":"lugares"}.</>});
+    if(mc>0) feedNotifs.push({t:"up",el:<>Subiste <strong style={{color:"#e2e8f0"}}>{mc}</strong> {mc===1?"lugar":"lugares"} {climbWhen}!</>});
+    else if(mc<0) feedNotifs.push({t:"down",el:<>Desceste <strong style={{color:"#e2e8f0"}}>{-mc}</strong> {(-mc)===1?"lugar":"lugares"} {climbWhen}.</>});
   }
   const feedAct=[];
-  if(topClimber?.best&&(!myRow||topClimber.best.p.id!==myRow.id)) feedAct.push({t:"up",p:topClimber.best.p,el:<><strong style={{color:"#e2e8f0"}}>{topClimber.best.p.name}</strong> subiu <strong style={{color:"#4ade80"}}>{topClimber.best.climb}</strong> {topClimber.best.climb===1?"lugar":"lugares"}</>});
-  if(dayExtremes?.best&&dayExtremes.best.day>0) feedAct.push({t:"up",p:dayExtremes.best.p,el:<><strong style={{color:"#e2e8f0"}}>{dayExtremes.best.p.name}</strong> é a maior subida do dia ({pct(dayExtremes.best.day)})</>});
+  // Positivos primeiro (subida de lugares, maior subida do dia), depois negativos (descida de lugares, maior
+  // descida do dia); a ação mais rentável fica no fim.
+  if(topClimber?.best&&(!myRow||topClimber.best.p.id!==myRow.id)) feedAct.push({t:"up",p:topClimber.best.p,el:<><strong style={{color:"#e2e8f0"}}>{topClimber.best.p.name}</strong> subiu <strong style={{color:"#4ade80"}}>{topClimber.best.climb}</strong> {topClimber.best.climb===1?"lugar":"lugares"} {climbWhen}</>});
+  if(dayExtremes?.best&&dayExtremes.best.day>0) feedAct.push({t:"up",p:dayExtremes.best.p,el:<><strong style={{color:"#e2e8f0"}}>{dayExtremes.best.p.name}</strong> {dayVerb} a maior subida {dayExt} ({pct(dayExtremes.best.day)})</>});
+  if(topClimber?.worst&&topClimber.worst.climb<0&&(!myRow||topClimber.worst.p.id!==myRow.id)) feedAct.push({t:"down",p:topClimber.worst.p,el:<><strong style={{color:"#e2e8f0"}}>{topClimber.worst.p.name}</strong> desceu <strong style={{color:"#f87171"}}>{-topClimber.worst.climb}</strong> {(-topClimber.worst.climb)===1?"lugar":"lugares"} {climbWhen}</>});
+  if(dayExtremes?.worst&&dayExtremes.worst.day<0&&(!dayExtremes.best||dayExtremes.worst.p.id!==dayExtremes.best.p.id)) feedAct.push({t:"down",p:dayExtremes.worst.p,el:<><strong style={{color:"#e2e8f0"}}>{dayExtremes.worst.p.name}</strong> {dayVerb} a maior descida {dayExt} ({pct(dayExtremes.worst.day)})</>});
   if(stockPerf.best&&stockPerf.best.length&&stockPerf.best[0].ret>0) feedAct.push({t:"star",el:<>A <strong style={{color:"#e2e8f0"}}>{stockPerf.best[0].ticker}</strong> é a ação mais rentável {period==="week"?"da semana":period==="month"?"do mês":"da competição"}</>});
   const feedRow=(it,i)=>{const col=it.t==="up"?"#4ade80":it.t==="down"?"#f87171":"#facc15";return(
     <div key={i} onClick={it.p?()=>onSelect(it.p.key):undefined}
@@ -5222,7 +5327,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
         /* Coluna do nome = largura FIXA do nome mais comprido (--rk-name-w, medido em runtime) →
            todas as linhas alinhadas e as sparklines (1fr) começam todas no mesmo sítio, colado ao
            maior nome. Fallback 190px enquanto não mede. */
-        .rkRow{display:grid;grid-template-columns:40px var(--rk-name-w,190px) 1fr 72px 72px 56px 150px;gap:8px}
+        .rkRow{display:grid;grid-template-columns:40px calc(var(--rk-name-w,190px) + 32px) 1fr 72px 72px 56px 150px;gap:8px}
         /* NOTA: já NÃO usamos content-visibility:auto nas linhas. Com sparkline em SVG leve (não Recharts)
            as ~124 linhas pintam bem de uma vez; o content-visibility fazia as linhas aparecerem EM BRANCO
            ao fazer scroll (o browser só as pintava ao entrar no ecrã). .rkNoCV fica como no-op inofensivo. */
@@ -5792,7 +5897,7 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember,f
     }catch{ setCell(cur); showToast&&showToast("Falha de ligação.","error"); }
   };
 
-  const card={background:DETAIL_WIDGET_BG,backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24};
+  const card={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24};
   const canSend=!busy&&!!draft.trim();
   return(
     <div style={card}>
@@ -5931,7 +6036,7 @@ function SlotChart({pf,livePrices,dayChange,monthBase,weekBase}){
   },[pf.stocks,period,livePrices,dayChange,monthBase,weekBase]);
   const maxAbs=Math.max(0.0001,...rows.map(r=>Math.abs(r.ret)));
   // justifyContent:center → o bloco [toggle + barras] fica centrado na vertical: margem igual em cima e em baixo.
-  const card={background:DETAIL_WIDGET_BG,backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px",flex:1,minHeight:0,display:"flex",flexDirection:"column",justifyContent:"center"};
+  const card={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px",flex:1,minHeight:0,display:"flex",flexDirection:"column",justifyContent:"center"};
   const tog=(k,lbl)=>(
     <button key={k} onClick={()=>setPeriod(k)} style={{cursor:"pointer",fontSize:11.5,fontWeight:700,borderRadius:999,padding:"5px 11px",border:"none",whiteSpace:"nowrap",transition:"all .15s",color:period===k?"#0a0a0a":"#cbd5e1",background:period===k?"#4ade80":"transparent"}}>{lbl}</button>
   );
@@ -6030,7 +6135,7 @@ function AchievementBadges({pf,rank}){
 // Cartão "Overview": posição do membro em Geral / Mensal / Semanal + badges de conquistas. standings vem do App.
 function GameStandings({standings,pf}){
   if(!standings) return null;
-  const card={background:DETAIL_WIDGET_BG,backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24};
+  const card={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24};
   const posColor=(r)=> r===1?"#facc15":r===2?"#e2e8f0":r===3?"#d97706":"#94a3b8";
   const games=[
     {label:"Geral",   dot:"#60a5fa", sub:null,                 data:standings.geral},
@@ -6174,7 +6279,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
     if(!Number.isFinite(raw)) return null;
     return {...s,ret:s.side==="short"?-raw:raw};
   }).filter(Boolean).sort((a,b)=>b.ret-a.ret);
-  const GLASS={background:DETAIL_WIDGET_BG,backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
+  const GLASS={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
   return(
     <div style={{maxWidth:1320,margin:"0 auto",padding:"40px 20px 80px"}}>
       {rail.active&&<LeftBackRail gap={rail.gap} onBack={goBack}/>}
@@ -6266,7 +6371,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
             <span style={{color:"#f87171"}}><Tri up={false} size={11}/> {st.neg} negativas</span>
             {dayRet!=null&&(
               <span title={marketClosed?"Rentabilidade no último pregão":"Rentabilidade do portefólio hoje"}>
-                {marketClosed?"Último dia":"Diário"}: <strong style={{color:dayRet>=0?"#4ade80":"#f87171"}}><Rolling text={pct(dayRet)}/></strong>
+                {lastDayLabel()}: <strong style={{color:dayRet>=0?"#4ade80":"#f87171"}}><Rolling text={pct(dayRet)}/></strong>
               </span>
             )}
           </div>
@@ -6304,17 +6409,17 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
         </div>
       </>)}
 
-      <div style={{background:DETAIL_WIDGET_BG,backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
+      <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
         <div style={{display:"grid",alignItems:"center",gridTemplateColumns:"1.6fr 1fr 1fr 1.4fr",
           padding:"10px 20px",borderBottom:`1px solid ${divider}`,
           fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,lineHeight:1.2}}>
-          <span>Ação</span>
+          <span></span>
           <span style={{textAlign:"center"}}>Preço inicial</span>
           <span style={{textAlign:"center"}}>Preço atual</span>
           <span onClick={()=>setRetMode(m=>m==="total"?"day":"total")}
-            title={`Clica para alternar entre 'Desde o início' e '${marketClosed?"Último dia":"Diário"}'`}
+            title={`Clica para alternar entre 'Desde o início' e '${lastDayLabel()}'`}
             style={{textAlign:"center",cursor:"pointer",userSelect:"none",lineHeight:1.2,display:"block"}}>
-            {retMode==="day"?(marketClosed?"Último dia":"Diário"):"Desde o início"}
+            {retMode==="day"?(lastDayLabel()):"Desde o início"}
             <span style={{fontSize:9,opacity:0.85,marginLeft:4}}>▾</span>
           </span>
         </div>
@@ -6385,7 +6490,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
       <Reveal delay={80}>
       <div className="dayGrid">
         <TiltCard style={{...GLASS,gridArea:"best",minWidth:0,borderRadius:16,padding:24,
-          background:`linear-gradient(160deg, rgba(34,197,94,0.11), transparent 58%), ${DETAIL_WIDGET_BG}`,
+          background:"linear-gradient(160deg, rgba(34,197,94,0.12), rgba(34,197,94,0.03))",
           border:"1px solid rgba(34,197,94,0.20)"}}>
           <div style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center",minHeight:26,marginBottom:14}}>
             <DayChip up/>
@@ -6394,7 +6499,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
           {byDay.length?<TopList items={byDay.slice(0,3)}/>:<p style={{fontSize:13,color:"#6b7280",textAlign:"center",margin:0}}>Sem variação do dia disponível.</p>}
         </TiltCard>
         <TiltCard style={{...GLASS,gridArea:"worst",minWidth:0,borderRadius:16,padding:24,
-          background:`linear-gradient(160deg, rgba(255,107,114,0.11), transparent 58%), ${DETAIL_WIDGET_BG}`,
+          background:"linear-gradient(160deg, rgba(239,68,68,0.12), rgba(239,68,68,0.03))",
           border:"1px solid rgba(239,68,68,0.20)"}}>
           <div style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center",minHeight:26,marginBottom:14}}>
             <DayChip/>
