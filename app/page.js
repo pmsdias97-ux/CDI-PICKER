@@ -2545,7 +2545,7 @@ function NavLink({label,active,onClick,locked,caret,icon}){
         : label}
       {/* 🔒 ABSOLUTO → não ocupa largura, para os ícones ficarem todos com o mesmo espaçamento.
           (o caret ▾ foi removido; o submenu do Ranking mantém-se via hover no RankingNav) */}
-      {locked&&<span style={{position:"absolute",right:3,top:3,fontSize:9,opacity:0.5,pointerEvents:"none"}}>🔒</span>}
+      {locked&&<span style={{position:"absolute",right:8,top:5,fontSize:9,opacity:0.5,pointerEvents:"none"}}>🔒</span>}
     </button>
   );
 }
@@ -4513,7 +4513,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
     }
     return(
     <div ref={searchable?rowsWrapRef:null} className={cvOff?"rkNoCV":undefined} style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"clip"}}>
-      <div className="rkRow rkStickyHead" style={{padding:"10px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",
+      <div className="rkRow rkStickyHead" style={{padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.10)",
         fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,alignItems:"center"}}>
         {searchable ? (
           <>
@@ -4588,14 +4588,14 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
         const hoverBg=picked?baseBg:rr?rr.hov:inTop10?"rgba(34,197,94,0.10)":me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)";
         return(
           <div key={p.key} data-climb={slide} ref={(me||p.key===highlightKey)?((el)=>{ if(me) meRowRef.current=el; if(p.key===highlightKey) highlightRef.current=el; }):null} className={"rkRow rkDataRow"+((p.key===highlightKey||(me&&meFlash))?" rkHiFlash":"")} onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
-            style={{padding:"14px 20px",borderBottom:"1px solid rgba(255,255,255,0.10)",cursor:"pointer",
+            style={{padding:"14px 14px",borderBottom:"1px solid rgba(255,255,255,0.10)",cursor:"pointer",
               background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":barColor?`inset 3px 0 0 ${barColor}`:"none",transition:"background 0.15s"}}
             onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=hoverBg; }}
             onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
             <span style={{display:"flex",alignItems:"center",justifyContent:"flex-end"}}>
               {(!preStartWk&&i<3)
                 ? <span className="rankShine rankBreathe" style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0,...RANK_BADGE[i+1],"--shine-delay":`${i*1.2}s`}}>{i+1}</span>
-                : <span style={{fontSize:13,color:"#94a3b8",fontWeight:700}}>{preStartWk?"·":i+1}</span>}
+                : <span style={{width:22,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:13,color:"#94a3b8",fontWeight:700}}>{preStartWk?"·":i+1}</span>}
             </span>
             <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
               <span title={(!preStartWk&&climb!==0)?`${climb>0?"Subiu":"Desceu"} ${Math.abs(climb)} ${Math.abs(climb)===1?"lugar":"lugares"} ${dref.adv}`:undefined} style={{width:26,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"flex-start"}}>
@@ -4765,24 +4765,33 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
   const dayVerb=marketClosed?"foi":"é";               // "é/foi a maior subida…"
   const climbWhen=period==="week"?"esta semana":period==="month"?"este mês":dref.adv; // lugares (Geral = dia adaptativo)
   const dayExt=dref.ext;                               // maior subida/descida do dia (sempre diário)
-  // MOVIMENTO DIÁRIO de lugares no ranking GERAL (rentab. total): lugar agora vs lugar no fecho da sessão
-  // anterior. Independente da aba → o indicador ▲N/▼N usa SEMPRE isto (movimento de hoje), em Geral/Semanal/Mensal.
+  // MOVIMENTO DIÁRIO de lugares no ranking DA ABA ATIVA (Geral/Semanal/Mensal): lugar AGORA (por metricOf =
+  // ordem mostrada) vs lugar no fecho da sessão ANTERIOR. Para semana/mês o retorno-do-período de ONTEM deriva
+  // dos snapshots: (1+total_ontem)/(1+total_na_abertura_do_período) − 1. Assim o ▲N/▼N é coerente com a posição
+  // (o último lugar nunca "sobe": nowRank usa a MESMA métrica que a lista → o climb do último é sempre ≤ 0).
   const dailyClimb=useMemo(()=>{
     if(preStartWk) return null;
-    const order=[...officials].sort((a,b)=>{ const va=a.total,vb=b.total; if(va==null&&vb==null)return 0; if(va==null)return 1; if(vb==null)return -1; return vb-va; });
-    const nowRank=new Map(order.map((p,i)=>[p.id,i+1]));
+    const periodStart=period==="week"?curWk:period==="month"?curMonthDateOnly:null;
+    const nowRank=new Map([...officials].sort((a,b)=>{ const va=metricOf(a),vb=metricOf(b); if(va==null&&vb==null)return 0; if(va==null)return 1; if(vb==null)return -1; return vb-va; }).map((p,i)=>[p.id,i+1]));
     let today=null; for(const p of officials){ const s=seriesById[p.id]; if(s&&s.length){ const d=s[s.length-1].date; if(!today||d>today) today=d; } }
     const anchorIsLast=!marketClosed&&!!today&&today<_cal;
-    const startRet=new Map(); let withHist=0;
-    for(const p of officials){ const s=seriesById[p.id]; let sr=null;
-      if(s&&s.length){ let pt=null; if(anchorIsLast){ pt=s[s.length-1]; } else { for(const x of s){ if(today&&x.date<today) pt=x; else break; } } if(pt){ sr=pt.r; withHist++; } }
-      startRet.set(p.id, sr!=null?sr:(Number.isFinite(p.total)?p.total:0)); }
+    const yM=new Map(); let withHist=0;
+    for(const p of officials){
+      const s=seriesById[p.id]; let rYest=null,rOpen=null;
+      if(s&&s.length){
+        if(anchorIsLast){ rYest=s[s.length-1].r; } else { for(const x of s){ if(today&&x.date<today) rYest=x.r; else break; } }
+        if(periodStart){ const first=s.find(x=>x.date>=periodStart); if(first) rOpen=first.r; }
+      }
+      let ym=null;
+      if(rYest!=null){ if(!periodStart) ym=rYest; else if(rOpen!=null) ym=(1+rYest)/(1+rOpen)-1; }
+      if(ym!=null){ withHist++; yM.set(p.id,ym); }
+      else { const m=metricOf(p); yM.set(p.id,Number.isFinite(m)?m:-Infinity); } // sem histórico → fica no mesmo lugar (climb 0)
+    }
     if(withHist<3) return null;
-    const so=[...officials].sort((a,b)=>startRet.get(b.id)-startRet.get(a.id));
-    const startRank=new Map(so.map((p,i)=>[p.id,i+1]));
-    const map=new Map(); for(const p of officials) map.set(p.id, startRank.get(p.id)-nowRank.get(p.id));
+    const yRank=new Map([...officials].sort((a,b)=>yM.get(b.id)-yM.get(a.id)).map((p,i)=>[p.id,i+1]));
+    const map=new Map(); for(const p of officials) map.set(p.id, yRank.get(p.id)-nowRank.get(p.id));
     return map;
-  },[officials,seriesById,livePrices,marketClosed]);
+  },[officials,seriesById,period,monthBase,weekBase,livePrices,marketClosed,hasWeek]);
   // ULTRAPASSAGENS — reordenação animada (pseudo-FLIP) ao carregar / trocar de período. Cada linha começa
   // deslocada pela sua variação de lugar (climb × altura da linha) e desliza até 0 → vê-se X a passar Y.
   // Só o topo (perf), só transform (compositor), só na ordem-de-ranking, e nunca durante pesquisa/regresso.
@@ -4925,7 +4934,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
         const gs=-90,ge=-90+fx*360;return(
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
         <span style={{fontSize:34,fontWeight:800,letterSpacing:"-1px",color:"#4ade80",lineHeight:1}}>{beatPct!=null?`${beatPct}%`:"—"}</span>
-        <div style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#e2e8f0"}}>batem o mercado</div>
+        <div style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#e2e8f0"}}>batem o&nbsp;mercado</div>
         <svg width="92" height="80" viewBox="0 0 92 80" style={{flexShrink:0}} aria-hidden="true">
           <defs>
             <linearGradient id="vspTop" x1="0.2" y1="0" x2="0.7" y2="1">
@@ -5327,7 +5336,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
         /* Coluna do nome = largura FIXA do nome mais comprido (--rk-name-w, medido em runtime) →
            todas as linhas alinhadas e as sparklines (1fr) começam todas no mesmo sítio, colado ao
            maior nome. Fallback 190px enquanto não mede. */
-        .rkRow{display:grid;grid-template-columns:40px calc(var(--rk-name-w,190px) + 32px) 1fr 72px 72px 56px 150px;gap:8px}
+        .rkRow{display:grid;grid-template-columns:28px calc(var(--rk-name-w,190px) + 32px) 1fr 72px 72px 56px 150px;gap:8px}
         /* NOTA: já NÃO usamos content-visibility:auto nas linhas. Com sparkline em SVG leve (não Recharts)
            as ~124 linhas pintam bem de uma vez; o content-visibility fazia as linhas aparecerem EM BRANCO
            ao fazer scroll (o browser só as pintava ao entrar no ecrã). .rkNoCV fica como no-op inofensivo. */
