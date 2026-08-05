@@ -24,6 +24,9 @@ const PORTFOLIO_SIZE = 8;
 const MAX_SHORTS = 2;
 const STARTING_VALUE = 10000;
 const PER_STOCK = STARTING_VALUE / PORTFOLIO_SIZE;
+// Base navy sólida dos widgets do detalhe. Não deixa o tema ambiente do pódio
+// tingir os cartões de dourado, cinzento ou bronze.
+const DETAIL_WIDGET_BG="linear-gradient(155deg,#0B2045 0%,#071A3A 100%)";
 
 // Feriados do mercado US (NYSE/NASDAQ). Atualizar ~1×/ano. Datas em ET (YYYY-MM-DD).
 const MARKET_HOLIDAYS_US = new Set([
@@ -422,7 +425,7 @@ function LeftBackRail({gap,onBack,label="Voltar ao ranking"}){
   const [hover,setHover]=useState(false);
   return(
     <div onClick={onBack} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
-      role="button" aria-label={label} title={label}
+      role="button" aria-label={label}
       style={{position:"fixed",left:0,top:0,bottom:0,width:gap,cursor:"pointer",zIndex:40,
         display:"flex",alignItems:"center",justifyContent:"center",
         background:hover?"linear-gradient(90deg, rgba(0,0,0,0.38) 0%, rgba(0,0,0,0.14) 50%, transparent 100%)":"transparent",
@@ -2116,6 +2119,16 @@ export default function App(){
       for(const p of spyHist){ if(p.date<=d) v=p.close; else break; }
       return v??spyHist[0].close;
     };
+    // Fecho ESTRITAMENTE ANTES da data — a âncora dos baselines semanal/mensal dos membros
+    // (fecho de 6ª anterior / fecho do mês anterior). O priceAt (<=) incluiria o fecho do
+    // PRÓPRIO dia de arranque, descolando o S&P da âncora usada nas ações.
+    const closeBefore=iso=>{
+      if(!spyHist||!spyHist.length) return null;
+      const d=(iso||"").slice(0,10);
+      let v=null;
+      for(const p of spyHist){ if(p.date<d) v=p.close; else break; }
+      return v;
+    };
     const returnFor=pf=>{
       const base=(pf&&typeof pf.spyInitialPrice==="number"&&pf.spyInitialPrice>0)
         ? pf.spyInitialPrice
@@ -2123,7 +2136,7 @@ export default function App(){
       if(base==null||!base) return null;
       return now/base-1;
     };
-    return { now, returnFor, priceAt: closeOnOrBefore };
+    return { now, returnFor, priceAt: closeOnOrBefore, closeBefore };
   },[livePrices,spyHist]);
 
   async function doSubmit(name,stocks,pin){
@@ -3743,10 +3756,11 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
       byT[t0]=a;
     }
     // Benchmark S&P 500 ancorado a 0 no t0. Base do S&P = MESMA data-base das ações: total + mês de
-    // ARRANQUE → lock de 30-jun (spyInitialPrice); meses/semanas seguintes → SPY no início do período (t0).
+    // ARRANQUE → lock de 30-jun (spyInitialPrice); meses/semanas seguintes → fecho do SPY ANTES do
+    // início do período (closeBefore) — a mesma âncora dos baselines semanal/mensal dos membros.
     const useLockSpy=!periodStart||(gameStartDate&&periodStart===String(gameStartDate).slice(0,10));
     const spyBase=(()=>{
-      if(!useLockSpy){ const b=(spy&&spy.priceAt&&t0)?spy.priceAt(t0):null; if(Number.isFinite(b)&&b>0) return b; }
+      if(!useLockSpy){ const b=(spy&&spy.closeBefore&&t0)?spy.closeBefore(t0):null; if(Number.isFinite(b)&&b>0) return b; }
       for(const p of shown){ const s=p.spyInitialPrice; if(Number.isFinite(s)&&s>0) return s; }
       const b=(spy&&spy.priceAt&&t0)?spy.priceAt(t0):null; return (Number.isFinite(b)&&b>0)?b:null;
     })();
@@ -4264,10 +4278,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
   // S&P do período (linha "S&P 500" do widget vs S&P).
   const spyMetric=()=>{
     if(!spy) return null;
-    if(period==="week"){ if(!hasWeek) return null; const b=spy.priceAt(`${curWk}T00:00:00.000Z`); return (Number.isFinite(b)&&b>0)?spy.now/b-1:null; }
+    if(period==="week"){ if(!hasWeek) return null; const b=spy.closeBefore(`${curWk}T00:00:00.000Z`); return (Number.isFinite(b)&&b>0)?spy.now/b-1:null; }
     // Meses DEPOIS do arranque: S&P desde o início do mês (o baseline do mês é capturado nesse dia).
     const isLaunchMonth=curMonthYM===String(settings?.gameStartDate||"").slice(0,7);
-    if(period==="month"&&!isLaunchMonth){ const b=spy.priceAt(curMonthStartIso); return (Number.isFinite(b)&&b>0)?spy.now/b-1:null; }
+    if(period==="month"&&!isLaunchMonth){ const b=spy.closeBefore(curMonthStartIso); return (Number.isFinite(b)&&b>0)?spy.now/b-1:null; }
     // total + mês de ARRANQUE (julho): S&P ancorado ao LOCK dos baselines (30-jun) = spy_initial_price,
     // a MESMA data em que as ações dos membros foram congeladas → comparação justa e coerente.
     return officials.length?spy.returnFor(officials[0]):null;
@@ -5041,8 +5055,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
       const retColor=hasRet?(pos?"#4ade80":"#f87171"):"#64748b";
       const accent=kind==="week"?"#34d399":"#a78bfa";
       const accentRGB=kind==="week"?"52,211,153":"167,139,250";
+      // Cor do fundo para onde o fade escurece em baixo: verde-escuro no semanal, roxo/lilás escuro no mensal.
+      const fadeRGB=kind==="week"?"6,25,28":"17,12,36";
       return(
-        <div style={{background:`linear-gradient(180deg,rgba(${accentRGB},0.11),rgba(6,25,28,0.88) 72%)`,border:`1px solid rgba(${accentRGB},0.26)`,borderRadius:18,boxShadow:`0 10px 30px rgba(0,0,0,0.32), inset 0 1px 0 rgba(${accentRGB},0.12)`}}>
+        <div style={{background:`linear-gradient(180deg,rgba(${accentRGB},0.11),rgba(${fadeRGB},0.88) 72%)`,border:`1px solid rgba(${accentRGB},0.26)`,borderRadius:18,boxShadow:`0 10px 30px rgba(0,0,0,0.32), inset 0 1px 0 rgba(${accentRGB},0.12)`}}>
           <div style={{padding:"14px 14px 18px"}}>
             <div style={{fontSize:10.5,color:"#a8b4c5",textTransform:"uppercase",letterSpacing:"1.25px",fontWeight:800,marginBottom:12,display:"flex",alignItems:"center",justifyContent:"center",gap:7,textAlign:"center"}}>
               {cardTitle}<InfoTip text={cf.info}/>
@@ -5776,7 +5792,7 @@ function PortfolioReactions({pf,myNorm,myUserId,adminPw,showToast,onOpenMember,f
     }catch{ setCell(cur); showToast&&showToast("Falha de ligação.","error"); }
   };
 
-  const card={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24};
+  const card={background:DETAIL_WIDGET_BG,backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24};
   const canSend=!busy&&!!draft.trim();
   return(
     <div style={card}>
@@ -5915,7 +5931,7 @@ function SlotChart({pf,livePrices,dayChange,monthBase,weekBase}){
   },[pf.stocks,period,livePrices,dayChange,monthBase,weekBase]);
   const maxAbs=Math.max(0.0001,...rows.map(r=>Math.abs(r.ret)));
   // justifyContent:center → o bloco [toggle + barras] fica centrado na vertical: margem igual em cima e em baixo.
-  const card={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px",flex:1,minHeight:0,display:"flex",flexDirection:"column",justifyContent:"center"};
+  const card={background:DETAIL_WIDGET_BG,backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px",flex:1,minHeight:0,display:"flex",flexDirection:"column",justifyContent:"center"};
   const tog=(k,lbl)=>(
     <button key={k} onClick={()=>setPeriod(k)} style={{cursor:"pointer",fontSize:11.5,fontWeight:700,borderRadius:999,padding:"5px 11px",border:"none",whiteSpace:"nowrap",transition:"all .15s",color:period===k?"#0a0a0a":"#cbd5e1",background:period===k?"#4ade80":"transparent"}}>{lbl}</button>
   );
@@ -6014,7 +6030,7 @@ function AchievementBadges({pf,rank}){
 // Cartão "Overview": posição do membro em Geral / Mensal / Semanal + badges de conquistas. standings vem do App.
 function GameStandings({standings,pf}){
   if(!standings) return null;
-  const card={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24};
+  const card={background:DETAIL_WIDGET_BG,backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24};
   const posColor=(r)=> r===1?"#facc15":r===2?"#e2e8f0":r===3?"#d97706":"#94a3b8";
   const games=[
     {label:"Geral",   dot:"#60a5fa", sub:null,                 data:standings.geral},
@@ -6158,7 +6174,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
     if(!Number.isFinite(raw)) return null;
     return {...s,ret:s.side==="short"?-raw:raw};
   }).filter(Boolean).sort((a,b)=>b.ret-a.ret);
-  const GLASS={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
+  const GLASS={background:DETAIL_WIDGET_BG,backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
   return(
     <div style={{maxWidth:1320,margin:"0 auto",padding:"40px 20px 80px"}}>
       {rail.active&&<LeftBackRail gap={rail.gap} onBack={goBack}/>}
@@ -6288,7 +6304,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
         </div>
       </>)}
 
-      <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
+      <div style={{background:DETAIL_WIDGET_BG,backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
         <div style={{display:"grid",alignItems:"center",gridTemplateColumns:"1.6fr 1fr 1fr 1.4fr",
           padding:"10px 20px",borderBottom:`1px solid ${divider}`,
           fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,lineHeight:1.2}}>
@@ -6369,7 +6385,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
       <Reveal delay={80}>
       <div className="dayGrid">
         <TiltCard style={{...GLASS,gridArea:"best",minWidth:0,borderRadius:16,padding:24,
-          background:"linear-gradient(160deg, rgba(34,197,94,0.12), rgba(34,197,94,0.03))",
+          background:`linear-gradient(160deg, rgba(34,197,94,0.11), transparent 58%), ${DETAIL_WIDGET_BG}`,
           border:"1px solid rgba(34,197,94,0.20)"}}>
           <div style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center",minHeight:26,marginBottom:14}}>
             <DayChip up/>
@@ -6378,7 +6394,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
           {byDay.length?<TopList items={byDay.slice(0,3)}/>:<p style={{fontSize:13,color:"#6b7280",textAlign:"center",margin:0}}>Sem variação do dia disponível.</p>}
         </TiltCard>
         <TiltCard style={{...GLASS,gridArea:"worst",minWidth:0,borderRadius:16,padding:24,
-          background:"linear-gradient(160deg, rgba(239,68,68,0.12), rgba(239,68,68,0.03))",
+          background:`linear-gradient(160deg, rgba(255,107,114,0.11), transparent 58%), ${DETAIL_WIDGET_BG}`,
           border:"1px solid rgba(239,68,68,0.20)"}}>
           <div style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center",minHeight:26,marginBottom:14}}>
             <DayChip/>
