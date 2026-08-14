@@ -391,6 +391,11 @@ def _price_rows(prices, prevs, shares, have_shares):
 
 
 def fetch_prices():
+    # Só em dias de PREGÃO US: exclui feriados (os fins de semana já ficam de fora pelo cron "1-5").
+    # Nesses dias o mercado não abre → não há cotações novas para atualizar.
+    _et = dt.datetime.now(dt.timezone.utc).astimezone(ZoneInfo("America/New_York")).date()
+    if not _is_trading_day(_et):
+        print(f"[ath] prices: {_et} não é dia de pregão US (fim de semana/feriado) — nada a fazer."); return
     shares = site_shares()
     symbols = list(shares.keys()) or [s for s, _ in constituents()]
     have_shares = bool(shares)

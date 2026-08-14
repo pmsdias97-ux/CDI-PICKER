@@ -7,8 +7,13 @@ name: ATH — preços (hora a hora)
 
 on:
   schedule:
-    - cron: "30 13 * * 1-5"    # abertura US (verão, 09:30 ET) — diário arranca sem delay
-    - cron: "0 14-21 * * 1-5"  # horário durante a sessão (cobre a abertura de inverno às 14:30 no :00 seguinte)
+    # Atualização de TODAS as cotações 1 min após a abertura do mercado US (09:31 ET = 14:31 Portugal),
+    # em dias de pregão. GitHub cron é UTC e não sabe do horário de verão → duas linhas, uma por estação;
+    # a "errada" da estação cai fora de horas e é inofensiva (o _feed_fresh evita escrever dados velhos).
+    # Fins de semana já excluídos pelo "1-5"; feriados: o fetch_prices salta (guard por _is_trading_day).
+    - cron: "31 13 * * 1-5"    # 09:31 ET no VERÃO (EDT, UTC-4)
+    - cron: "31 14 * * 1-5"    # 09:31 ET no INVERNO (EST, UTC-5)
+    - cron: "0 14-21 * * 1-5"  # de hora a hora durante a sessão (mantém as cotações frescas)
   workflow_dispatch:
 
 # Um trigger novo não empilha com um a meio (cancela o anterior — só interessa o mais recente).
