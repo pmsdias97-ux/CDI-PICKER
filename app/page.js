@@ -1929,11 +1929,12 @@ export default function App(){
   const openComments=useCallback((portfolioId,commentId)=>{ const pf=portfolios.find(p=>p.id===portfolioId); if(!pf) return; detailFocusRef.current={commentId}; openDetail(pf.key); },[portfolios,openDetail]);
   const openDuel=useCallback((a,b)=>goRoute({page:"duel",duelSlugs:[slugForKey(a),slugForKey(b)]}),[goRoute,slugForKey]);
 
-  const refreshLivePrices=useCallback(async(pfs)=>{
+  const refreshLivePrices=useCallback(async(pfs,opts)=>{
+    const silent=!!(opts&&opts.silent);   // refetch de fundo (poll/voltar à aba): não pisca o loading
     // Inclui "SPY" para o benchmark (preço ao vivo do S&P 500 agora).
     const tickers=[...new Set([...(pfs||[]).flatMap(p=>p.stocks.map(s=>s.ticker)),"SPY"])];
     if(!tickers.length){ setLivePrices({}); setDayChange({}); return; }
-    setPricesLoading(true);
+    if(!silent) setPricesLoading(true);
     try{
       const { prices, changes, marketClosed:mc }=await fetchStockPrices(tickers);
       setLivePrices(prices);
@@ -1942,7 +1943,7 @@ export default function App(){
     }catch(err){
       console.error(err);
     }finally{
-      setPricesLoading(false);
+      if(!silent) setPricesLoading(false);
     }
   },[]);
 
@@ -2046,6 +2047,17 @@ export default function App(){
   },[refreshLivePrices]);
 
   useEffect(()=>{ load(); },[load]);
+  // Frescura contínua sem sobrecarregar: enquanto a página está VISÍVEL re-busca as cotações a cada 5 min
+  // (silencioso, sem piscar o loading); e ao VOLTAR ao separador re-busca logo → mata as abas paradas com
+  // dados de ontem. O backend atualiza as posições dos membros ~10/10 min, por isso um poll de 5 min apanha-as
+  // depressa. Só lê o endpoint (serve do sp500_ath, DB) → praticamente sem carga na API de cotações (Yahoo).
+  const portfoliosRef=useRef(portfolios); portfoliosRef.current=portfolios;
+  useEffect(()=>{
+    const refetch=()=>{ if(typeof document!=="undefined"&&document.visibilityState==="visible"&&portfoliosRef.current.length) refreshLivePrices(portfoliosRef.current,{silent:true}); };
+    const iv=setInterval(refetch,5*60*1000);
+    document.addEventListener("visibilitychange",refetch);
+    return ()=>{ clearInterval(iv); document.removeEventListener("visibilitychange",refetch); };
+  },[refreshLivePrices]);
   // Últimos comentários (cartão do rail do Ranking) — 1× no load (política "refresca no load").
   useEffect(()=>{ (async()=>{ try{ const r=await fetch("/api/comments/recent"); const j=await r.json(); if(Array.isArray(j?.comments)) setRecentComments(j.comments); }catch{} })(); },[]);
   // Ao mudar de ecrã (ou de portefólio aberto), começa no topo do scroll.

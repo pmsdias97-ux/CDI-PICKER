@@ -1,13 +1,13 @@
-name: ATH — posições (leve, 30/30 min)
+name: ATH — posições (leve, 10/10 min)
 
 # Passagem LEVE: atualiza SÓ o preço + fecho anterior dos tickers que os MEMBROS têm
-# (~2 pedidos bulk ao Yahoo, nada de fast_info/.info). Corre nos slots :30, para preencher
-# o intervalo entre as corridas horárias do ath-prices → cotações das posições ~de 30 em 30 min
-# durante a sessão US, sem carga extra relevante nas APIs. Segredos: CRON_SECRET, SUPABASE_URL, SUPABASE_ANON_KEY.
+# (~2 pedidos bulk ao Yahoo, nada de fast_info/.info) → mantém ranking + portefólios frescos.
+# Corre a cada 10 min durante a sessão US (repo público = minutos Actions ilimitados; runners com IPs
+# variados = pouco risco de 429). Segredos: CRON_SECRET, SUPABASE_URL, SUPABASE_ANON_KEY.
 
 on:
   schedule:
-    - cron: "30 13-20 * * 1-5"   # 13:30–20:30 UTC, dias úteis (entre as corridas horárias :00)
+    - cron: "*/10 13-21 * * 1-5"   # a cada 10 min, 13:00–21:59 UTC (cobre a sessão em verão e inverno)
   workflow_dispatch:
 
 concurrency:

@@ -448,8 +448,11 @@ def fetch_prices():
 
 
 def fetch_positions():
-    """Passagem LEVE (30 em 30 min): SÓ os tickers que os membros têm — preço + fecho anterior,
+    """Passagem LEVE (a cada ~10 min): SÓ os tickers que os membros têm — preço + fecho anterior,
     em ~2 pedidos bulk ao Yahoo. Não toca no resto do S&P (aba ATH), que fica na corrida horária."""
+    _et = dt.datetime.now(dt.timezone.utc).astimezone(ZoneInfo("America/New_York")).date()
+    if not _is_trading_day(_et):
+        print(f"[ath] positions: {_et} não é dia de pregão US (fim de semana/feriado) — nada a fazer."); return
     shares = site_shares()
     symbols = list(shares.keys())
     have_shares = bool(shares)
