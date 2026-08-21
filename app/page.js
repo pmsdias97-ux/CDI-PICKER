@@ -3727,10 +3727,13 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
     let cancel=false;
     (async()=>{
       try{
-        const { data }=await supabase
-          .from("portfolio_snapshots").select("portfolio_id,captured_at,total_return")
-          .in("portfolio_id",idList).order("captured_at",{ascending:true});
-        if(!cancel){
+        // Paginação: sem isto o Supabase corta aos 1000 registos (os mais ANTIGOS, por ordem ascendente),
+        // deixando as semanas recentes de fora → o gráfico do período ficava só com 2 pontos (reta). Busca TUDO.
+        const { data, cancelled }=await fetchPaginatedRows(
+          (cursor,limit)=>{ let q=supabase.from("portfolio_snapshots").select("id,portfolio_id,captured_at,total_return").in("portfolio_id",idList).order("id",{ascending:true}).limit(limit); if(cursor!=null) q=q.gt("id",cursor); return q; },
+          {isCancelled:()=>cancel},
+        );
+        if(!cancel&&!cancelled){
           const arr=data||[]; const prev=RACE_SNAP_CACHE.get(cacheKey);
           RACE_SNAP_CACHE.set(cacheKey,arr);
           const same=prev&&prev.length===arr.length&&prev.every((r,i)=>r.portfolio_id===arr[i].portfolio_id&&r.captured_at===arr[i].captured_at&&r.total_return===arr[i].total_return);
@@ -4830,7 +4833,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
     const seen={};
     for(const p of officials) for(const s of (p.stocks||[])){
       const raw=(s.ticker||"").trim(); const t=raw.toUpperCase();
-      if(t && !seen[t] && Number.isFinite(s.initialPrice) && s.initialPrice>0) seen[t]={ticker:t,raw,init:s.initialPrice};
+      if(t && !seen[t] && Number.isFinite(s.initialPrice) && s.initialPrice>0) seen[t]={ticker:t,raw,init:s.initialPrice,companyName:s.companyName};
     }
     const arr=Object.values(seen).map(o=>{ const base=baseForStock(o.raw,o.init); const cur=curPrice(o.raw,o.init,livePrices); return {...o,ret:(Number.isFinite(cur)&&base)?cur/base-1:0}; });
     arr.sort((a,b)=>b.ret-a.ret);
@@ -5012,7 +5015,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
   )):null;
   const perfRow=(o)=>{const pos=o.ret>=0,c=pos?"#4ade80":"#f87171";return(
     <div key={o.ticker} style={{display:"flex",alignItems:"center",gap:8}}>
-      <StockLogo ticker={o.ticker} size={17}/>
+      <HoverName label={o.companyName||o.ticker}><StockLogo ticker={o.ticker} size={17}/></HoverName>
       <span style={{fontWeight:700,fontSize:12,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.ticker}</span>
       <span style={{fontFamily:"ui-monospace, monospace",fontWeight:800,fontSize:11.5,color:c,background:pos?"rgba(74,222,128,0.10)":"rgba(248,113,113,0.10)",border:`1px solid ${pos?"rgba(74,222,128,0.30)":"rgba(248,113,113,0.30)"}`,borderRadius:7,padding:"1px 7px"}}>{o.ret>=0?"+":""}{(o.ret*100).toFixed(2)}%</span>
     </div>);};
