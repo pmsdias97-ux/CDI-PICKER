@@ -4837,7 +4837,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
     }
     const arr=Object.values(seen).map(o=>{ const base=baseForStock(o.raw,o.init); const cur=curPrice(o.raw,o.init,livePrices); return {...o,ret:(Number.isFinite(cur)&&base)?cur/base-1:0}; });
     arr.sort((a,b)=>b.ret-a.ret);
-    return { best:arr.slice(0,5), worst:arr.slice(-5).reverse() };
+    // Piores: sem reverse → a lista piora de cima para baixo (a PIOR performance fica em baixo).
+    return { best:arr.slice(0,5), worst:arr.slice(-5) };
   },[officials,livePrices,period,monthBase,weekBase]);
   const railCard=(title,children,info)=>(
     <div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:"11px 14px",boxShadow:"0 6px 20px rgba(0,0,0,0.22)"}}>
@@ -5580,11 +5581,11 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
    rentabilidade. Acrescenta o ponto "hoje" ao vivo para nunca ficar vazio.
    Enche-se ao longo dos dias à medida que o cron corre.
 --------------------------------------------------------------------------- */
-function EvoTooltip({active,payload,label}){
+function EvoTooltip({active,payload,label,ownLabel="A tua"}){
   if(!active||!payload||!payload.length) return null;
   const rows=payload.filter(p=>p.value!=null);
   if(!rows.length) return null;
-  const nameOf=k=>k==="spy"?"S&P 500":"A tua";
+  const nameOf=k=>k==="spy"?"S&P 500":ownLabel;
   return(
     <div style={{background:"rgba(8,15,32,0.95)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,padding:"7px 11px",fontSize:12,boxShadow:"0 8px 24px rgba(0,0,0,0.45)"}}>
       <div style={{color:"#94a3b8",marginBottom:rows.length>1?5:0,fontFamily:"monospace"}}>{raceFull(label)}</div>
@@ -5598,7 +5599,10 @@ function EvoTooltip({active,payload,label}){
     </div>
   );
 }
-function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarted,gameStartDate,spy,spyInitialPrice}){
+function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarted,gameStartDate,spy,spyInitialPrice,mine=true,ownerName}){
+  // No perfil de OUTRO membro, o tooltip/legenda mostram o nome dele (não "A tua").
+  const ownLabel=mine?"A tua":(ownerName||"Membro");
+  const legendLabel=mine?"A tua rentabilidade":(ownerName||"Rentabilidade");
   const [snaps,setSnaps]=useState(null);
   const [mounted,setMounted]=useState(false);
   useEffect(()=>{ setMounted(true); },[]);
@@ -5666,15 +5670,15 @@ function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarte
             <XAxis dataKey="t" tickFormatter={raceTick} ticks={dayTicks} tick={{fill:"#94a3b8",fontSize:11}} minTickGap={28} axisLine={false} tickLine={false}/>
             <YAxis domain={[yMin,yMax]} tickFormatter={(v)=>`${v>0?"+":""}${v}%`} tick={{fill:"#94a3b8",fontSize:11}} width={46} axisLine={false} tickLine={false}/>
             <ReferenceLine y={0} stroke="rgba(255,255,255,0.30)" strokeDasharray="4 4"/>
-            <Tooltip content={<EvoTooltip/>}/>
-            <Line type="monotone" dataKey="r" name="A tua" stroke={col} strokeWidth={2.4} dot={false} isAnimationActive={false}/>
+            <Tooltip content={<EvoTooltip ownLabel={ownLabel}/>}/>
+            <Line type="monotone" dataKey="r" name={ownLabel} stroke={col} strokeWidth={2.4} dot={false} isAnimationActive={false}/>
             {hasSpy&&<Line type="monotone" dataKey="spy" name="S&P 500" stroke="#ffffff" strokeWidth={1.8} strokeDasharray="6 5" strokeOpacity={0.7} dot={false} connectNulls isAnimationActive={false}/>}
           </LineChart>
         </ResponsiveContainer>
       )}
       {enough&&hasSpy&&(
         <div style={{display:"flex",justifyContent:"center",gap:16,marginTop:8,fontSize:11.5,color:"#94a3b8"}}>
-          <span style={{display:"inline-flex",alignItems:"center",gap:6}}><span style={{width:14,height:2,background:col,display:"inline-block",borderRadius:2}}/>A tua rentabilidade</span>
+          <span style={{display:"inline-flex",alignItems:"center",gap:6}}><span style={{width:14,height:2,background:col,display:"inline-block",borderRadius:2}}/>{legendLabel}</span>
           <span style={{display:"inline-flex",alignItems:"center",gap:6}}><span aria-hidden="true" style={{width:16,borderTop:"2px dashed #ffffff",opacity:0.75,display:"inline-block"}}/>S&amp;P 500</span>
         </div>
       )}
@@ -6495,7 +6499,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16,marginBottom:16}}>
         <TiltCard style={{...GLASS,borderRadius:16,padding:24}}>
           <h3 className="detailCardTitle" style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Evolução da rentabilidade</h3>
-          <EvolutionChart portfolioId={pf.id} currentReturn={st.total} submittedAt={pf.submittedAt} competitionStarted={competitionStarted} gameStartDate={gameStartDate} spy={spy} spyInitialPrice={pf.spyInitialPrice}/>
+          <EvolutionChart portfolioId={pf.id} currentReturn={st.total} submittedAt={pf.submittedAt} competitionStarted={competitionStarted} gameStartDate={gameStartDate} spy={spy} spyInitialPrice={pf.spyInitialPrice} mine={!!isOwn} ownerName={pf.name}/>
         </TiltCard>
         <TiltCard style={{...GLASS,borderRadius:16,padding:24}}>
           <h3 className="detailCardTitle" style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Exposição por setor</h3>

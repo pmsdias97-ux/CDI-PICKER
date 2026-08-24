@@ -9,6 +9,7 @@ export const maxDuration = 30;
 // à 6ª feira pelo weekly-close). Não lê preços ao vivo — copia o fecho já congelado.
 //
 // Corre à 2ª feira (janela 2ª–4ª, para feriados). Idempotente (1× por semana). CRON_SECRET. ?force=1.
+const norm = (s) => String(s || "").toUpperCase().replace(/\./g, "-").trim();
 function weekKey(d){ const t=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())); const dow=t.getUTCDay(); t.setUTCDate(t.getUTCDate()+(dow===0?-6:1-dow)); return t.toISOString().slice(0,10); }
 function prevWeek(key){ const t=new Date(key+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()-7); return t.toISOString().slice(0,10); }
 
@@ -68,6 +69,35 @@ export async function GET(request) {
   const baselines = closes
     .filter((r) => !existingTickers.has(r.ticker))
     .map((r) => ({ period, ticker: r.ticker, price: Number(r.close_price), captured_at: capturedAt }));
+
+  // BLINDAGEM anti-degradação: o fecho da semana anterior só cobre os tickers que ELA tinha baseline
+  // (o close só grava sobre linhas existentes). Se essa semana já vinha incompleta, o buraco propaga-se e
+  // agrava-se de semana para semana (165→152→22→1, visto a 2026-08-24). Por isso, PREENCHEMOS os tickers
+  // dos membros que ficaram de fora com o `sp500_ath.prev_close` (= fecho do último pregão antes de 2ª, o
+  // mesmo valor que o baseline devia ter). Assim o baseline nunca fica incompleto.
+  const covered = new Set([...existingTickers, ...baselines.map((b) => b.ticker)].map(norm));
+  const { data: pfs } = await supabase
+    .from("portfolios").select("user_id, portfolio_stocks(ticker)").eq("official", true);
+  const { data: subs } = await supabase
+    .from("users").select("id").eq("has_submitted_portfolio", true);
+  const okUsers = new Set((subs || []).map((u) => u.id));
+  const heldOrig = new Map(); // norm → forma canónica p/ gravar
+  for (const p of pfs || []) {
+    if (!okUsers.has(p.user_id)) continue;
+    for (const s of p.portfolio_stocks || []) { const n = norm(s.ticker); if (!heldOrig.has(n)) heldOrig.set(n, s.ticker); }
+  }
+  const missing = [...heldOrig].filter(([n]) => !covered.has(n));
+  let filled = 0;
+  if (missing.length) {
+    const { data: ath } = await supabase.from("sp500_ath").select("symbol, prev_close");
+    const pc = new Map();
+    for (const r of ath || []) { const p = Number(r.prev_close); if (p > 0) pc.set(norm(r.symbol), p); }
+    for (const [n, orig] of missing) {
+      const p = pc.get(n);
+      if (p > 0) { baselines.push({ period, ticker: orig, price: p, captured_at: capturedAt }); filled++; }
+    }
+  }
+
   if (!baselines.length) {
     return Response.json({ ok: true, period, prev, captured: 0, covered: existingTickers.size, skipped: "semana completa" });
   }
@@ -75,5 +105,5 @@ export async function GET(request) {
     .from("weekly_baselines").upsert(baselines, { onConflict: "period,ticker", ignoreDuplicates: true });
   if (upErr) return Response.json({ error: upErr.message }, { status: 500 });
 
-  return Response.json({ ok: true, period, prev, captured: baselines.length, covered: existingTickers.size + baselines.length });
+  return Response.json({ ok: true, period, prev, captured: baselines.length, filledFromPrevClose: filled, covered: existingTickers.size + baselines.length });
 }
