@@ -2972,7 +2972,7 @@ function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,m
           </svg>
           {/* farol fixo a pulsar no FIM da linha */}
           <div ref={heroEndRef} aria-hidden="true" style={{position:"absolute",top:0,left:0,pointerEvents:"none",willChange:"transform"}}>
-            <div ref={heroEndCoreRef} style={{width:17,height:17,margin:"-8.5px 0 0 -8.5px",borderRadius:"50%",
+            <div ref={heroEndCoreRef} style={{width:28,height:28,margin:"-14px 0 0 -14px",borderRadius:"50%",
               background:"radial-gradient(circle, rgba(230,255,239,0.98) 0%, rgba(110,231,168,0.6) 40%, rgba(110,231,168,0) 72%)"}}/>
           </div>
           {/* vários pulsos redondos (divs HTML) que viajam pela linha e vão ter com o farol final —
