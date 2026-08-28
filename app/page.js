@@ -2905,31 +2905,35 @@ function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,m
   // Pulso que viaja pela linha do gráfico. O SVG do fundo usa preserveAspectRatio="none"
   // (estica → deformaria qualquer <circle>), por isso o ponto é um <div> HTML redondo,
   // posicionado a amostrar a geometria REAL da linha (getPointAtLength) → círculo perfeito e em cima da linha.
-  const heroLineRef=useRef(null), heroDotRef=useRef(null), heroDotCoreRef=useRef(null);
+  const heroLineRef=useRef(null), heroDotsRef=useRef(null);
   const heroEndRef=useRef(null), heroEndCoreRef=useRef(null);
   useEffect(()=>{
-    const path=heroLineRef.current, dot=heroDotRef.current, core=heroDotCoreRef.current;
+    const path=heroLineRef.current, wrap=heroDotsRef.current;
     const end=heroEndRef.current, endCore=heroEndCoreRef.current;
     const svg=path&&path.ownerSVGElement;
-    if(!path||!dot||!svg) return;
+    if(!path||!wrap||!svg) return;
     const len=path.getTotalLength();
     const endPt=path.getPointAtLength(len);
     const put=(el,p)=>{ const r=svg.getBoundingClientRect(); if(r.width&&r.height) el.style.transform=`translate(${p.x/100*r.width}px, ${p.y/60*r.height}px)`; };
-    const place=(t)=>{ put(dot,path.getPointAtLength(t*len)); if(end) put(end,endPt); };
     const reduce=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // pulsar (só os núcleos, para não colidir com o translate do posicionamento)
-    const pulse=(el,delay)=>el&&el.animate?el.animate(
+    const anims=[];
+    const pulse=(el,dur,delay)=>{ if(el&&el.animate&&!reduce) anims.push(el.animate(
       [{transform:"scale(0.55)",opacity:0.4},{transform:"scale(1)",opacity:0.95},{transform:"scale(0.55)",opacity:0.4}],
-      {duration:2200,iterations:Infinity,easing:"ease-in-out",delay:delay||0}):null;
-    const anims=[reduce?null:pulse(core,0), pulse(endCore,600)].filter(Boolean);
-    if(reduce){ place(1); return ()=>anims.forEach(a=>a.cancel()); }
-    let raf, start; const DUR=3500, DELAY=1400, PERIOD=DUR+DELAY;
-    const loop=(ts)=>{ if(start==null) start=ts; const e=(ts-start)%PERIOD; const traveling=e>=DELAY;
-      const p=traveling?(e-DELAY)/DUR:0; // 0..1 ao longo da viagem
-      // Invisível no arranque: só surge já em movimento (p>0.14) e dissolve-se no fim → nunca parece parado.
-      const fadeIn=Math.max(0,Math.min(1,(p-0.14)/0.12));
-      const fadeOut=Math.max(0,Math.min(1,(1-p)/0.08));
-      dot.style.opacity=String(traveling?Math.min(fadeIn,fadeOut):0); place(p); raf=requestAnimationFrame(loop); };
+      {duration:dur,iterations:Infinity,easing:"ease-in-out",delay:delay||0})); };
+    pulse(endCore,2200,600);
+    // vários pontos viajantes com fase/velocidade/intervalo aleatórios → orgânico
+    const travelers=Array.from(wrap.children).map((el)=>({ el, core:el.firstChild,
+      dur:2600+Math.random()*2600, delay:900+Math.random()*3200, off:Math.random()*7000 }));
+    travelers.forEach(t=>pulse(t.core,1900+Math.random()*900,Math.random()*1200));
+    if(reduce){ put(end,endPt); travelers.forEach(t=>{ t.el.style.opacity="0"; }); return ()=>anims.forEach(a=>a.cancel()); }
+    let raf, start;
+    const loop=(ts)=>{ if(start==null) start=ts; const now=ts-start;
+      put(end,endPt);
+      for(const t of travelers){ const period=t.dur+t.delay; const e=(now+t.off)%period; const traveling=e>=t.delay;
+        const p=traveling?(e-t.delay)/t.dur:0;
+        const fade=traveling?Math.min(Math.max(0,(p-0.14)/0.12),Math.max(0,(1-p)/0.08)):0; // surge já em movimento, dissolve no fim
+        t.el.style.opacity=String(fade); if(traveling) put(t.el,path.getPointAtLength(p*len)); }
+      raf=requestAnimationFrame(loop); };
     raf=requestAnimationFrame(loop);
     return ()=>{ cancelAnimationFrame(raf); anims.forEach(a=>a.cancel()); };
   },[]);
@@ -2971,10 +2975,15 @@ function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,m
             <div ref={heroEndCoreRef} style={{width:17,height:17,margin:"-8.5px 0 0 -8.5px",borderRadius:"50%",
               background:"radial-gradient(circle, rgba(230,255,239,0.98) 0%, rgba(110,231,168,0.6) 40%, rgba(110,231,168,0) 72%)"}}/>
           </div>
-          {/* pulso redondo (div HTML) que viaja pela linha e vai ter com o farol final — círculo perfeito, imune ao "none" do SVG */}
-          <div ref={heroDotRef} aria-hidden="true" style={{position:"absolute",top:0,left:0,pointerEvents:"none",willChange:"transform"}}>
-            <div ref={heroDotCoreRef} style={{width:15,height:15,margin:"-7.5px 0 0 -7.5px",borderRadius:"50%",
-              background:"radial-gradient(circle, rgba(230,255,239,0.95) 0%, rgba(110,231,168,0.55) 38%, rgba(110,231,168,0) 70%)"}}/>
+          {/* vários pulsos redondos (divs HTML) que viajam pela linha e vão ter com o farol final —
+              círculos perfeitos, imunes ao "none" do SVG; fases/velocidades aleatórias */}
+          <div ref={heroDotsRef} aria-hidden="true" style={{position:"absolute",inset:0,pointerEvents:"none"}}>
+            {[0,1,2,3].map(i=>(
+              <div key={i} style={{position:"absolute",top:0,left:0,willChange:"transform",opacity:0}}>
+                <div style={{width:13,height:13,margin:"-6.5px 0 0 -6.5px",borderRadius:"50%",
+                  background:"radial-gradient(circle, rgba(230,255,239,0.95) 0%, rgba(110,231,168,0.55) 38%, rgba(110,231,168,0) 70%)"}}/>
+              </div>
+            ))}
           </div>
         </div>
         <div style={{position:"relative",zIndex:1}}>
