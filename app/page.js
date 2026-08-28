@@ -2905,7 +2905,7 @@ function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,m
   // Pulso que viaja pela linha do gráfico. O SVG do fundo usa preserveAspectRatio="none"
   // (estica → deformaria qualquer <circle>), por isso o ponto é um <div> HTML redondo,
   // posicionado a amostrar a geometria REAL da linha (getPointAtLength) → círculo perfeito e em cima da linha.
-  const heroLineRef=useRef(null), heroDotsRef=useRef(null);
+  const heroLineRef=useRef(null), heroDotsRef=useRef(null), heroGridRef=useRef(null);
   const heroEndRef=useRef(null), heroEndCoreRef=useRef(null);
   useEffect(()=>{
     const path=heroLineRef.current, wrap=heroDotsRef.current;
@@ -2915,6 +2915,12 @@ function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,m
     const len=path.getTotalLength();
     const endPt=path.getPointAtLength(len);
     const put=(el,p)=>{ const r=svg.getBoundingClientRect(); if(r.width&&r.height) el.style.transform=`translate(${p.x/100*r.width}px, ${p.y/60*r.height}px)`; };
+    // Grelha em QUADRADOS: o SVG estica (scaleX≠scaleY), por isso a largura da célula (em unidades do
+    // viewBox) tem de compensar → cellW = cellH·(scaleY/scaleX). Recalcula no resize.
+    const grid=heroGridRef.current, CELL=5.6;
+    const sizeGrid=()=>{ if(!grid) return; const r=svg.getBoundingClientRect();
+      if(r.width&&r.height) grid.setAttribute("width", (CELL*(r.height/60)/(r.width/100)).toFixed(3)); };
+    sizeGrid(); if(typeof window!=="undefined") window.addEventListener("resize",sizeGrid);
     const reduce=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const anims=[];
     const pulse=(el,dur,delay)=>{ if(el&&el.animate&&!reduce) anims.push(el.animate(
@@ -2925,7 +2931,8 @@ function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,m
     const travelers=Array.from(wrap.children).map((el)=>({ el, core:el.firstChild,
       dur:2600+Math.random()*2600, delay:900+Math.random()*3200, off:Math.random()*7000 }));
     travelers.forEach(t=>pulse(t.core,1900+Math.random()*900,Math.random()*1200));
-    if(reduce){ put(end,endPt); travelers.forEach(t=>{ t.el.style.opacity="0"; }); return ()=>anims.forEach(a=>a.cancel()); }
+    const cleanupGrid=()=>{ if(typeof window!=="undefined") window.removeEventListener("resize",sizeGrid); };
+    if(reduce){ put(end,endPt); travelers.forEach(t=>{ t.el.style.opacity="0"; }); return ()=>{ anims.forEach(a=>a.cancel()); cleanupGrid(); }; }
     let raf, start;
     const loop=(ts)=>{ if(start==null) start=ts; const now=ts-start;
       put(end,endPt);
@@ -2935,7 +2942,7 @@ function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,m
         t.el.style.opacity=String(fade); if(traveling) put(t.el,path.getPointAtLength(p*len)); }
       raf=requestAnimationFrame(loop); };
     raf=requestAnimationFrame(loop);
-    return ()=>{ cancelAnimationFrame(raf); anims.forEach(a=>a.cancel()); };
+    return ()=>{ cancelAnimationFrame(raf); anims.forEach(a=>a.cancel()); cleanupGrid(); };
   },[]);
   const compDay=(()=>{ const d=settings?.gameStartDate?new Date(settings.gameStartDate):null; if(!d||isNaN(d)) return 1; return Math.max(1,Math.min(365,Math.floor((Date.now()-d.getTime())/86400000)+1)); })();
   const iconProps={viewBox:"0 0 24 24",fill:"none",stroke:"#8ea2bf",strokeWidth:1.6,strokeLinecap:"round",strokeLinejoin:"round",width:22,height:22,"aria-hidden":true};
@@ -2961,10 +2968,26 @@ function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,m
               <filter id="heroChartGlow" x="-20%" y="-40%" width="140%" height="180%">
                 <feGaussianBlur stdDeviation="0.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
               </filter>
+              {/* grelha ténue só por baixo da linha, com fade vertical até desaparecer */}
+              <pattern id="heroGrid" ref={heroGridRef} width="5.6" height="5.6" patternUnits="userSpaceOnUse">
+                <path d="M0 0 H99 M0 0 V99" fill="none" stroke="rgba(120,240,180,0.34)" strokeWidth="0.7" vectorEffect="non-scaling-stroke"/>
+              </pattern>
+              <clipPath id="heroAreaClip">
+                <path d="M0,24 C12,23 14,20 25,21 C36,22 40,16 50,18 C60,21 66,13 75,14 C84,14 89,11 94,10 L94,33 L0,33 Z"/>
+              </clipPath>
+              <linearGradient id="heroGridFadeGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#fff" stopOpacity="1"/>
+                <stop offset="55%" stopColor="#fff" stopOpacity="0"/>
+              </linearGradient>
+              <mask id="heroGridMask"><rect x="0" y="0" width="100" height="60" fill="url(#heroGridFadeGrad)"/></mask>
             </defs>
             {/* área muito ténue sob a curva */}
             <path d="M0,24 C12,23 14,20 25,21 C36,22 40,16 50,18 C60,21 66,13 75,14 C84,14 89,11 94,10 L94,33 L0,33 Z"
               fill="url(#heroChartFill)"/>
+            {/* grelha por baixo da linha (clipada à área + fade vertical) */}
+            <g clipPath="url(#heroAreaClip)" mask="url(#heroGridMask)">
+              <rect x="0" y="0" width="100" height="60" fill="url(#heroGrid)"/>
+            </g>
             {/* linha de cotação suave a subir (com brilho subtil) */}
             <path ref={heroLineRef} d={HERO_LINE_PATH}
               fill="none" stroke="url(#heroChartLine)" strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round"
