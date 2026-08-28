@@ -2913,14 +2913,19 @@ function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,m
     const svg=path&&path.ownerSVGElement;
     if(!path||!wrap||!svg) return;
     const len=path.getTotalLength();
-    const endPt=path.getPointAtLength(len);
-    const put=(el,p)=>{ const r=svg.getBoundingClientRect(); if(r.width&&r.height) el.style.transform=`translate(${p.x/100*r.width}px, ${p.y/60*r.height}px)`; };
-    // Grelha em QUADRADOS: o SVG estica (scaleX≠scaleY), por isso a largura da célula (em unidades do
-    // viewBox) tem de compensar → cellW = cellH·(scaleY/scaleX). Recalcula no resize.
+    // Pré-calcula os pontos da linha UMA vez (sem getPointAtLength no loop → sem jank).
+    const SAMPLES=200, pts=[];
+    for(let i=0;i<=SAMPLES;i++){ const q=path.getPointAtLength(i/SAMPLES*len); pts.push([q.x,q.y]); }
+    const at=(t)=>{ const s=Math.max(0,Math.min(1,t))*SAMPLES, i=Math.floor(s), f=s-i,
+      a=pts[i], b=pts[Math.min(SAMPLES,i+1)]; return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f]; };
+    const endPt=pts[SAMPLES];
+    // Mede o SVG UMA vez por resize (não por frame → sem reflow no loop).
+    let rw=0, rh=0;
     const grid=heroGridRef.current, CELL=5.6;
-    const sizeGrid=()=>{ if(!grid) return; const r=svg.getBoundingClientRect();
-      if(r.width&&r.height) grid.setAttribute("width", (CELL*(r.height/60)/(r.width/100)).toFixed(3)); };
-    sizeGrid(); if(typeof window!=="undefined") window.addEventListener("resize",sizeGrid);
+    const measure=()=>{ const r=svg.getBoundingClientRect(); rw=r.width; rh=r.height;
+      if(grid&&rw&&rh) grid.setAttribute("width",(CELL*(rh/60)/(rw/100)).toFixed(3)); };
+    measure(); if(typeof window!=="undefined") window.addEventListener("resize",measure);
+    const put=(el,p)=>{ if(rw&&rh) el.style.transform=`translate(${p[0]/100*rw}px, ${p[1]/60*rh}px)`; };
     const reduce=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const anims=[];
     const pulse=(el,dur,delay)=>{ if(el&&el.animate&&!reduce) anims.push(el.animate(
@@ -2931,7 +2936,7 @@ function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,m
     const travelers=Array.from(wrap.children).map((el)=>({ el, core:el.firstChild,
       dur:2600+Math.random()*2600, delay:900+Math.random()*3200, off:Math.random()*7000 }));
     travelers.forEach(t=>pulse(t.core,1900+Math.random()*900,Math.random()*1200));
-    const cleanupGrid=()=>{ if(typeof window!=="undefined") window.removeEventListener("resize",sizeGrid); };
+    const cleanupGrid=()=>{ if(typeof window!=="undefined") window.removeEventListener("resize",measure); };
     if(reduce){ put(end,endPt); travelers.forEach(t=>{ t.el.style.opacity="0"; }); return ()=>{ anims.forEach(a=>a.cancel()); cleanupGrid(); }; }
     let raf, start;
     const loop=(ts)=>{ if(start==null) start=ts; const now=ts-start;
@@ -2939,7 +2944,7 @@ function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,m
       for(const t of travelers){ const period=t.dur+t.delay; const e=(now+t.off)%period; const traveling=e>=t.delay;
         const p=traveling?(e-t.delay)/t.dur:0;
         const fade=traveling?Math.min(Math.max(0,(p-0.14)/0.12),Math.max(0,(1-p)/0.08)):0; // surge já em movimento, dissolve no fim
-        t.el.style.opacity=String(fade); if(traveling) put(t.el,path.getPointAtLength(p*len)); }
+        t.el.style.opacity=String(fade); if(traveling) put(t.el,at(p)); }
       raf=requestAnimationFrame(loop); };
     raf=requestAnimationFrame(loop);
     return ()=>{ cancelAnimationFrame(raf); anims.forEach(a=>a.cancel()); cleanupGrid(); };
