@@ -2899,20 +2899,84 @@ function Reveal({children,delay=0,y=14,style}){
     }}>{children}</div>
   );
 }
+const HERO_LINE_PATH="M0,24 C12,23 14,20 25,21 C36,22 40,16 50,18 C60,21 66,13 75,14 C84,14 89,11 94,10";
 function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,myName}){
   const officialCount=(ranking||[]).filter(p=>p.official).length;
+  // Pulso que viaja pela linha do gráfico. O SVG do fundo usa preserveAspectRatio="none"
+  // (estica → deformaria qualquer <circle>), por isso o ponto é um <div> HTML redondo,
+  // posicionado a amostrar a geometria REAL da linha (getPointAtLength) → círculo perfeito e em cima da linha.
+  const heroLineRef=useRef(null), heroDotRef=useRef(null), heroDotCoreRef=useRef(null);
+  const heroEndRef=useRef(null), heroEndCoreRef=useRef(null);
+  useEffect(()=>{
+    const path=heroLineRef.current, dot=heroDotRef.current, core=heroDotCoreRef.current;
+    const end=heroEndRef.current, endCore=heroEndCoreRef.current;
+    const svg=path&&path.ownerSVGElement;
+    if(!path||!dot||!svg) return;
+    const len=path.getTotalLength();
+    const endPt=path.getPointAtLength(len);
+    const put=(el,p)=>{ const r=svg.getBoundingClientRect(); if(r.width&&r.height) el.style.transform=`translate(${p.x/100*r.width}px, ${p.y/60*r.height}px)`; };
+    const place=(t)=>{ put(dot,path.getPointAtLength(t*len)); if(end) put(end,endPt); };
+    const reduce=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // pulsar (só os núcleos, para não colidir com o translate do posicionamento)
+    const pulse=(el,delay)=>el&&el.animate?el.animate(
+      [{transform:"scale(0.55)",opacity:0.4},{transform:"scale(1)",opacity:0.95},{transform:"scale(0.55)",opacity:0.4}],
+      {duration:2200,iterations:Infinity,easing:"ease-in-out",delay:delay||0}):null;
+    const anims=[reduce?null:pulse(core,0), pulse(endCore,600)].filter(Boolean);
+    if(reduce){ place(1); return ()=>anims.forEach(a=>a.cancel()); }
+    let raf, start; const DUR=3500, DELAY=1400, PERIOD=DUR+DELAY;
+    const loop=(ts)=>{ if(start==null) start=ts; const e=(ts-start)%PERIOD; const traveling=e>=DELAY;
+      const p=traveling?(e-DELAY)/DUR:0; // 0..1 ao longo da viagem
+      // Invisível no arranque: só surge já em movimento (p>0.14) e dissolve-se no fim → nunca parece parado.
+      const fadeIn=Math.max(0,Math.min(1,(p-0.14)/0.12));
+      const fadeOut=Math.max(0,Math.min(1,(1-p)/0.08));
+      dot.style.opacity=String(traveling?Math.min(fadeIn,fadeOut):0); place(p); raf=requestAnimationFrame(loop); };
+    raf=requestAnimationFrame(loop);
+    return ()=>{ cancelAnimationFrame(raf); anims.forEach(a=>a.cancel()); };
+  },[]);
   const compDay=(()=>{ const d=settings?.gameStartDate?new Date(settings.gameStartDate):null; if(!d||isNaN(d)) return 1; return Math.max(1,Math.min(365,Math.floor((Date.now()-d.getTime())/86400000)+1)); })();
   const iconProps={viewBox:"0 0 24 24",fill:"none",stroke:"#8ea2bf",strokeWidth:1.6,strokeLinecap:"round",strokeLinejoin:"round",width:22,height:22,"aria-hidden":true};
   return(
     <div>
       {/* Hero */}
       <section style={{position:"relative",overflow:"hidden",textAlign:"center",padding:"clamp(72px,11vw,116px) 24px 80px",maxWidth:900,margin:"0 auto"}}>
-        {/* grelha de fundo subtil (esbatida nas bordas) */}
+        {/* gráfico de bolsa a subir, de fundo subtil (esbatido nas bordas) */}
         <div aria-hidden="true" style={{position:"absolute",inset:0,zIndex:0,pointerEvents:"none",
-          backgroundImage:"linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px)",
-          backgroundSize:"clamp(34px,7vw,54px) clamp(34px,7vw,54px)",
-          WebkitMaskImage:"radial-gradient(120% 90% at 50% 34%, #000 30%, transparent 78%)",
-          maskImage:"radial-gradient(120% 90% at 50% 34%, #000 30%, transparent 78%)"}}/>
+          WebkitMaskImage:"radial-gradient(130% 100% at 50% 30%, #000 34%, transparent 82%)",
+          maskImage:"radial-gradient(130% 100% at 50% 30%, #000 34%, transparent 82%)"}}>
+          <svg width="100%" height="100%" viewBox="0 0 100 60" preserveAspectRatio="none" style={{display:"block"}}>
+            <defs>
+              <linearGradient id="heroChartFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#4ade80" stopOpacity="0.03"/>
+                <stop offset="100%" stopColor="#4ade80" stopOpacity="0"/>
+              </linearGradient>
+              <linearGradient id="heroChartLine" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#4ade80" stopOpacity="0.15"/>
+                <stop offset="55%" stopColor="#4ade80" stopOpacity="0.5"/>
+                <stop offset="100%" stopColor="#6ee7a8" stopOpacity="0.85"/>
+              </linearGradient>
+              <filter id="heroChartGlow" x="-20%" y="-40%" width="140%" height="180%">
+                <feGaussianBlur stdDeviation="0.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            {/* área muito ténue sob a curva */}
+            <path d="M0,24 C12,23 14,20 25,21 C36,22 40,16 50,18 C60,21 66,13 75,14 C84,14 89,11 94,10 L94,33 L0,33 Z"
+              fill="url(#heroChartFill)"/>
+            {/* linha de cotação suave a subir (com brilho subtil) */}
+            <path ref={heroLineRef} d={HERO_LINE_PATH}
+              fill="none" stroke="url(#heroChartLine)" strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round"
+              vectorEffect="non-scaling-stroke" filter="url(#heroChartGlow)"/>
+          </svg>
+          {/* farol fixo a pulsar no FIM da linha */}
+          <div ref={heroEndRef} aria-hidden="true" style={{position:"absolute",top:0,left:0,pointerEvents:"none",willChange:"transform"}}>
+            <div ref={heroEndCoreRef} style={{width:17,height:17,margin:"-8.5px 0 0 -8.5px",borderRadius:"50%",
+              background:"radial-gradient(circle, rgba(230,255,239,0.98) 0%, rgba(110,231,168,0.6) 40%, rgba(110,231,168,0) 72%)"}}/>
+          </div>
+          {/* pulso redondo (div HTML) que viaja pela linha e vai ter com o farol final — círculo perfeito, imune ao "none" do SVG */}
+          <div ref={heroDotRef} aria-hidden="true" style={{position:"absolute",top:0,left:0,pointerEvents:"none",willChange:"transform"}}>
+            <div ref={heroDotCoreRef} style={{width:15,height:15,margin:"-7.5px 0 0 -7.5px",borderRadius:"50%",
+              background:"radial-gradient(circle, rgba(230,255,239,0.95) 0%, rgba(110,231,168,0.55) 38%, rgba(110,231,168,0) 70%)"}}/>
+          </div>
+        </div>
         <div style={{position:"relative",zIndex:1}}>
           <span style={{position:"relative",display:"inline-block",margin:"0 auto 32px"}}>
             <BreatheGlow color="rgba(245,200,80,0.5)" mid="rgba(245,158,11,0.16)" inset="-34% -16%" base={0.4} duration={9000}/>
