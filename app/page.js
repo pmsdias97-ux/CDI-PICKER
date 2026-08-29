@@ -2126,10 +2126,16 @@ export default function App(){
       const from=weekOpens[per], to=weekCloses[per]; if(!from||!to) continue; // 'to'=fecho: só existe após weekly-close
       let best=null; for(const p of offs){ const r=pfPeriodRet(p,from,to); if(r!=null&&(!best||r>best.r)) best={p,r}; }
       if(best){ add(best.p.key,"weekly",weekLabel(per)); seen.add(per); } }
+    // Semana ATUAL, LOGO AO FECHO de 6ª: entre o fecho US (16:00 ET) e a gravação do close_price pela
+    // weekly-close (22:00 UTC), o vencedor já está apurado mas ainda não há 'weekCloses[curW]'. Apura-o
+    // pelas cotações de fecho AO VIVO (== fecho oficial nesse momento) → o troféu surge imediatamente.
+    if(weekDone && !seen.has(curW) && !weekCloses[curW]){
+      let best=null; for(const p of offs){ const r=pfWeekRet(p,weekBase,livePrices); if(r!=null&&(!best||r>best.r)) best={p,r}; }
+      if(best){ add(best.p.key,"weekly",weekLabel(curW)); seen.add(curW); } }
     for(const seed of WEEK_SEED_CHAMPS){ if(seen.has(seed.period)) continue;
       const p=offs.find(x=>x.normName===norm(seed.name)); if(p) add(p.key,"weekly",weekLabel(seed.period)); }
     return map;
-  },[ranking,pastBaselines,weekOpens,weekCloses,monthCloses]);
+  },[ranking,pastBaselines,weekOpens,weekCloses,monthCloses,weekBase,livePrices]);
   // Popularidade por ação na competição (liga a aba ATH ao jogo): quantos oficiais têm cada ticker.
   const compStats=useMemo(()=>{
     const off=ranking.filter(p=>p.official); const counts={};
