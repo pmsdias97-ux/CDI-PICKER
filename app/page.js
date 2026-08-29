@@ -10,6 +10,24 @@ import { BUILD_VERSION } from "./version";
 import { supabase } from "./supabase";
 import { buildPeriodSparklineSeries, fetchPaginatedRows, prepareSparklinePoints } from "./lib/ranking-sparkline.mjs";
 import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } from "./lib/stocks";
+// weekly_baselines/monthly_baselines já passaram das 1000 linhas (limite por resposta do Supabase) → a
+// query simples truncava e a semana/mês ATUAL ficava com baseline INCOMPLETO → o pfWeekRet caía no
+// initialPrice da ÉPOCA para os tickers em falta → ranking e VENCEDOR semanais ERRADOS. Paginar por
+// range() traz todas as linhas (a tabela não tem coluna `id` para cursor).
+async function fetchAllBaselines(table){
+  const PAGE=1000; let from=0; const all=[];
+  for(;;){
+    const { data, error } = await supabase.from(table)
+      .select("period,ticker,price,close_price")
+      .order("period",{ascending:true}).order("ticker",{ascending:true})
+      .range(from, from+PAGE-1);
+    if(error||!data||!data.length) break;
+    all.push(...data);
+    if(data.length<PAGE) break;
+    from+=PAGE;
+  }
+  return all;
+}
 import { searchCryptos, isCrypto, cryptoNameFor } from "./lib/crypto";
 import { searchPopular } from "./lib/popular";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
@@ -2014,7 +2032,7 @@ export default function App(){
     fetchStockHistory("SPY").then(h=>setSpyHist(h&&h.length?h:null)).catch(()=>{});
 
     // Baselines mensais (mini-época "Campeão do mês"): abertura (price) + fecho (close_price). Falha em silêncio.
-    supabase.from("monthly_baselines").select("period,ticker,price,close_price").then(({data})=>{
+    fetchAllBaselines("monthly_baselines").then((data)=>{
       const period=new Date().toISOString().slice(0,7); // 'YYYY-MM' (UTC)
       const cur={}, past={}, closes={};
       (data||[]).forEach(r=>{ const price=Number(r.price); const c=r.close_price==null?null:Number(r.close_price);
@@ -2024,7 +2042,7 @@ export default function App(){
     }).catch(()=>{});
 
     // Baselines semanais (mini-época "Vencedor da Semana"): abertura (2ª) + fecho (6ª). Falha em silêncio.
-    supabase.from("weekly_baselines").select("period,ticker,price,close_price").then(({data})=>{
+    fetchAllBaselines("weekly_baselines").then((data)=>{
       const wk=weekKey(new Date()); // 2ª feira UTC da semana atual
       const cur={}, opens={}, closes={};
       (data||[]).forEach(r=>{ const o=Number(r.price); const c=r.close_price==null?null:Number(r.close_price);
