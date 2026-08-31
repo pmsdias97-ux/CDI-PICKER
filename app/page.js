@@ -2149,6 +2149,12 @@ export default function App(){
       const from=pastBaselines[per], to=monthCloseBase(per,pastBaselines,weekCloses,monthCloses); if(!from||!to) continue;
       let best=null; for(const p of offs){ const r=pfPeriodRet(p,from,to); if(r!=null&&(!best||r>best.r)) best={p,r}; }
       if(best) add(best.p.key,"monthly",periodLabel(per)); }
+    // Mês ATUAL, LOGO AO FECHO do último dia útil: entre o fecho US (16:00 ET) e a gravação do close_price
+    // pelo monthly-close (22:00 UTC), o campeão já está apurado mas ainda não há fecho gravado. Apura-o
+    // pelas cotações de fecho AO VIVO (== fecho oficial nesse momento) → o troféu surge imediatamente.
+    if(monthDone && monthBase && Object.keys(monthBase).length && !monthCloseBase(curM,pastBaselines,weekCloses,monthCloses)){
+      let best=null; for(const p of offs){ const r=pfMonthRet(p,monthBase,livePrices); if(r!=null&&(!best||r>best.r)) best={p,r}; }
+      if(best) add(best.p.key,"monthly",periodLabel(curM)); }
     // Semanal: medalha logo que a semana FECHA (não só na 2ª feira seguinte). Semana fechada = tem
     // fecho de 6ª (weekCloses, gravado pela weekly-close das 22:00 UTC). A semana ATUAL conta assim que
     // o pregão terminou (weekTradingDone: 6ª pós-fecho ou fim de semana) E o fecho está gravado ('to').
@@ -2168,7 +2174,7 @@ export default function App(){
     for(const seed of WEEK_SEED_CHAMPS){ if(seen.has(seed.period)) continue;
       const p=offs.find(x=>x.normName===norm(seed.name)); if(p) add(p.key,"weekly",weekLabel(seed.period)); }
     return map;
-  },[ranking,pastBaselines,weekOpens,weekCloses,monthCloses,weekBase,livePrices]);
+  },[ranking,pastBaselines,weekOpens,weekCloses,monthCloses,weekBase,monthBase,livePrices]);
   // Popularidade por ação na competição (liga a aba ATH ao jogo): quantos oficiais têm cada ticker.
   const compStats=useMemo(()=>{
     const off=ranking.filter(p=>p.official); const counts={};
@@ -5284,7 +5290,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
         return out.sort((a,b)=>a.period<b.period?1:-1); },  // mais recente primeiro
       info:"Melhor rentabilidade da semana (2ª a 6ª feira), com o ponto de partida reposto todas as segundas.\nO vencedor da semana é apurado na 6ª feira ao fecho." },
   };
-  const champCard=(kind)=>{
+  const champCard=(kind,compact=false)=>{
     if(preLaunch||!officials.length) return null;
     const cf=champCfg[kind];
     const leaders=[...officials].map(p=>({p,m:cf.liveOf(p)})).filter(x=>x.m!=null).sort((a,b)=>b.m-a.m);
@@ -5298,12 +5304,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
     if(kind==="week"){
       if(weekTradingDone(new Date())&&leaders.length) feat={p:leaders[0].p,r:leaders[0].m,period:curWk};
     }else{
-      // Só apura o campeão do mês ATUAL depois do fecho US do último dia útil (nunca antes).
-      const cc=monthTradingDone(new Date())?monthCloseBase(curMonthYM,pastBaselines,weekCloses,monthCloses):null;
-      if(cc&&monthBase&&Object.keys(monthBase).length){
-        const t=officials.map(p=>({p,r:pfPeriodRet(p,monthBase,cc)})).filter(x=>x.r!=null).sort((a,b)=>b.r-a.r)[0];
-        if(t) feat={p:t.p,r:t.r,period:curMonthYM};
-      }
+      // Campeão do mês ATUAL apurado LOGO AO FECHO do último dia útil (nunca antes), pelo líder ao vivo
+      // (== fecho oficial nesse momento), sem esperar pela gravação do close_price — igual ao semanal.
+      if(monthTradingDone(new Date())&&leaders.length) feat={p:leaders[0].p,r:leaders[0].m,period:curMonthYM};
     }
     if(!feat&&champs.length){ feat={p:champs[0].p,r:champs[0].r,period:champs[0].period}; featFromList=true; }
     const listChamps=featFromList?champs.slice(1):champs;
@@ -5311,9 +5314,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
     const cardTitle=feat?cf.lastTitle:cf.title;
     const champRows=(style)=>(listChamps.length>0&&(
       <div style={style}>
-        <div style={{fontSize:10,color:"#64748b",fontWeight:800,textTransform:"uppercase",letterSpacing:".4px",marginBottom:6}}>{cf.listTitle}</div>
-        {listChamps.slice(0,4).map(c=>(
-          <div key={c.period} onClick={()=>c.p.key&&onSelect(c.p.key)} title={c.p.key?"Ver portefólio":undefined} style={{cursor:c.p.key?"pointer":"default",display:"flex",justifyContent:"space-between",gap:8,padding:"4px 0",fontSize:12.5}}>
+        <div style={{fontSize:10,color:"#64748b",fontWeight:800,textTransform:"uppercase",letterSpacing:".4px",marginBottom:compact?4:6}}>{cf.listTitle}</div>
+        {listChamps.slice(0,compact?3:4).map(c=>(
+          <div key={c.period} onClick={()=>c.p.key&&onSelect(c.p.key)} title={c.p.key?"Ver portefólio":undefined} style={{cursor:c.p.key?"pointer":"default",display:"flex",justifyContent:"space-between",gap:8,padding:compact?"2.5px 0":"4px 0",fontSize:compact?11.5:12.5}}>
             <span style={{color:"#94a3b8",textTransform:"capitalize",flexShrink:0}}>{cf.fmt(c.period)}</span>
             <span style={{color:"#e2e8f0",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,textAlign:"right"}}>{c.p.name}</span>
             <span style={{fontFamily:"monospace",fontWeight:800,color:c.r==null?"#64748b":c.r>=0?"#4ade80":"#f87171",flexShrink:0}}>{c.r==null?"—":pct(c.r)}</span>
@@ -5330,12 +5333,23 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
       const fadeRGB=kind==="week"?"6,25,28":"17,12,36";
       return(
         <div style={{background:`linear-gradient(180deg,rgba(${accentRGB},0.11),rgba(${fadeRGB},0.88) 72%)`,border:`1px solid rgba(${accentRGB},0.26)`,borderRadius:18,boxShadow:`0 10px 30px rgba(0,0,0,0.32), inset 0 1px 0 rgba(${accentRGB},0.12)`}}>
-          <div style={{padding:"14px 14px 18px"}}>
-            <div style={{fontSize:10.5,color:"#a8b4c5",textTransform:"uppercase",letterSpacing:"1.25px",fontWeight:800,marginBottom:12,display:"flex",alignItems:"center",justifyContent:"center",gap:7,textAlign:"center"}}>
+          <div style={{padding:compact?"11px 13px 12px":"14px 14px 18px"}}>
+            <div style={{fontSize:compact?10:10.5,color:"#a8b4c5",textTransform:"uppercase",letterSpacing:"1.25px",fontWeight:800,marginBottom:compact?8:12,display:"flex",alignItems:"center",justifyContent:"center",gap:7,textAlign:"center"}}>
               {cardTitle}<InfoTip text={cf.info}/>
             </div>
             <div onClick={()=>prom.p.key&&onSelect(prom.p.key)} title={prom.p.key?"Ver portefólio":undefined}
-              style={{cursor:prom.p.key?"pointer":"default",display:"flex",flexDirection:"column",alignItems:"center",textAlign:"center",gap:9}}>
+              style={{cursor:prom.p.key?"pointer":"default",display:compact?"grid":"flex",...(compact?{gridTemplateColumns:"auto 1fr",alignItems:"center",gap:"2px 12px"}:{flexDirection:"column",alignItems:"center",textAlign:"center",gap:9})}}>
+              {compact?(<>
+                <div style={{gridRow:"1 / span 3",position:"relative",width:52,height:52,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <span aria-hidden="true" style={{position:"absolute",width:46,height:46,borderRadius:"50%",background:"rgba(250,204,21,0.17)",filter:"blur(12px)"}}/>
+                  <GoldGlow src="/cup.webp" alt="" maskSrc="/cup.webp" glow={16} wrapStyle={{width:50,position:"relative"}} imgStyle={{width:"100%",height:"auto",objectFit:"contain"}} baseFilter="drop-shadow(0 6px 10px rgba(0,0,0,0.38)) drop-shadow(0 0 9px rgba(250,204,21,0.28))"/>
+                </div>
+                <span style={{justifySelf:"start",color:accent,background:`rgba(${accentRGB},0.10)`,border:`1px solid rgba(${accentRGB},0.42)`,borderRadius:8,padding:"3px 9px",fontSize:10,fontWeight:900,textTransform:"uppercase",letterSpacing:".7px"}}>{prom.label}</span>
+                <div style={{fontSize:17,fontWeight:800,color:"#f8fafc",lineHeight:1.1,letterSpacing:"-.3px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{prom.p.name}</div>
+                <span style={{justifySelf:"start",display:"inline-flex",alignItems:"center",gap:6,fontFamily:"monospace",fontSize:13.5,fontWeight:900,color:retColor,background:hasRet?(pos?"rgba(74,222,128,0.10)":"rgba(248,113,113,0.10)"):"rgba(100,116,139,0.10)",border:`1px solid ${hasRet?(pos?"rgba(74,222,128,0.38)":"rgba(248,113,113,0.38)"):"rgba(100,116,139,0.35)"}`,borderRadius:9,padding:"4px 9px"}}>
+                  {hasRet&&<svg width="8" height="8" viewBox="0 0 10 10" style={pos?undefined:{transform:"rotate(180deg)"}}><path d="M5 1.5 L9.2 8.5 L0.8 8.5 Z" fill={retColor}/></svg>}{hasRet?pct(prom.r):"—"}
+                </span>
+              </>):(<>
               <span style={{color:accent,background:`rgba(${accentRGB},0.10)`,border:`1px solid rgba(${accentRGB},0.42)`,borderRadius:9,padding:"5px 12px",fontSize:11.5,fontWeight:900,textTransform:"uppercase",letterSpacing:".8px",boxShadow:`0 0 16px rgba(${accentRGB},0.10)`}}>{prom.label}</span>
               <div style={{position:"relative",height:108,display:"flex",alignItems:"center",justifyContent:"center"}}>
                 <span aria-hidden="true" style={{position:"absolute",width:84,height:84,borderRadius:"50%",background:"rgba(250,204,21,0.17)",filter:"blur(17px)"}}/>
@@ -5348,9 +5362,10 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
               <span style={{display:"inline-flex",alignItems:"center",gap:7,fontFamily:"monospace",fontSize:16,fontWeight:900,color:retColor,background:hasRet?(pos?"rgba(74,222,128,0.10)":"rgba(248,113,113,0.10)"):"rgba(100,116,139,0.10)",border:`1px solid ${hasRet?(pos?"rgba(74,222,128,0.38)":"rgba(248,113,113,0.38)"):"rgba(100,116,139,0.35)"}`,borderRadius:10,padding:"6px 11px",boxShadow:hasRet?`0 0 16px ${pos?"rgba(74,222,128,0.08)":"rgba(248,113,113,0.08)"}`:"none"}}>
                 {hasRet&&<svg width="9" height="9" viewBox="0 0 10 10" style={pos?undefined:{transform:"rotate(180deg)"}}><path d="M5 1.5 L9.2 8.5 L0.8 8.5 Z" fill={retColor}/></svg>}{hasRet?pct(prom.r):"—"}
               </span>
+              </>)}
             </div>
           </div>
-          {champRows({borderTop:`1px solid rgba(${accentRGB},0.14)`,background:`rgba(${accentRGB},0.055)`,borderRadius:"0 0 18px 18px",padding:"12px 14px 14px"})}
+          {champRows({borderTop:`1px solid rgba(${accentRGB},0.14)`,background:`rgba(${accentRGB},0.055)`,borderRadius:"0 0 18px 18px",padding:compact?"9px 13px 11px":"12px 14px 14px"})}
         </div>
       );
     }
@@ -5373,6 +5388,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
     ),cf.info);
   };
   // Context-aware: segue o toggle; em "Geral" mostra o do mês (mini-época principal).
+  // (Os dois cards empilhados/compactos ficam preparados no champCard mas ainda não usados — a rever.)
   const wChamp=champCard(period==="week"?"week":"month");
   // Cartão de vencedor do período HISTÓRICO selecionado (substitui o wChamp em modo histórico).
   const wChampHist=histActive?railCard(`Vencedor · ${histLabel}`,(
