@@ -335,6 +335,19 @@ function weekTradingDone(now){
   if(wd==="Fri"&&h>=16) return true;        // 6ª feira depois do fecho (16:00 ET)
   return false;
 }
+// Mês fechado? Só DEPOIS do fecho US (16:00 ET) do ÚLTIMO dia útil do mês (recua de fim de semana e
+// feriados). O campeão do mês NUNCA é apurado antes disso — nem no próprio último dia antes do fecho.
+function monthTradingDone(now){
+  const parts=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",hour12:false}).formatToParts(now||new Date());
+  const g=t=>parts.find(x=>x.type===t)?.value;
+  const y=+g("year"), mo=+g("month"), d=+g("day"); let h=parseInt(g("hour")||"0",10); if(h===24)h=0;
+  const ld=new Date(Date.UTC(y,mo,0)); // dia 0 do mês seguinte = último dia deste mês
+  while(ld.getUTCDay()===0||ld.getUTCDay()===6||MARKET_HOLIDAYS_US.has(ld.toISOString().slice(0,10))) ld.setUTCDate(ld.getUTCDate()-1);
+  const ldDay=ld.getUTCDate();
+  if(d>ldDay) return true;               // já passámos o último pregão do mês
+  if(d===ldDay&&h>=16) return true;       // último pregão, depois do fecho US
+  return false;
+}
 // Rentabilidade da SEMANA: mesma fórmula do total, mas com o baseline da 2ª feira (weekBase).
 function pfWeekRet(p,weekBase,livePrices){
   if(!p?.stocks?.length) return null;
@@ -2130,7 +2143,9 @@ export default function App(){
     // se o mês acabou à 6ª/fim de semana, o fecho semanal dessa semana. Inclui o mês ATUAL assim que o seu
     // pregão termina (simétrico ao semanal, que premeia a semana atual quando fecha). Vencedor = melhor open→close.
     const curM=new Date().toISOString().slice(0,7);
+    const monthDone=monthTradingDone(new Date());
     for(const per of Object.keys(pastBaselines).sort()){ if(per>curM) continue; // meses futuros nunca
+      if(per===curM && !monthDone) continue; // mês ATUAL só é apurado depois do fecho US do último dia útil
       const from=pastBaselines[per], to=monthCloseBase(per,pastBaselines,weekCloses,monthCloses); if(!from||!to) continue;
       let best=null; for(const p of offs){ const r=pfPeriodRet(p,from,to); if(r!=null&&(!best||r>best.r)) best={p,r}; }
       if(best) add(best.p.key,"monthly",periodLabel(per)); }
@@ -5283,7 +5298,8 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
     if(kind==="week"){
       if(weekTradingDone(new Date())&&leaders.length) feat={p:leaders[0].p,r:leaders[0].m,period:curWk};
     }else{
-      const cc=monthCloseBase(curMonthYM,pastBaselines,weekCloses,monthCloses);
+      // Só apura o campeão do mês ATUAL depois do fecho US do último dia útil (nunca antes).
+      const cc=monthTradingDone(new Date())?monthCloseBase(curMonthYM,pastBaselines,weekCloses,monthCloses):null;
       if(cc&&monthBase&&Object.keys(monthBase).length){
         const t=officials.map(p=>({p,r:pfPeriodRet(p,monthBase,cc)})).filter(x=>x.r!=null).sort((a,b)=>b.r-a.r)[0];
         if(t) feat={p:t.p,r:t.r,period:curMonthYM};
