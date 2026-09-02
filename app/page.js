@@ -2551,6 +2551,12 @@ function Nav({page,nav,navRank,rankPeriod,submitted,onMyPortfolio,myPortfolioAct
   );
 }
 // "Ranking" com submenu ao passar o rato: Geral / Mensal / Semanal → vai direto a esse separador.
+// Cores de destaque por período (mesmas do cabeçalho do Ranking): azul=Geral, roxo=Mensal, verde-água=Semanal.
+const RANK_PERIOD_ACCENT={
+  total:{l:"#93c5fd",d:"#3b82f6",rgb:"96,165,250"},
+  month:{l:"#c4b5fd",d:"#8b5cf6",rgb:"167,139,250"},
+  week:{l:"#5eead4",d:"#14b8a6",rgb:"45,212,191"},
+};
 function RankingNav({active,rankPeriod,navToRanking,navRank}){
   const [open,setOpen]=useState(false);
   const items=[["total","Geral"],["month","Mensal"],["week","Semanal"]];
@@ -2569,13 +2575,16 @@ function RankingNav({active,rankPeriod,navToRanking,navRank}){
             border:"1px solid rgba(255,255,255,0.16)",boxShadow:"0 12px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.14)"}}>
             {items.map(([k,lbl])=>{
               const sel=active&&rankPeriod===k;
+              const ac=RANK_PERIOD_ACCENT[k];
               return(
                 <button key={k} onClick={()=>{ setOpen(false); navRank(k); }}
                   onMouseEnter={e=>{ if(!sel) e.currentTarget.style.background="rgba(255,255,255,0.10)"; }}
                   onMouseLeave={e=>{ if(!sel) e.currentTarget.style.background="transparent"; }}
                   style={{cursor:"pointer",textAlign:"center",fontSize:13.5,fontWeight:sel?700:600,whiteSpace:"nowrap",
-                    padding:"7px 18px",borderRadius:11,border:"none",transition:"background .12s,color .12s",
-                    color:sel?"#0a0a0a":"#e2e8f0",background:sel?"#4ade80":"transparent"}}>
+                    padding:"7px 18px",borderRadius:11,border:"none",transition:"background .12s,color .12s,box-shadow .12s",
+                    color:sel?"#0a0a0a":"#e2e8f0",
+                    background:sel?`linear-gradient(180deg,${ac.l},${ac.d})`:"transparent",
+                    boxShadow:sel?`0 2px 12px rgba(${ac.rgb},0.45)`:"none"}}>
                   {lbl}
                 </button>
               );
@@ -4241,7 +4250,7 @@ function WinnerMedals({w,size=20}){
   </>;
 }
 // Seletor de período (dropdown glass) — escolher a semana/mês a ver (Atual + históricos).
-function PeriodPicker({options,value,onPick,accent="#4ade80"}){
+function PeriodPicker({options,value,onPick,accent="#4ade80",accentRGB="74,222,128",icon}){
   const [open,setOpen]=useState(false);
   const wrapRef=useRef(null);
   useEffect(()=>{ if(!open) return; const h=(e)=>{ if(wrapRef.current&&!wrapRef.current.contains(e.target)) setOpen(false); };
@@ -4249,10 +4258,14 @@ function PeriodPicker({options,value,onPick,accent="#4ade80"}){
   const cur=options.find(o=>o.key===value)||options[0];
   return(
     <div ref={wrapRef} style={{position:"relative",display:"inline-block"}}>
-      <button onClick={()=>setOpen(o=>!o)} style={{cursor:"pointer",display:"inline-flex",alignItems:"center",gap:8,fontSize:13,fontWeight:700,
-        color:"#e2e8f0",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:999,padding:"6px 14px",textTransform:"capitalize"}}>
+      <button onClick={()=>setOpen(o=>!o)} style={{cursor:"pointer",display:"inline-flex",alignItems:"center",gap:9,fontSize:13.5,fontWeight:700,
+        color:"#f1f5f9",background:`rgba(${accentRGB},0.10)`,border:`1px solid rgba(${accentRGB},0.48)`,
+        boxShadow:`0 0 14px rgba(${accentRGB},0.16), inset 0 1px 0 rgba(255,255,255,0.06)`,
+        borderRadius:999,padding:"9px 16px",textTransform:"capitalize"}}>
+        {icon&&<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{flexShrink:0}}>{icon}</svg>}
         {cur?.label}
-        <span aria-hidden="true" style={{fontSize:9,color:"#94a3b8",transform:open?"rotate(180deg)":"none",transition:"transform .15s"}}>▾</span>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+          style={{flexShrink:0,transform:open?"rotate(180deg)":"none",transition:"transform .18s ease"}}><path d="M6 9l6 6 6-6"/></svg>
       </button>
       {open&&(
         <div style={{position:"absolute",top:"calc(100% + 6px)",left:"50%",transform:"translateX(-50%)",zIndex:60,minWidth:170,maxHeight:300,overflowY:"auto",
@@ -4311,7 +4324,7 @@ function RecentCommentsCard({items,onOpen}){
 }
 // Toggle Geral/Mensal/Semanal com PÍLULA VERDE DESLIZANTE (mede o botão ativo e anima até ele), igual
 // à pílula da nav de topo. Respeita prefers-reduced-motion (salta, sem deslize).
-function PeriodToggle({period,setPeriod}){
+function PeriodToggle({period,setPeriod,accentL,accentD,accentRGB}){
   const items=[["total","Geral"],["month","Mensal"],["week","Semanal"]];
   const ref=useRef(null);
   const [pill,setPill]=useState(null); // {left,top,width,height}
@@ -4333,18 +4346,20 @@ function PeriodToggle({period,setPeriod}){
     return()=>{ cancelAnimationFrame(raf); ro.disconnect(); };
   },[period]);
   const ease="cubic-bezier(.34,1.1,.4,1)";
+  const fillL=accentL||"#6ee7b7", fillD=accentD||"#22c55e", rgb=accentRGB||"74,222,128";
   return(
-    <div ref={ref} className="rkHeadToggle" style={{position:"relative",display:"inline-flex",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:999,padding:2}}>
+    <div ref={ref} className="rkHeadToggle" style={{position:"relative",display:"inline-flex",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:999,padding:3}}>
       {pill&&(
         <div aria-hidden="true" style={{position:"absolute",left:0,top:0,width:pill.width,height:pill.height,
-          transform:`translate(${pill.left}px,${pill.top}px)`,borderRadius:999,background:"#4ade80",
-          boxShadow:"0 2px 10px rgba(74,222,128,0.35)",zIndex:0,pointerEvents:"none",
-          transition:readyRef.current?`transform .34s ${ease}, width .34s ${ease}, height .34s ${ease}`:"none"}}/>
+          transform:`translate(${pill.left}px,${pill.top}px)`,borderRadius:999,
+          background:`linear-gradient(180deg,${fillL},${fillD})`,
+          boxShadow:`0 2px 12px rgba(${rgb},0.45), 0 0 0 1px rgba(${rgb},0.5)`,zIndex:0,pointerEvents:"none",
+          transition:readyRef.current?`transform .34s ${ease}, width .34s ${ease}, height .34s ${ease}, background .2s ease`:"none"}}/>
       )}
       {items.map(([k,lbl])=>{ const on=period===k; return(
         <button key={k} data-on={on?"1":undefined} onClick={()=>setPeriod(k)}
-          style={{position:"relative",zIndex:1,cursor:"pointer",fontSize:12.5,fontWeight:700,borderRadius:999,padding:"6px 14px",border:"none",whiteSpace:"nowrap",background:"transparent",
-            color:on?"#0a0a0a":"#cbd5e1",transition:"color .28s ease"}}>{lbl}</button>
+          style={{position:"relative",zIndex:1,cursor:"pointer",fontSize:13.5,fontWeight:800,borderRadius:999,padding:"9px 18px",border:"none",whiteSpace:"nowrap",background:"transparent",
+            color:on?"#06281f":"#94a3b8",transition:"color .28s ease"}}>{lbl}</button>
       );})}
     </div>
   );
@@ -5593,19 +5608,11 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
         .cdiHolo:hover .cdiHolo__shine{animation-duration:1.6s}
         @keyframes cdiStickerShine{0%{background-position:-30% 0}55%,100%{background-position:130% 0}}
         @media(prefers-reduced-motion:reduce){.cdiHolo__spec,.cdiHolo__shine{animation:none}.cdiHolo{animation:none}.cdiHolo__inner{transition:none}}
-        /* Linha do cabeçalho: título (esq.) · toggle (centro EXATO da página) · 1v1 (dir.).
-           1fr auto 1fr → o toggle fica sempre no centro, independentemente de o título ser
-           "Ranking Geral" ou "Ranking Mensal" (larguras diferentes não o mexem). */
-        .rkHeadRow{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:12px;margin-bottom:6px}
-        .rkHeadTitle{justify-self:start;min-width:0}
-        .rkHeadToggle{justify-self:center}
-        .rkHeadV1{justify-self:end}
+        /* Cartão do cabeçalho (ícone+título · toggle · 1v1, com a "pill row" de info por baixo). Em
+           telemóvel o flex-wrap do próprio elemento (inline style) já empilha ícone+título / toggle+1v1
+           sem precisar de grid-template-areas; aqui só afinamos espaçamentos/tamanhos no estreito. */
         @media(max-width:560px){
-          /* telemóvel: título + 1v1 na 1ª linha; toggle centrado na 2ª. */
-          .rkHeadRow{grid-template-columns:1fr auto;grid-template-areas:"title v1" "toggle toggle";row-gap:10px}
-          .rkHeadTitle{grid-area:title;white-space:normal}
-          .rkHeadV1{grid-area:v1}
-          .rkHeadToggle{grid-area:toggle}
+          .rkHeadTitle{white-space:normal!important}
         }
         @media(max-width:1439px){
           .rkLayout{grid-template-columns:minmax(0,900px);grid-template-areas:"hdr" "tbl";justify-content:center}
@@ -5648,32 +5655,64 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
       <aside className="rkRail railL">{histActive?null:leftRail}</aside>
       <aside className="railChamp" ref={railChampRef} style={railH!=null?{height:railH}:undefined}><div ref={champStickyRef} style={{marginTop:champTop}}>{histActive?wChampHist:wChamp}</div></aside>
       <div className="cHeader">
-      <div className="rkHeadRow">
-        <h1 className="rkHeadTitle" style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px",margin:0,whiteSpace:"nowrap"}}>{period==="week"?"Ranking Semanal":period==="month"?"Ranking Mensal":"Ranking Geral"}</h1>
-        {(hasMonth||hasWeek)&&!preLaunch?(
-          <PeriodToggle period={period} setPeriod={setPeriod}/>
-        ):<span className="rkHeadToggle" aria-hidden="true"/>}
-        {ranking.length>=2?(
-          <button className="rkHeadV1" onClick={()=>{ setCmp(v=>!v); setSel([]); }}
-            style={{cursor:"pointer",fontSize:13,fontWeight:700,borderRadius:999,padding:"8px 16px",
-              color:cmp?"#0a0a0a":"#cbd5e1",background:cmp?"#3b82f6":"rgba(255,255,255,0.06)",
-              border:`1px solid ${cmp?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.12)"}`}}>1v1</button>
-        ):<span className="rkHeadV1" aria-hidden="true"/>}
-      </div>
-      <p style={{color:"#94a3b8",fontSize:14,margin:histActive||histAvail.length>0?"0 0 12px":"0 0 28px",textAlign:"center"}}>
-        {histActive
-          ? <>{histLabel} · {period==="week"
-              ? `${new Date(histWindow.periodStart+"T00:00:00Z").toLocaleDateString("pt-PT",{day:"2-digit",month:"2-digit"})}–${new Date(histWindow.periodEnd+"T00:00:00Z").toLocaleDateString("pt-PT",{day:"2-digit",month:"2-digit"})}`
-              : "mês fechado"}{histSeedWk?" · semana de arranque (4ª→6ª)":""} · resultados finais</>
-          : <>{period==="week"?"Início 2ª feira (abertura) a 6ª feira (fecho)":period==="month"?"Início no primeiro dia do mês até ao último.":"Classificação por rentabilidade total, em tempo real"}
-            {period==="total"&&<>{" · "}{officials.length} {officials.length===1?"participante":"participantes"}.</>}
-            {pricesLoading?`${period==="month"?" ":" · "}A atualizar preços…`:(pricesAt?`${period==="month"?" ":" · "}Atualizado ${new Date(pricesAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}`:"")}</>}
-      </p>
-      {(period==="week"||period==="month")&&!preLaunch&&histAvail.length>0&&(
-        <div style={{display:"flex",justifyContent:"center",margin:"0 0 22px"}}>
-          <PeriodPicker options={period==="week"?weekOpts:monthOpts} value={histKey} onPick={setHistKey} accent={period==="week"?"#2dd4bf":"#a78bfa"}/>
+      <div className="rkHeadCard" style={{position:"relative",marginBottom:26}}>
+        <div className="rkHeadTop" style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"space-between",gap:16,flexWrap:"wrap",rowGap:14}}>
+          <div style={{display:"flex",alignItems:"center",gap:14,minWidth:0}}>
+            <span aria-hidden="true" style={{width:50,height:50,borderRadius:15,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+              background:`linear-gradient(155deg,rgba(${thRGB},0.38),rgba(${thRGB},0.10))`,
+              border:`1px solid rgba(${thRGB},0.55)`,
+              boxShadow:`0 0 18px rgba(${thRGB},0.30), inset 0 1px 0 rgba(255,255,255,0.14)`}}>
+              <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke={thL} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M5 20V13M12 20V7M19 20V4"/>
+              </svg>
+            </span>
+            <h1 className="rkHeadTitle" style={{fontSize:"clamp(21px,2.6vw,29px)",fontWeight:800,letterSpacing:"-0.5px",margin:0,color:"#f8fafc",whiteSpace:"nowrap"}}>
+              {period==="week"?"Ranking Semanal":period==="month"?"Ranking Mensal":"Ranking Geral"}
+            </h1>
+          </div>
+          <div style={{position:"relative",display:"flex",alignItems:"center",gap:10}}>
+            {(hasMonth||hasWeek)&&!preLaunch?(
+              <PeriodToggle period={period} setPeriod={setPeriod} accentL={thL} accentD={thD} accentRGB={thRGB}/>
+            ):<span className="rkHeadToggle" aria-hidden="true"/>}
+            {ranking.length>=2?(
+              <button className="rkHeadV1" onClick={()=>{ setCmp(v=>!v); setSel([]); }}
+                style={{cursor:"pointer",fontSize:13,fontWeight:700,borderRadius:999,padding:"9px 16px",
+                  color:cmp?"#0a0a0a":"#cbd5e1",background:cmp?"#3b82f6":"rgba(255,255,255,0.06)",
+                  border:`1px solid ${cmp?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.12)"}`}}>1v1</button>
+            ):<span className="rkHeadV1" aria-hidden="true"/>}
+          </div>
         </div>
-      )}
+        {(()=>{
+          const calIcon=<><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/></>;
+          const clockIcon=<><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5l3.2 1.8"/></>;
+          const liveIcon=<><path d="M3 16l5.5-6 4 4L21 6"/><path d="M15 6h6v6"/></>;
+          const checkIcon=<><circle cx="12" cy="12" r="9"/><path d="M8.3 12.3l2.5 2.5 4.7-5.2"/></>;
+          const seg1Icon=histActive?calIcon:(period==="total"?liveIcon:calIcon);
+          const seg1Text=histActive
+            ? <>{histLabel} · {period==="week"
+                ? `${new Date(histWindow.periodStart+"T00:00:00Z").toLocaleDateString("pt-PT",{day:"2-digit",month:"2-digit"})}–${new Date(histWindow.periodEnd+"T00:00:00Z").toLocaleDateString("pt-PT",{day:"2-digit",month:"2-digit"})}`
+                : "mês fechado"}{histSeedWk?" · semana de arranque (4ª→6ª)":""}</>
+            : <>{period==="week"?"Início 2ª feira (abertura) a 6ª feira (fecho)":period==="month"?"Início no primeiro dia do mês até ao último":"Classificação por rentabilidade total, em tempo real"}
+              {period==="total"&&<>{" · "}{officials.length} {officials.length===1?"participante":"participantes"}</>}</>;
+          const seg2Icon=histActive?checkIcon:clockIcon;
+          const seg2Text=histActive
+            ? "Resultados finais"
+            : (pricesLoading?"A atualizar preços…":(pricesAt?`Atualizado ${new Date(pricesAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}`:null));
+          const pillIcon=(path)=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={thL} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{flexShrink:0}}>{path}</svg>;
+          return(
+            <div className="rkHeadPills" style={{position:"relative",display:"flex",flexWrap:"wrap",alignItems:"center",justifyContent:"center",gap:10,marginTop:18}}>
+              <span style={{display:"inline-flex",alignItems:"center",flexWrap:"wrap",rowGap:4,background:"rgba(255,255,255,0.045)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:999,padding:"9px 4px"}}>
+                <span style={{display:"inline-flex",alignItems:"center",gap:7,padding:"0 12px",fontSize:12.5,fontWeight:600,color:"#cbd5e1",whiteSpace:"nowrap"}}>{pillIcon(seg1Icon)}{seg1Text}</span>
+                {seg2Text&&<span style={{display:"inline-flex",alignItems:"center",gap:7,padding:"0 12px",borderLeft:"1px solid rgba(255,255,255,0.12)",fontSize:12.5,fontWeight:600,color:"#cbd5e1",whiteSpace:"nowrap"}}>{pillIcon(seg2Icon)}{seg2Text}</span>}
+              </span>
+              {(period==="week"||period==="month")&&!preLaunch&&histAvail.length>0&&(
+                <PeriodPicker options={period==="week"?weekOpts:monthOpts} value={histKey} onPick={setHistKey}
+                  accent={thA} accentRGB={thRGB} icon={calIcon}/>
+              )}
+            </div>
+          );
+        })()}
+      </div>{/* /rkHeadCard */}
       {ranking.length>0&&(<>
         {/* Season Race + (demos) + pílula do vencedor — a toda a largura, por cima da grelha */}
         <div style={{marginBottom:16}} ref={raceWrapRef}>
