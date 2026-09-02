@@ -3735,17 +3735,29 @@ function RaceLiveDot({cx,cy,color}){
 }
 function SeasonRaceTooltip({active,payload,label}){
   if(!active||!payload||!payload.length) return null;
-  const rows=[...payload].filter(p=>p.value!=null).sort((a,b)=>b.value-a.value);
+  const rows=[...payload].filter(p=>p.value!=null);
+  // "A tua" linha (name termina em " (tu)", posto pelo Line `name=`) e o S&P 500 não pertencem ao
+  // Top 10 — separados por um traço ténue e ligeiramente esbatidos, para não se misturarem visualmente
+  // com o ranking (o utilizador pode nem estar no Top 10; o S&P é só a referência).
+  const isExtra=p=>p.dataKey==="S&P 500"||(typeof p.name==="string"&&p.name.endsWith(" (tu)"));
+  const top10=rows.filter(p=>!isExtra(p)).sort((a,b)=>b.value-a.value);
+  const extra=rows.filter(isExtra).sort((a,b)=>b.value-a.value);
+  const row=(p,muted)=>(
+    <div key={p.dataKey} style={{display:"flex",alignItems:"center",gap:8,lineHeight:1.6,opacity:muted?0.68:1}}>
+      <span style={{width:8,height:8,borderRadius:"50%",background:p.color,flexShrink:0}}/>
+      <span style={{color:muted?"#94a3b8":"#cbd5e1",flex:1,whiteSpace:"nowrap"}}>{p.name||p.dataKey}</span>
+      <span style={{fontFamily:"monospace",fontWeight:700,color:p.value>=0?"#4ade80":"#f87171"}}>{p.value>=0?"+":""}{p.value.toFixed(2)}%</span>
+    </div>
+  );
   return(
     <div style={{background:"rgba(8,15,32,0.95)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,padding:"8px 11px",fontSize:12,boxShadow:"0 8px 24px rgba(0,0,0,0.45)"}}>
       <div style={{color:"#94a3b8",marginBottom:6,fontFamily:"monospace"}}>{raceFull(label)}</div>
-      {rows.map(p=>(
-        <div key={p.dataKey} style={{display:"flex",alignItems:"center",gap:8,lineHeight:1.6}}>
-          <span style={{width:8,height:8,borderRadius:"50%",background:p.color,flexShrink:0}}/>
-          <span style={{color:"#cbd5e1",flex:1,whiteSpace:"nowrap"}}>{p.dataKey}</span>
-          <span style={{fontFamily:"monospace",fontWeight:700,color:p.value>=0?"#4ade80":"#f87171"}}>{p.value>=0?"+":""}{p.value.toFixed(2)}%</span>
+      {top10.map(p=>row(p,false))}
+      {extra.length>0&&(
+        <div style={{marginTop:6,paddingTop:6,borderTop:"1px dashed rgba(255,255,255,0.14)"}}>
+          {extra.map(p=>row(p,true))}
         </div>
-      ))}
+      )}
     </div>
   );
 }
