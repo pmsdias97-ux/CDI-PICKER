@@ -3733,9 +3733,13 @@ function RaceLiveDot({cx,cy,color}){
     </g>
   );
 }
-function SeasonRaceTooltip({active,payload,label}){
+const PT_WEEKDAY_SHORT=["Dom","2ª-feira","3ª-feira","4ª-feira","5ª-feira","6ª-feira","Sáb"]; // índice = Date.getDay()
+function SeasonRaceTooltip({active,payload,label,gamePeriod}){
   if(!active||!payload||!payload.length) return null;
   const rows=[...payload].filter(p=>p.value!=null);
+  // Só no ranking SEMANAL: o dia da semana correspondente à data (ex.: "31/08" → "2ª-feira") — a
+  // aba semanal desenrola-se por dias da semana (2ª→6ª), sem isso o "dia 31" é ambíguo.
+  const wdLabel=(()=>{ if(gamePeriod!=="week") return null; const d=new Date(label); return Number.isNaN(d.getTime())?null:PT_WEEKDAY_SHORT[d.getDay()]; })();
   // "A tua" linha (name termina em " (tu)", posto pelo Line `name=`) e o S&P 500 não pertencem ao
   // Top 10 — separados por um traço ténue e ligeiramente esbatidos, para não se misturarem visualmente
   // com o ranking (o utilizador pode nem estar no Top 10; o S&P é só a referência).
@@ -3751,7 +3755,7 @@ function SeasonRaceTooltip({active,payload,label}){
   );
   return(
     <div style={{background:"rgba(8,15,32,0.95)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,padding:"8px 11px",fontSize:12,boxShadow:"0 8px 24px rgba(0,0,0,0.45)"}}>
-      <div style={{color:"#94a3b8",marginBottom:6,fontFamily:"monospace"}}>{raceFull(label)}</div>
+      <div style={{color:"#94a3b8",marginBottom:6,fontFamily:"monospace"}}>{raceFull(label)}{wdLabel&&<span style={{color:"#5eead4",fontWeight:700}}> · {wdLabel}</span>}</div>
       {top10.map(p=>row(p,false))}
       {extra.length>0&&(
         <div style={{marginTop:6,paddingTop:6,borderTop:"1px dashed rgba(255,255,255,0.14)"}}>
@@ -4104,7 +4108,7 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
             <XAxis dataKey="t" tickFormatter={raceTick} ticks={dayTicks} tick={{fill:"#94a3b8",fontSize:11}} minTickGap={28} axisLine={false} tickLine={false}/>
             <YAxis domain={[raceYMin,raceYMax]} tickFormatter={(v)=>`${v>0?"+":""}${v}%`} tick={{fill:"#94a3b8",fontSize:11}} width={46} axisLine={false} tickLine={false}/>
             <ReferenceLine y={0} stroke="rgba(255,255,255,0.30)" strokeDasharray="4 4"/>
-            <Tooltip content={<SeasonRaceTooltip/>} offset={80}/>
+            <Tooltip content={<SeasonRaceTooltip gamePeriod={gamePeriod}/>} offset={80}/>
             {(()=>{ const lastIdx=data.length-1; const live=mktLive&&!frameMode&&!hist&&animDone;
               // Render em ordem INVERSA (último lugar primeiro) → o 1º lugar pinta por cima: a sua
               // bolinha tem prioridade sobre a do 2º, a do 2º sobre a do 3º, etc.
