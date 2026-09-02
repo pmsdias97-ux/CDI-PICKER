@@ -2973,12 +2973,19 @@ function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,m
     const at=(t)=>{ const s=Math.max(0,Math.min(1,t))*SAMPLES, i=Math.floor(s), f=s-i,
       a=pts[i], b=pts[Math.min(SAMPLES,i+1)]; return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f]; };
     const endPt=pts[SAMPLES];
-    // Mede o SVG UMA vez por resize (não por frame → sem reflow no loop).
+    // Mede o SVG sempre que o seu tamanho REAL muda (ResizeObserver) — não só no resize da janela.
+    // O layout da hero pode mudar por outros motivos (fontes a carregar, reflow ao voltar de outra
+    // página em SPA) sem disparar "resize"; com o listener antigo os pontos ficavam com a medida velha
+    // e desalinhavam da linha (o path em si acompanha sempre, por ser SVG percentual — só os <div> dos
+    // pontos, medidos em px, ficavam presos ao tamanho antigo).
     let rw=0, rh=0;
     const grid=heroGridRef.current, CELL=5.6;
     const measure=()=>{ const r=svg.getBoundingClientRect(); rw=r.width; rh=r.height;
       if(grid&&rw&&rh) grid.setAttribute("width",(CELL*(rh/60)/(rw/100)).toFixed(3)); };
-    measure(); if(typeof window!=="undefined") window.addEventListener("resize",measure);
+    measure();
+    let ro=null;
+    if(typeof ResizeObserver!=="undefined"){ ro=new ResizeObserver(measure); ro.observe(svg); }
+    else if(typeof window!=="undefined") window.addEventListener("resize",measure); // fallback muito antigo
     const put=(el,p)=>{ if(rw&&rh) el.style.transform=`translate(${p[0]/100*rw}px, ${p[1]/60*rh}px)`; };
     const reduce=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const anims=[];
@@ -2990,7 +2997,7 @@ function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,m
     const travelers=Array.from(wrap.children).map((el)=>({ el, core:el.firstChild,
       dur:2600+Math.random()*2600, delay:900+Math.random()*3200, off:Math.random()*7000 }));
     travelers.forEach(t=>pulse(t.core,1900+Math.random()*900,Math.random()*1200));
-    const cleanupGrid=()=>{ if(typeof window!=="undefined") window.removeEventListener("resize",measure); };
+    const cleanupGrid=()=>{ if(ro) ro.disconnect(); else if(typeof window!=="undefined") window.removeEventListener("resize",measure); };
     if(reduce){ put(end,endPt); travelers.forEach(t=>{ t.el.style.opacity="0"; }); return ()=>{ anims.forEach(a=>a.cancel()); cleanupGrid(); }; }
     let raf, start;
     const loop=(ts)=>{ if(start==null) start=ts; const now=ts-start;
