@@ -2989,13 +2989,19 @@ function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,m
     const put=(el,p)=>{ if(rw&&rh) el.style.transform=`translate(${p[0]/100*rw}px, ${p[1]/60*rh}px)`; };
     const reduce=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const anims=[];
+    // O farol fica QUIETO (estado de repouso, sem pulsar sozinho) e só PULSA quando um pulso viajante
+    // lhe bate (chega ao fim da linha) — não é um pulsar contínuo independente dos viajantes.
+    if(endCore){ endCore.style.transform="scale(0.55)"; endCore.style.opacity="0.4"; }
+    // Um-tiro (não infinito) — não entra em `anims` (não precisa de cancelar: acaba sozinho em 650ms).
+    const flashEnd=()=>{ if(!endCore||!endCore.animate||reduce) return; endCore.animate(
+      [{transform:"scale(0.55)",opacity:0.4},{transform:"scale(1.3)",opacity:1},{transform:"scale(0.55)",opacity:0.4}],
+      {duration:650,easing:"ease-out"}); };
     const pulse=(el,dur,delay)=>{ if(el&&el.animate&&!reduce) anims.push(el.animate(
       [{transform:"scale(0.55)",opacity:0.4},{transform:"scale(1)",opacity:0.95},{transform:"scale(0.55)",opacity:0.4}],
       {duration:dur,iterations:Infinity,easing:"ease-in-out",delay:delay||0})); };
-    pulse(endCore,2200,600);
     // vários pontos viajantes com fase/velocidade/intervalo aleatórios → orgânico
     const travelers=Array.from(wrap.children).map((el)=>({ el, core:el.firstChild,
-      dur:2600+Math.random()*2600, delay:900+Math.random()*3200, off:Math.random()*7000 }));
+      dur:2600+Math.random()*2600, delay:900+Math.random()*3200, off:Math.random()*7000, armed:true }));
     travelers.forEach(t=>pulse(t.core,1900+Math.random()*900,Math.random()*1200));
     const cleanupGrid=()=>{ if(ro) ro.disconnect(); else if(typeof window!=="undefined") window.removeEventListener("resize",measure); };
     if(reduce){ put(end,endPt); travelers.forEach(t=>{ t.el.style.opacity="0"; }); return ()=>{ anims.forEach(a=>a.cancel()); cleanupGrid(); }; }
@@ -3004,8 +3010,12 @@ function Home({nav,navRank,submitted,settings,ranking,livePrices,onMyPortfolio,m
       put(end,endPt);
       for(const t of travelers){ const period=t.dur+t.delay; const e=(now+t.off)%period; const traveling=e>=t.delay;
         const p=traveling?(e-t.delay)/t.dur:0;
-        const fade=traveling?Math.min(Math.max(0,(p-0.14)/0.12),Math.max(0,(1-p)/0.08)):0; // surge já em movimento, dissolve no fim
-        t.el.style.opacity=String(fade); if(traveling) put(t.el,at(p)); }
+        // surge já em movimento; dissolve só mesmo no impacto (janela curta) → "bate" na luz do farol.
+        const fade=traveling?Math.min(Math.max(0,(p-0.14)/0.12),Math.max(0,(1-p)/0.04)):0;
+        t.el.style.opacity=String(fade); if(traveling) put(t.el,at(p));
+        if(traveling&&p>=0.97&&t.armed){ t.armed=false; flashEnd(); } // impacto → o farol pulsa
+        if(!traveling) t.armed=true; // re-arma para a próxima volta
+      }
       raf=requestAnimationFrame(loop); };
     raf=requestAnimationFrame(loop);
     return ()=>{ cancelAnimationFrame(raf); anims.forEach(a=>a.cancel()); cleanupGrid(); };
