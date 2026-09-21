@@ -1980,34 +1980,44 @@ export default function App(){
 
   const load=useCallback(async()=>{
     const mn=sget(K.MYNAME);
-    const gs=await loadGameSettings();
-    setSettings(gs||DEFAULT_SETTINGS);
     setMyName(mn||null);
 
-    const { data: portfolioRows, error: pfError }=await supabase
-      .from("portfolios")
-      .select(`
-        id,
-        user_id,
-        created_at,
-        locked,
-        initial_value,
-        spy_initial_price,
-        official,
-        users!portfolios_user_id_fkey (
-          telegram_name,
-          has_submitted_portfolio
-        ),
-        portfolio_stocks (
-          ticker,
-          company_name,
-          initial_price,
-          current_price,
-          initial_weight,
-          side,
-          currency
-        )
-      `);
+    // Definições do jogo, portefólios (com joins) e "já submeteu?" são 3 pedidos INDEPENDENTES —
+    // antes corriam em série (cada um à espera do anterior), somando 3 round-trips à demora do
+    // "A carregar…" antes de a tabela aparecer. Em paralelo, a demora passa a ser a do mais lento, não a soma.
+    const submittedQ=mn?.trim()
+      ? supabase.from("users").select("has_submitted_portfolio").eq("telegram_name_lower", mn.trim().toLowerCase()).maybeSingle()
+      : Promise.resolve({ data:null, error:null });
+    const [gs, { data: portfolioRows, error: pfError }, { data: userRow, error: userError }]=await Promise.all([
+      loadGameSettings(),
+      supabase
+        .from("portfolios")
+        .select(`
+          id,
+          user_id,
+          created_at,
+          locked,
+          initial_value,
+          spy_initial_price,
+          official,
+          users!portfolios_user_id_fkey (
+            telegram_name,
+            has_submitted_portfolio
+          ),
+          portfolio_stocks (
+            ticker,
+            company_name,
+            initial_price,
+            current_price,
+            initial_weight,
+            side,
+            currency
+          )
+        `),
+      submittedQ,
+    ]);
+    setSettings(gs||DEFAULT_SETTINGS);
+    setHasSubmitted(!userError&&userRow?userRow.has_submitted_portfolio===true:false);
     if(pfError){
       console.error(pfError);
       setPortfolios([]);
@@ -2064,16 +2074,6 @@ export default function App(){
       setWeekBase(cur); setWeekOpens(opens); setWeekCloses(closes);
     }).catch(()=>{});
 
-    let submitted=false;
-    if(mn?.trim()){
-      const { data: userRow, error: userError }=await supabase
-        .from("users")
-        .select("has_submitted_portfolio")
-        .eq("telegram_name_lower", mn.trim().toLowerCase())
-        .maybeSingle();
-      if(!userError&&userRow) submitted=userRow.has_submitted_portfolio===true;
-    }
-    setHasSubmitted(submitted);
     setLoading(false);
   },[refreshLivePrices]);
 
@@ -4777,7 +4777,6 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
       {shown.map((p,idx)=>{
         const i=p._rank-1; // rank real (mantém nº do lugar e estilos Top 3/Top 10 mesmo ao filtrar)
         const me=p.normName===myNorm;
-        const climb=dailyClimb?.get(p.id)??0;      // indicador ▲N/▼N — movimento DIÁRIO no ranking geral
         const slide=topClimber?.map?.get(p.id)??0; // deslize — por período (correto na ordem da aba ativa)
         const dayRet=pfDayReturn(p);
         const rentVal=perActive?valForPeriod(p):p.total; // valor mostrado na coluna Rentab./Mês/Semana
@@ -4807,9 +4806,6 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
                 : <span style={{width:22,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:13,color:"#94a3b8",fontWeight:700}}>{preStartWk?"·":i+1}</span>}
             </span>
             <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
-              <span title={(!preStartWk&&climb!==0)?`${climb>0?"Subiu":"Desceu"} ${Math.abs(climb)} ${Math.abs(climb)===1?"lugar":"lugares"} ${dref.adv}`:undefined} style={{width:26,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"flex-start"}}>
-                {preStartWk?null:!seriesLoaded?<Skeleton w={16} h={11} r={4}/>:(climb!==0?<span style={{display:"inline-flex",alignItems:"center",gap:0.5,fontSize:10,fontWeight:800,fontFamily:"monospace",letterSpacing:"-0.3px",color:climb>0?"#4ade80":"#f87171"}}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{climb>0?<path d="M5 15l7-7 7 7"/>:<path d="M5 9l7 7 7-7"/>}</svg>{Math.abs(climb)}</span>:null)}
-              </span>
               <span style={{minWidth:0,overflowWrap:"normal",wordBreak:"normal",lineHeight:1.2}}>{p.name}</span>
               {winners&&winners[p.key]&&<span style={{display:"inline-flex",alignItems:"center",gap:4,flexShrink:0}}><WinnerMedals w={winners[p.key]} size={20}/></span>}
               {me&&<span style={{flexShrink:0,fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700}}>Tu</span>}
@@ -4974,33 +4970,6 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
   const dayVerb=marketClosed?"foi":"é";               // "é/foi a maior subida…"
   const climbWhen=period==="week"?"esta semana":period==="month"?"este mês":dref.adv; // lugares (Geral = dia adaptativo)
   const dayExt=dref.ext;                               // maior subida/descida do dia (sempre diário)
-  // MOVIMENTO DIÁRIO de lugares no ranking DA ABA ATIVA (Geral/Semanal/Mensal): lugar AGORA (por metricOf =
-  // ordem mostrada) vs lugar no fecho da sessão ANTERIOR. Para semana/mês o retorno-do-período de ONTEM deriva
-  // dos snapshots: (1+total_ontem)/(1+total_na_abertura_do_período) − 1. Assim o ▲N/▼N é coerente com a posição
-  // (o último lugar nunca "sobe": nowRank usa a MESMA métrica que a lista → o climb do último é sempre ≤ 0).
-  const dailyClimb=useMemo(()=>{
-    if(preStartWk) return null;
-    const periodStart=period==="week"?curWk:period==="month"?curMonthDateOnly:null;
-    const nowRank=new Map([...officials].sort((a,b)=>{ const va=metricOf(a),vb=metricOf(b); if(va==null&&vb==null)return 0; if(va==null)return 1; if(vb==null)return -1; return vb-va; }).map((p,i)=>[p.id,i+1]));
-    let today=null; for(const p of officials){ const s=seriesById[p.id]; if(s&&s.length){ const d=s[s.length-1].date; if(!today||d>today) today=d; } }
-    const anchorIsLast=!marketClosed&&!!today&&today<_cal;
-    const yM=new Map(); let withHist=0;
-    for(const p of officials){
-      const s=seriesById[p.id]; let rYest=null,rOpen=null;
-      if(s&&s.length){
-        if(anchorIsLast){ rYest=s[s.length-1].r; } else { for(const x of s){ if(today&&x.date<today) rYest=x.r; else break; } }
-        if(periodStart){ const first=s.find(x=>x.date>=periodStart); if(first) rOpen=first.r; }
-      }
-      let ym=null;
-      if(rYest!=null){ if(!periodStart) ym=rYest; else if(rOpen!=null) ym=(1+rYest)/(1+rOpen)-1; }
-      if(ym!=null){ withHist++; yM.set(p.id,ym); }
-      else { const m=metricOf(p); yM.set(p.id,Number.isFinite(m)?m:-Infinity); } // sem histórico → fica no mesmo lugar (climb 0)
-    }
-    if(withHist<3) return null;
-    const yRank=new Map([...officials].sort((a,b)=>yM.get(b.id)-yM.get(a.id)).map((p,i)=>[p.id,i+1]));
-    const map=new Map(); for(const p of officials) map.set(p.id, yRank.get(p.id)-nowRank.get(p.id));
-    return map;
-  },[officials,seriesById,period,monthBase,weekBase,livePrices,marketClosed,hasWeek]);
   // ULTRAPASSAGENS — reordenação animada (pseudo-FLIP) ao carregar / trocar de período. Cada linha começa
   // deslocada pela sua variação de lugar (climb × altura da linha) e desliza até 0 → vê-se X a passar Y.
   // Só o topo (perf), só transform (compositor), só na ordem-de-ranking, e nunca durante pesquisa/regresso.
