@@ -4413,26 +4413,36 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
     if(!ids.length){ setSeriesById({}); setSeriesLoaded(true); return; }
     (async()=>{
       const snapshotUntil=new Date().toISOString();
-      const { data, error, cancelled }=await fetchPaginatedRows(
-        (cursor,limit)=>{
-          let query=supabase
-            .from("portfolio_snapshots").select("id,portfolio_id,date,captured_at,total_return")
-            .in("portfolio_id",ids)
-            .lte("captured_at",snapshotUntil)
-            .order("id",{ascending:true})
-            .limit(limit);
-          if(cursor!=null) query=query.gt("id",cursor);
-          return query;
-        },
-        {isCancelled:()=>cancel},
-      );
-      if(cancel||cancelled) return;
-      if(error){
-        console.error("Falha ao carregar snapshots do ranking:",error);
+      // A tabela já vai em ~27 mil linhas (124 portefólios × meses de histórico) → paginar a
+      // 1000/página em SÉRIE (uma à espera da anterior) somava ~28 pedidos sequenciais, alguns
+      // segundos só nisto. Pede o total (count) e dispara todas as páginas em PARALELO — mesmos
+      // dados, mesma ordenação final (junta por índice da página, não pela ordem de chegada), só
+      // muda a forma de os ir buscar: a demora passa a ser a de 1 pedido, não a soma de 28.
+      const PAGE=1000;
+      const cols="id,portfolio_id,date,captured_at,total_return";
+      const baseFilters=(q)=>q.in("portfolio_id",ids).lte("captured_at",snapshotUntil).order("id",{ascending:true});
+      const first=await baseFilters(supabase.from("portfolio_snapshots").select(cols,{count:"exact"})).range(0,PAGE-1);
+      if(cancel) return;
+      if(first.error){
+        console.error("Falha ao carregar snapshots do ranking:",first.error);
         setSeriesLoaded(true); return;
       }
+      const rows=[...(first.data||[])];
+      const total=first.count??rows.length;
+      if(total>PAGE){
+        const pageCount=Math.ceil(total/PAGE);
+        const rest=await Promise.all(Array.from({length:pageCount-1},(_,i)=>{
+          const from=(i+1)*PAGE;
+          return baseFilters(supabase.from("portfolio_snapshots").select(cols)).range(from,from+PAGE-1);
+        }));
+        if(cancel) return;
+        for(const r of rest){
+          if(r.error){ console.error("Falha ao carregar snapshots do ranking:",r.error); continue; }
+          rows.push(...(r.data||[]));
+        }
+      }
       const m={};
-      data.forEach(r=>{ (m[r.portfolio_id]=m[r.portfolio_id]||[]).push({snapshotId:r.id,date:r.date,capturedAt:r.captured_at,r:Number(r.total_return)}); });
+      rows.forEach(r=>{ (m[r.portfolio_id]=m[r.portfolio_id]||[]).push({snapshotId:r.id,date:r.date,capturedAt:r.captured_at,r:Number(r.total_return)}); });
       Object.values(m).forEach(points=>points.sort((a,b)=>String(a.capturedAt||a.date).localeCompare(String(b.capturedAt||b.date))||a.snapshotId-b.snapshotId));
       setSeriesById(m); setSeriesLoaded(true);
     })();
@@ -4590,10 +4600,6 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
   const meRowRef=useRef(null);
   const [meFlash,setMeFlash]=useState(false);
   const [cvOff,setCvOff]=useState(false); // desliga content-visibility durante o scroll → alturas reais à 1ª
-  // ULTRAPASSAGENS: indicador ▲N/▼N por linha (lugares ganhos/perdidos vs sessão anterior) + reordenação
-  // animada ao carregar/trocar de período.
-  const rowsWrapRef=useRef(null);         // cartão das linhas oficiais (p/ medir a passada e animar)
-  const animatedPeriodRef=useRef(null);   // último período já animado → anima 1× por período
   // Cartão do campeão (direita) e medalhão de vencedor (esquerda) alinhados ao CENTRO do gráfico
   // (medido em runtime; a legenda varia). Ambos mantêm o sticky — só desloca a posição inicial para
   // o meio do gráfico. Partilham o mesmo topo de célula (linha 1), só diferem na altura do conteúdo.
@@ -4721,7 +4727,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
       if(!q&&!pq) shown=shown.slice(0,shownRows);
     }
     return(
-    <div ref={searchable?rowsWrapRef:null} className={cvOff?"rkNoCV":undefined} style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"clip"}}>
+    <div className={cvOff?"rkNoCV":undefined} style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"clip"}}>
       <div className="rkRow rkStickyHead" style={{padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.10)",
         fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,alignItems:"center"}}>
         {searchable ? (
@@ -4777,7 +4783,6 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
       {shown.map((p,idx)=>{
         const i=p._rank-1; // rank real (mantém nº do lugar e estilos Top 3/Top 10 mesmo ao filtrar)
         const me=p.normName===myNorm;
-        const slide=topClimber?.map?.get(p.id)??0; // deslize — por período (correto na ordem da aba ativa)
         const dayRet=pfDayReturn(p);
         const rentVal=perActive?valForPeriod(p):p.total; // valor mostrado na coluna Rentab./Mês/Semana
         // 🟢/🔴 do PERÍODO: ações em ganho/perda desde o baseline do período (semana/mês), não o total.
@@ -4795,7 +4800,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
         const baseBg=picked?"rgba(59,130,246,0.16)":me?"rgba(34,197,94,0.04)":"transparent";
         const hoverBg=picked?baseBg:rr?rr.hov:inTop10?"rgba(34,197,94,0.10)":me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)";
         return(
-          <div key={p.key} data-climb={slide} ref={(me||p.key===highlightKey)?((el)=>{ if(me) meRowRef.current=el; if(p.key===highlightKey) highlightRef.current=el; }):null} className={"rkRow rkDataRow"+((p.key===highlightKey||(me&&meFlash))?" rkHiFlash":"")} onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
+          <div key={p.key} ref={(me||p.key===highlightKey)?((el)=>{ if(me) meRowRef.current=el; if(p.key===highlightKey) highlightRef.current=el; }):null} className={"rkRow rkDataRow"+((p.key===highlightKey||(me&&meFlash))?" rkHiFlash":"")} onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
             style={{padding:"14px 14px",borderBottom:"1px solid rgba(255,255,255,0.10)",cursor:"pointer",
               background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":barColor?`inset 3px 0 0 ${barColor}`:"none",transition:"background 0.15s"}}
             onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=hoverBg; }}
@@ -4970,27 +4975,6 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
   const dayVerb=marketClosed?"foi":"é";               // "é/foi a maior subida…"
   const climbWhen=period==="week"?"esta semana":period==="month"?"este mês":dref.adv; // lugares (Geral = dia adaptativo)
   const dayExt=dref.ext;                               // maior subida/descida do dia (sempre diário)
-  // ULTRAPASSAGENS — reordenação animada (pseudo-FLIP) ao carregar / trocar de período. Cada linha começa
-  // deslocada pela sua variação de lugar (climb × altura da linha) e desliza até 0 → vê-se X a passar Y.
-  // Só o topo (perf), só transform (compositor), só na ordem-de-ranking, e nunca durante pesquisa/regresso.
-  useIsoLayoutEffect(()=>{
-    if(animatedPeriodRef.current===period) return;                        // já decidido/animado este período
-    if(highlightKey){ animatedPeriodRef.current=period; return; }         // regresso do detalhe → sem animação (o realce manda)
-    if(!topClimber||pricesLoading) return;                                // dados ainda não prontos / pré-arranque
-    if(norm(query)||norm(posQuery)) return;                               // a pesquisar → adia (anima ao limpar)
-    if(sortKey!=="total"||sortDir!=="desc") return;                       // ordem ≠ métrica de ranking → offsets errados
-    const wrap=rowsWrapRef.current; if(!wrap) return;
-    if(typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches){ animatedPeriodRef.current=period; return; }
-    const rows=wrap.querySelectorAll(".rkDataRow"); if(rows.length<2) return;
-    const rowH=rows[1].offsetTop-rows[0].offsetTop; if(!(rowH>0)) return;
-    animatedPeriodRef.current=period;
-    const CAP=Math.min(rows.length,60);
-    for(let i=0;i<CAP;i++){
-      const climb=Number(rows[i].dataset.climb)||0; if(!climb) continue;
-      const off=Math.max(-16,Math.min(16,climb))*rowH;                    // parte da posição anterior e desliza até 0
-      rows[i].animate([{transform:`translateY(${off}px)`,opacity:0.5},{transform:"translateY(0)",opacity:1}],{duration:720,easing:"cubic-bezier(.34,1.06,.4,1)",delay:Math.min(i*12,300)});
-    }
-  },[period,seriesLoaded,sortKey,sortDir,query,posQuery,highlightKey,pricesLoading]);
   // Melhores/piores AÇÕES do JOGO ATIVO (retorno da própria ação desde o baseline do período).
   const stockPerf=useMemo(()=>{
     const seen={};
