@@ -512,7 +512,7 @@ function Portal({children}){
 
 // Botão flutuante "voltar ao topo" — só em desktop (hover/ponteiro fino); aparece com scroll.
 // Ancorado junto da coluna de conteúdo (maxWidth): fica ao lado da tabela, não no bordo da janela.
-function BackToTop({maxWidth,raised}){
+function BackToTop({maxWidth}){
   const [show,setShow]=useState(false);
   useEffect(()=>{
     const onScroll=()=>setShow(window.scrollY>600);
@@ -521,10 +521,9 @@ function BackToTop({maxWidth,raised}){
     return()=>window.removeEventListener("scroll",onScroll);
   },[]);
   const right="24px"; // canto inferior direito do viewport (antes: alinhado à goteira do conteúdo)
-  // raised = há ícone de chat por baixo (membro com sessão) → sobe para ficar POR CIMA do chat.
   return(
     <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})} aria-label="Voltar ao topo" title="Voltar ao topo"
-      style={{position:"fixed",right,bottom:raised?82:24,zIndex:45,width:46,height:46,borderRadius:"50%",cursor:"pointer",
+      style={{position:"fixed",right,bottom:24,zIndex:45,width:46,height:46,borderRadius:"50%",cursor:"pointer",
         background:"rgba(30,41,59,0.94)",/* fundo SÓLIDO: backdrop-filter em position:fixed dá bug no Safari iOS (botão flutua p/ o centro) */
         border:"1px solid rgba(255,255,255,0.18)",boxShadow:"0 8px 24px rgba(0,0,0,0.35)",color:"#e2e8f0",
         display:"flex",alignItems:"center",justifyContent:"center",
@@ -535,266 +534,9 @@ function BackToTop({maxWidth,raised}){
   );
 }
 
-// Chat geral (sala única): ícone flutuante (canto inf-direito) + pop-up estilo X. Mensagens em
-// TEMPO REAL via Supabase Realtime (INSERT/UPDATE/DELETE). Autor edita (5 min) e apaga as suas;
-// admin apaga qualquer. Só para membros com sessão (renderizado no Shell só quando submitted).
-const CHAT_EDIT_WINDOW_MS=5*60*1000;
-const CHAT_URL_RE=/^(https?:\/\/[^\s]+)$/i;
-// Render do conteúdo: URLs → links clicáveis; @menções → realce. Divide por espaços (mantém-nos).
-function renderChatText(text){
-  return String(text||"").split(/(\s+)/).map((tok,i)=>{
-    if(CHAT_URL_RE.test(tok)) return <a key={i} href={tok} target="_blank" rel="noopener noreferrer" style={{color:"#93c5fd",textDecoration:"underline",overflowWrap:"anywhere"}}>{tok}</a>;
-    if(/^@[\p{L}\d._-]+/u.test(tok)) return <span key={i} style={{color:"#93c5fd",fontWeight:700}}>{tok}</span>;
-    return tok;
-  });
-}
-function ChatWidget({myName,myUserId,adminPw,showToast,maxWidth,openSignal}){
-  const [open,setOpen]=useState(false);
-  useEffect(()=>{ if(openSignal) setOpen(true); },[openSignal]); // abrir a partir de uma notificação
-  const [messages,setMessages]=useState([]);
-  const [unread,setUnread]=useState(0);
-  const [draft,setDraft]=useState("");
-  const [busy,setBusy]=useState(false);
-  const [editingId,setEditingId]=useState(null);
-  const [editDraft,setEditDraft]=useState("");
-  const [narrow,setNarrow]=useState(false);
-  const [rx,setRx]=useState({}); // {messageId:{emoji:[{uid,name},...]}}
-  const [replyingTo,setReplyingTo]=useState(null); // {id,name,excerpt} da mensagem a responder
-  const listRef=useRef(null);
-  const inputRef=useRef(null);
-  const openRef=useRef(false); openRef.current=open;
-  const creds=()=>({name:myName,pin:sget(K.MYPIN)});
-  const listNames=(a)=>a.length<=1?(a[0]||""):`${a.slice(0,-1).join(", ")} e ${a[a.length-1]}`;
-  // Agregação de reações por (mensagem, emoji) → lista de {uid,name}. Dedup por uid → o eco do
-  // Realtime da própria reação (após o POST) é no-op sobre o update otimista.
-  const rxAdd=(s,mid,emoji,uid,name)=>{ const msg={...(s[mid]||{})}; const arr=(msg[emoji]||[]).slice(); if(!arr.some(r=>r.uid===uid)) arr.push({uid,name}); msg[emoji]=arr; return {...s,[mid]:msg}; };
-  const rxDel=(s,mid,emoji,uid)=>{ const msg={...(s[mid]||{})}; const arr=(msg[emoji]||[]).filter(r=>r.uid!==uid); if(arr.length) msg[emoji]=arr; else delete msg[emoji]; return {...s,[mid]:msg}; };
-
-  useEffect(()=>{ const mq=window.matchMedia("(max-width:560px)"); const on=()=>setNarrow(mq.matches); on();
-    mq.addEventListener("change",on); return()=>mq.removeEventListener("change",on); },[]);
-
-  // Carga inicial (últimas 100) + subscrição Realtime.
-  useEffect(()=>{
-    let cancel=false;
-    (async()=>{
-      const { data }=await supabase.from("chat_messages")
-        .select("id,user_id,author_name,content,created_at,edited_at,reply_to,reply_to_name,reply_to_excerpt")
-        .order("created_at",{ascending:true}).limit(100);
-      if(cancel||!data) return;
-      setMessages(data);
-      const ids=data.map(m=>m.id);
-      if(ids.length){
-        const { data:rr }=await supabase.from("chat_message_reactions")
-          .select("message_id,user_id,user_name,emoji").in("message_id",ids);
-        if(!cancel&&rr){ let agg={}; for(const r of rr) agg=rxAdd(agg,r.message_id,r.emoji,r.user_id,r.user_name); setRx(agg); }
-      }
-    })();
-    const ch=supabase.channel("chat_messages")
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"chat_messages"},(p)=>{
-        setMessages(m=>m.some(x=>x.id===p.new.id)?m:[...m,p.new]);
-        if(!openRef.current) setUnread(u=>Math.min(99,u+1));
-      })
-      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"chat_messages"},(p)=>{
-        setMessages(m=>m.map(x=>x.id===p.new.id?{...x,...p.new}:x));
-      })
-      .on("postgres_changes",{event:"DELETE",schema:"public",table:"chat_messages"},(p)=>{
-        setMessages(m=>m.filter(x=>x.id!==p.old.id));
-      })
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"chat_message_reactions"},(p)=>{
-        setRx(s=>rxAdd(s,p.new.message_id,p.new.emoji,p.new.user_id,p.new.user_name));
-      })
-      .on("postgres_changes",{event:"DELETE",schema:"public",table:"chat_message_reactions"},(p)=>{
-        setRx(s=>rxDel(s,p.old.message_id,p.old.emoji,p.old.user_id));
-      })
-      .subscribe();
-    return()=>{ cancel=true; supabase.removeChannel(ch); };
-  },[]);
-
-  useEffect(()=>{ if(open){ setUnread(0); if(listRef.current) listRef.current.scrollTop=listRef.current.scrollHeight;
-    // Ao abrir, foca o input para escrever já — MAS só em desktop (rato/ponteiro fino). Em mobile
-    // (táctil) não focar, para o teclado não saltar e o utilizador poder LER o chat primeiro.
-    try{ if(window.matchMedia("(hover:hover) and (pointer:fine)").matches) setTimeout(()=>inputRef.current?.focus(),0); }catch{} } },[open]);
-  useEffect(()=>{ if(open&&listRef.current) listRef.current.scrollTop=listRef.current.scrollHeight; },[messages,open]);
-
-  const send=async()=>{
-    const content=draft.trim(); if(!content||busy) return;
-    if(content.length>500){ showToast&&showToast("Máx. 500 caracteres.","error"); return; }
-    setBusy(true);
-    try{
-      const { name,pin }=creds();
-      const res=await fetch("/api/chat/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,pin,content,replyTo:replyingTo?.id||null})});
-      const j=await res.json().catch(()=>({}));
-      if(!res.ok) showToast&&showToast(j.error||"Falha ao enviar.","error");
-      else{ setDraft(""); setReplyingTo(null); if(j.message) setMessages(m=>m.some(x=>x.id===j.message.id)?m:[...m,j.message]); }
-    }catch{ showToast&&showToast("Falha de ligação.","error"); }
-    finally{ setBusy(false); }
-  };
-  const saveEdit=async(id)=>{
-    const content=editDraft.trim(); if(!content){ setEditingId(null); return; }
-    try{
-      const { name,pin }=creds();
-      const res=await fetch("/api/chat/edit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,pin,id,content})});
-      const j=await res.json().catch(()=>({}));
-      if(!res.ok) showToast&&showToast(j.error||"Falha ao editar.","error");
-      else{ setEditingId(null); if(j.message) setMessages(m=>m.map(x=>x.id===id?{...x,...j.message}:x)); }
-    }catch{ showToast&&showToast("Falha de ligação.","error"); }
-  };
-  const del=async(msg)=>{
-    const mine=msg.user_id===myUserId;
-    const body=mine?{id:msg.id,...creds()}:{id:msg.id,adminPassword:adminPw};
-    const prev=messages; setMessages(m=>m.filter(x=>x.id!==msg.id)); // otimista
-    try{
-      const res=await fetch("/api/chat/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-      if(!res.ok){ const j=await res.json().catch(()=>({})); setMessages(prev); showToast&&showToast(j.error||"Falha ao apagar.","error"); }
-    }catch{ setMessages(prev); showToast&&showToast("Falha de ligação.","error"); }
-  };
-  const toggleReaction=async(mid,emoji)=>{
-    const arr=rx[mid]?.[emoji]||[]; const mineNow=arr.some(r=>r.uid===myUserId);
-    setRx(s=> mineNow?rxDel(s,mid,emoji,myUserId):rxAdd(s,mid,emoji,myUserId,myName||"Tu")); // otimista
-    try{
-      const { name,pin }=creds();
-      const res=await fetch("/api/chat/react",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,pin,messageId:mid,emoji})});
-      if(!res.ok){ const j=await res.json().catch(()=>({})); setRx(s=> mineNow?rxAdd(s,mid,emoji,myUserId,myName||"Tu"):rxDel(s,mid,emoji,myUserId)); showToast&&showToast(j.error||"Falha ao reagir.","error"); }
-    }catch{ setRx(s=> mineNow?rxAdd(s,mid,emoji,myUserId,myName||"Tu"):rxDel(s,mid,emoji,myUserId)); showToast&&showToast("Falha de ligação.","error"); }
-  };
-
-  const right="24px"; // canto inferior direito do viewport (antes: alinhado à goteira do conteúdo)
-  const panelStyle=narrow
-    ? {position:"fixed",left:8,right:8,bottom:8,height:"82vh",zIndex:9995}
-    : {position:"fixed",right,bottom:82,width:360,maxWidth:"calc(100vw - 32px)",height:"min(70vh,560px)",zIndex:9995};
-  const glass={background:"rgba(17,26,45,0.86)",backdropFilter:"blur(22px) saturate(160%)",WebkitBackdropFilter:"blur(22px) saturate(160%)",
-    border:"1px solid rgba(255,255,255,0.12)",boxShadow:"0 18px 48px rgba(0,0,0,0.55)",borderRadius:16};
-
-  return(<>
-    <style>{`
-      @keyframes cdiChatIn{from{opacity:0;transform:scale(.96) translateY(8px)}to{opacity:1;transform:none}}
-      .cdiChatPanel{animation:cdiChatIn .18s cubic-bezier(.22,.61,.36,1);transform-origin:bottom right}
-      .cdiChatMsg .cdiChatActs{opacity:0;transition:opacity .12s}
-      @media(hover:hover){.cdiChatMsg:hover .cdiChatActs{opacity:1}}
-      @media(hover:none){.cdiChatMsg .cdiChatActs{opacity:1}}
-      @media(prefers-reduced-motion:reduce){.cdiChatPanel{animation:none}}
-      /* Reações (mesmo visual dos comentários). .cmtWho ANTES do .cmtReactPick p/ o display:none do picker vencer. */
-      .cmtReactBtn{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:3px 9px;font-size:12.5px;font-weight:700;line-height:1;font-family:inherit;transition:all .12s;cursor:pointer;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.10);color:#94a3b8}
-      .cmtWho{position:relative;display:inline-flex}
-      @media (hover:hover){
-        .cmtReactPick{display:none}
-        .cdiChatMsg:hover .cmtReactPick{display:inline-flex}
-        .cmtWho[data-who]:hover::after{content:attr(data-who);position:absolute;bottom:calc(100% + 7px);left:50%;transform:translateX(-50%);background:rgba(10,15,28,0.96);border:1px solid rgba(255,255,255,0.14);color:#e2e8f0;font-size:11.5px;font-weight:600;line-height:1.35;padding:5px 9px;border-radius:8px;width:max-content;max-width:240px;white-space:normal;text-align:center;z-index:40;pointer-events:none;box-shadow:0 10px 24px rgba(0,0,0,0.45)}
-      }
-    `}</style>
-    {/* Ícone flutuante (balão) */}
-    <button onClick={()=>setOpen(o=>!o)} aria-label="Chat da competição" title="Chat da competição"
-      style={{position:"fixed",right,bottom:24,zIndex:46,width:46,height:46,borderRadius:"50%",cursor:"pointer",
-        background:open?"#1d4ed8":"#2563eb",/* fundo SÓLIDO: backdrop-filter em position:fixed dá bug no Safari iOS */
-        border:"1px solid rgba(255,255,255,0.22)",boxShadow:"0 8px 24px rgba(0,0,0,0.4)",color:"#fff",
-        display:"flex",alignItems:"center",justifyContent:"center",transition:"background .15s"}}>
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-      {unread>0&&!open&&(
-        <span style={{position:"absolute",top:-3,right:-3,minWidth:18,height:18,padding:"0 5px",borderRadius:999,
-          background:"#ef4444",color:"#fff",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",border:"2px solid #0a1120"}}>{unread}</span>
-      )}
-    </button>
-    {open&&(
-      <div className="cdiChatPanel" style={panelStyle}>
-        <div style={{...glass,display:"flex",flexDirection:"column",height:"100%",overflow:"hidden"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"12px 14px",borderBottom:"1px solid rgba(255,255,255,0.10)"}}>
-            <span style={{fontSize:14,fontWeight:800,color:"#e2e8f0"}}>Chat da competição</span>
-            <button onClick={()=>setOpen(false)} aria-label="Fechar" style={{background:"none",border:"none",cursor:"pointer",color:"#94a3b8",display:"flex",padding:4}}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-            </button>
-          </div>
-          <div ref={listRef} style={{flex:1,overflowY:"auto",padding:"10px 12px",display:"flex",flexDirection:"column",gap:10}}>
-            {messages.length===0
-              ? <div style={{color:"#64748b",fontSize:13,textAlign:"center",margin:"auto"}}>Ainda sem mensagens. Diz olá 👋</div>
-              : messages.map(m=>{
-                  const mine=m.user_id===myUserId;
-                  const canEdit=mine&&(Date.now()-new Date(m.created_at).getTime()<=CHAT_EDIT_WINDOW_MS);
-                  const canDel=mine||!!adminPw;
-                  return(
-                    <div key={m.id} id={`chatmsg-${m.id}`} className="cdiChatMsg" style={{display:"flex",flexDirection:"column",gap:2}}>
-                      <div style={{display:"flex",alignItems:"baseline",gap:6}}>
-                        <span style={{fontSize:12.5,fontWeight:800,color:mine?"#93c5fd":"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.author_name}{mine?" (tu)":""}</span>
-                        <span style={{fontSize:10.5,color:"#64748b",flexShrink:0}}>{timeAgo(m.created_at)}{m.edited_at?" · editado":""}</span>
-                        <span className="cdiChatActs" style={{marginLeft:"auto",display:"inline-flex",gap:8,flexShrink:0}}>
-                          {editingId!==m.id&&<button onClick={()=>setReplyingTo({id:m.id,name:m.author_name,excerpt:String(m.content).slice(0,90)})} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:11,padding:0}}>responder</button>}
-                          {canEdit&&editingId!==m.id&&<button onClick={()=>{ setEditingId(m.id); setEditDraft(m.content); }} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:11,padding:0}}>editar</button>}
-                          {canDel&&<button onClick={()=>del(m)} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:11,padding:0}}>apagar</button>}
-                        </span>
-                      </div>
-                      {m.reply_to&&(
-                        <div onClick={()=>{ const el=document.getElementById(`chatmsg-${m.reply_to}`); if(el) el.scrollIntoView({block:"center",behavior:"smooth"}); }}
-                          title="Ir à mensagem citada" style={{borderLeft:"2px solid rgba(147,197,253,0.55)",paddingLeft:8,margin:"1px 0",cursor:"pointer",opacity:0.85,minWidth:0}}>
-                          <span style={{fontSize:11,fontWeight:700,color:"#93c5fd"}}>{m.reply_to_name||"mensagem"}</span>
-                          <div style={{fontSize:11.5,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.reply_to_excerpt||""}</div>
-                        </div>
-                      )}
-                      {editingId===m.id?(
-                        <div style={{display:"flex",gap:6,alignItems:"flex-end"}}>
-                          <textarea value={editDraft} onChange={e=>setEditDraft(e.target.value.slice(0,500))} rows={2}
-                            style={{flex:1,resize:"vertical",minHeight:40,background:"rgba(0,0,0,0.28)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,padding:"6px 9px",color:"#e2e8f0",fontSize:16,fontFamily:"inherit",lineHeight:1.4,outline:"none"}}/>
-                          <button onClick={()=>saveEdit(m.id)} style={{border:"none",borderRadius:9,padding:"7px 11px",fontSize:12,fontWeight:700,cursor:"pointer",background:"#22c55e",color:"#04120a"}}>Guardar</button>
-                          <button onClick={()=>setEditingId(null)} style={{border:"none",borderRadius:9,padding:"7px 8px",fontSize:12,cursor:"pointer",background:"rgba(255,255,255,0.08)",color:"#cbd5e1"}}>✕</button>
-                        </div>
-                      ):(
-                        <span style={{fontSize:13.5,color:"#cbd5e1",lineHeight:1.45,whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{renderChatText(m.content)}</span>
-                      )}
-                      {editingId!==m.id&&(
-                        <span style={{display:"inline-flex",gap:6,flexWrap:"wrap",marginTop:2}}>
-                          {/* Reações dadas primeiro (mais contagens à esq.); picker (0) à direita, só em hover.
-                              Não se reage à PRÓPRIA mensagem: mostra só as que já existem (leitura). */}
-                          {[...COMMENT_REACTIONS].sort((x,y)=>((rx[m.id]?.[y]?.length)||0)-((rx[m.id]?.[x]?.length)||0)).map(emoji=>{
-                            const arr=rx[m.id]?.[emoji]||[]; const count=arr.length; const reacted=arr.some(r=>r.uid===myUserId);
-                            if(mine&&count===0) return null;
-                            const who=count>0?listNames(arr.map(r=>r.name)):null;
-                            return(
-                              <span key={emoji} className={`cmtWho${count>0?"":" cmtReactPick"}`} data-who={who||undefined}>
-                                <button onClick={mine?undefined:()=>toggleReaction(m.id,emoji)} className="cmtReactBtn" disabled={mine}
-                                  title={who?undefined:(mine?"Reações à tua mensagem":(reacted?"Remover reação":"Reagir"))}
-                                  style={{...(reacted?{borderColor:"rgba(96,165,250,0.55)",background:"rgba(96,165,250,0.15)",color:"#93c5fd"}:{}),...(mine?{cursor:"default"}:{})}}>
-                                  <span style={{fontSize:13}}>{emoji}</span>{count>0&&<span>{count}</span>}
-                                </button>
-                              </span>
-                            );
-                          })}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-          </div>
-          <div style={{borderTop:"1px solid rgba(255,255,255,0.10)"}}>
-          {replyingTo&&(
-            <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px 0"}}>
-              <div style={{flex:1,minWidth:0,borderLeft:"2px solid rgba(147,197,253,0.55)",paddingLeft:8}}>
-                <div style={{fontSize:11,fontWeight:700,color:"#93c5fd"}}>A responder a {replyingTo.name}</div>
-                <div style={{fontSize:11.5,color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{replyingTo.excerpt}</div>
-              </div>
-              <button onClick={()=>setReplyingTo(null)} aria-label="Cancelar resposta" style={{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",padding:2,flexShrink:0,display:"flex"}}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-              </button>
-            </div>
-          )}
-          <div style={{display:"flex",gap:8,alignItems:"flex-end",padding:"10px 12px"}}>
-            <textarea ref={inputRef} value={draft} onChange={e=>setDraft(e.target.value.slice(0,500))}
-              onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); send(); } }}
-              rows={1} placeholder="Escreve no chat da competição…"
-              style={{flex:1,resize:"none",minHeight:40,maxHeight:120,background:"rgba(0,0,0,0.28)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:12,padding:"9px 12px",color:"#e2e8f0",fontSize:16,fontFamily:"inherit",lineHeight:1.4,outline:"none"}}/>{/* 16px: <16 faz o Safari iOS dar zoom ao focar */}
-            <button onClick={send} disabled={busy||!draft.trim()} aria-label="Enviar"
-              style={{border:"none",borderRadius:12,width:42,height:42,flexShrink:0,cursor:busy||!draft.trim()?"not-allowed":"pointer",
-                background:busy||!draft.trim()?"rgba(255,255,255,0.08)":"#2563eb",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-            </button>
-          </div>
-          </div>
-        </div>
-      </div>
-    )}
-  </>);
-}
-
 // Sino de notificações (topo-esquerdo, só com sessão). Faz POLL de /api/notifications/list (o app não
 // tem sessão Supabase-auth p/ Realtime por-utilizador). Clicar num item navega via onLink (token: 'mine'
-// | 'ranking' | 'ranking-week' | 'chat' | 'p:<portfolioId>'). Marca lidas ao abrir.
+// | 'ranking' | 'ranking-week' | 'p:<portfolioId>'). Marca lidas ao abrir.
 function NotifBell({myName,onLink,showToast}){
   const [open,setOpen]=useState(false);
   const [items,setItems]=useState([]);
@@ -2114,8 +1856,6 @@ export default function App(){
     return portfolios.find(p=>p.normName===n)||null;
   },[myName,portfolios]);
   const openMyPortfolio=useCallback(()=>{ if(myPf?.key) openDetail(myPf.key); else nav("detail"); },[myPf,openDetail,nav]);
-  // Abrir o chat a partir de uma notificação (sinal → o ChatWidget abre quando este contador muda).
-  const [chatOpenReq,setChatOpenReq]=useState(0);
   // Navegação a partir de uma notificação (token guardado em notifications.link).
   const handleNotifLink=useCallback((link)=>{
     if(!link) return;
@@ -2125,7 +1865,6 @@ export default function App(){
     else if(link==="ranking-month") navRank("month");
     else if(link==="ath") nav("ath");
     else if(link==="updates"){ nav("home"); setTimeout(()=>{ const el=document.getElementById("updates-feedbacks"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); },400); }
-    else if(link==="chat") setChatOpenReq(x=>x+1);
     else if(link.startsWith("p:")){ const id=link.slice(2); const pf=portfolios.find(p=>p.id===id); if(pf) openDetail(pf.key); }
   },[openMyPortfolio,navRank,nav,openDetail,portfolios]);
 
@@ -2316,8 +2055,8 @@ export default function App(){
   const rowHover=detailRank===1?"#1d1407":detailRank===2?"#12151c":detailRank===3?"#1a0f06":"#0a1120";
 
   const sh=(children)=><Shell page={page} rankPeriod={rankPeriod} detailRank={detailRank} detailIsOwn={detailIsOwn} nav={nav} navRank={navRank} submitted={submitted} toast={toast}
-    myName={myName} myUserId={myPf?.userId||null} adminPw={adminPw} showToast={showToast}
-    onNotifLink={handleNotifLink} chatOpenReq={chatOpenReq}
+    myName={myName} adminPw={adminPw} showToast={showToast}
+    onNotifLink={handleNotifLink}
     onMyPortfolio={openMyPortfolio}
     myPortfolioActive={page==="detail" && !!detailPf && !!myPf && detailPf.key===myPf.key}>{children}</Shell>;
 
@@ -2333,7 +2072,7 @@ export default function App(){
 }
 
 /* ---- Shell --------------------------------------------------------------- */
-function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,submitted,toast,onMyPortfolio,myPortfolioActive,myName,myUserId,adminPw,showToast,onNotifLink,chatOpenReq}){
+function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,submitted,toast,onMyPortfolio,myPortfolioActive,myName,adminPw,showToast,onNotifLink}){
   // Relógio do mercado: não precisa de estar sempre à vista → desvanece ao fazer scroll (volta no topo).
   const [clockHidden,setClockHidden]=useState(false);
   useEffect(()=>{
@@ -2448,8 +2187,7 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
         // Portal → fora do root (overflow-x:clip) p/ o position:fixed não "flutuar" ao centro no Safari iOS.
         return(
           <Portal>
-            <BackToTop maxWidth={mw} raised={submitted}/>
-            {submitted&&<ChatWidget myName={myName} myUserId={myUserId} adminPw={adminPw} showToast={showToast} maxWidth={mw} openSignal={chatOpenReq}/>}
+            <BackToTop maxWidth={mw}/>
           </Portal>
         );
       })()}
@@ -7444,7 +7182,6 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
                 <option value="ranking">Ranking Geral</option>
                 <option value="ranking-month">Ranking Mensal</option>
                 <option value="ranking-week">Ranking Semanal</option>
-                <option value="chat">Chat da competição</option>
                 <option value="mine">As Minhas 8</option>
                 <option value="updates">Secção Updates (Homepage)</option>
                 <option value="ath">ATH</option>
@@ -7474,7 +7211,7 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
           const btnG={border:"1px solid rgba(255,255,255,0.16)",borderRadius:9,padding:"9px 14px",fontSize:13,fontWeight:700,cursor:"pointer",background:"rgba(255,255,255,0.06)",color:"#cbd5e1"};
           const lk={background:"none",border:"none",color:"#93c5fd",cursor:"pointer",fontSize:11.5,fontWeight:700,padding:0};
           const lkDel={...lk,color:"#f87171"};
-          const OPTS=[["","Nada (só a mensagem)"],["ranking","Ranking Geral"],["ranking-month","Ranking Mensal"],["ranking-week","Ranking Semanal"],["chat","Chat da competição"],["mine","As Minhas 8"],["updates","Secção Updates (Homepage)"],["ath","ATH"]];
+          const OPTS=[["","Nada (só a mensagem)"],["ranking","Ranking Geral"],["ranking-month","Ranking Mensal"],["ranking-week","Ranking Semanal"],["mine","As Minhas 8"],["updates","Secção Updates (Homepage)"],["ath","ATH"]];
           const linkSel=(val,on)=><select value={val||""} onChange={on} style={inputSt}>{OPTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>;
           const editForm=(withLink)=>(
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
