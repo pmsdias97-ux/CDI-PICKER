@@ -2440,10 +2440,44 @@ const RANK_BADGE={
 };
 
 // Pódio do ranking: Top 3 em 2-1-3, o 1.º maior e elevado. Substitui as 3 primeiras linhas da lista.
+// Louros em SVG (vetorial → nítidos em qualquer tamanho; os .webp têm só 95px). Ramo esquerdo desenhado e
+// espelhado para o direito. Folhas distribuídas ao longo de um arco (Bézier cúbica), alternando de lado.
+const LAUREL_LEAVES=(()=>{
+  const P=[[96,176],[40,150],[28,86],[66,38]]; // arco do caule (esquerdo)
+  const bez=t=>{ const u=1-t; return [u*u*u*P[0][0]+3*u*u*t*P[1][0]+3*u*t*t*P[2][0]+t*t*t*P[3][0], u*u*u*P[0][1]+3*u*u*t*P[1][1]+3*u*t*t*P[2][1]+t*t*t*P[3][1]]; };
+  const out=[];
+  for(let i=0;i<8;i++){
+    const t=0.10+i*0.115, [x,y]=bez(t), [x2,y2]=bez(t+0.01);
+    const ang=Math.atan2(y2-y,x2-x)*180/Math.PI;
+    const sz=1-i*0.045; // folhas diminuem para a ponta
+    out.push({x,y,r:ang-38,sz},{x,y,r:ang+38,sz});
+  }
+  const [tx,ty]=bez(1); out.push({x:tx,y:ty,r:Math.atan2(ty-bez(0.97)[1],tx-bez(0.97)[0])*180/Math.PI,sz:0.8});
+  return {leaves:out,stem:`M${P[0][0]} ${P[0][1]} C${P[1][0]} ${P[1][1]} ${P[2][0]} ${P[2][1]} ${P[3][0]} ${P[3][1]}`};
+})();
+function PodiumLaurel({rank,hi,lo}){
+  const gid="rkLau"+rank;
+  const branch=(
+    <g>
+      <path d={LAUREL_LEAVES.stem} fill="none" stroke={`url(#${gid})`} strokeWidth="2.6" strokeLinecap="round"/>
+      {LAUREL_LEAVES.leaves.map((l,i)=>(
+        <path key={i} transform={`translate(${l.x.toFixed(1)} ${l.y.toFixed(1)}) rotate(${l.r.toFixed(1)}) scale(${l.sz.toFixed(2)})`}
+          d="M0 0 C6 -7 20 -7 26 0 C20 7 6 7 0 0 Z" fill={`url(#${gid})`}/>
+      ))}
+    </g>
+  );
+  return(
+    <svg className="rkPodLaurel" viewBox="0 0 200 200" aria-hidden="true" focusable="false">
+      <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={hi}/><stop offset="1" stopColor={lo}/></linearGradient></defs>
+      <g transform="translate(-18 0)">{branch}</g>
+      <g transform="translate(218 0) scale(-1 1)">{branch}</g>
+    </svg>
+  );
+}
 const PODIUM_TONE={
-  1:{rgb:"250,204,21",ink:"#fde68a"},
-  2:{rgb:"203,213,225",ink:"#e2e8f0"},
-  3:{rgb:"217,119,6",ink:"#fbbf77"},
+  1:{rgb:"250,204,21",ink:"#fde68a",hi:"#fde68a",lo:"#d9930d"},
+  2:{rgb:"203,213,225",ink:"#e2e8f0",hi:"#f8fafc",lo:"#8794a8"},
+  3:{rgb:"217,119,6",ink:"#fbbf77",hi:"#fcd9a8",lo:"#b4620f"},
 };
 function RankPodium({items,onPick,meKey,highlightKey,meRef,hiRef,meFlash}){
   const order=[items[1],items[0],items[2]].filter(Boolean); // 2.º · 1.º · 3.º
@@ -2458,7 +2492,10 @@ function RankPodium({items,onPick,meKey,highlightKey,meRef,hiRef,meFlash}){
             onClick={()=>onPick(p.key)} onKeyDown={e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); onPick(p.key); } }}
             style={{"--pod":t.rgb}}>
             <span className="rkPodName" title={p.name}><span className="rkPodNameTx">{p.name}</span>{me&&<span className="rkPodYou">Tu</span>}</span>
-            <span className="rkPodBall" aria-label={`${rank}.º lugar`}><span className="rkPodBallIn">{rank}</span></span>
+            <span className="rkPodBallWrap">
+              <PodiumLaurel rank={rank} hi={PODIUM_TONE[rank].hi} lo={PODIUM_TONE[rank].lo}/>
+              <span className="rkPodBall" aria-label={`${rank}.º lugar`}><span className="rkPodBallIn">{rank}</span></span>
+            </span>
             <span className="rkPodBase"><i className="rkPodTop" aria-hidden="true"/><span className="rkPodIn">
             <span className="rkPodVal" style={{color:(val??0)>=0?"#4ade80":"#f87171"}}>{val==null?"—":<Rolling text={pct(val)}/>}</span>
             <span className="rkPodDay" style={{color:day==null?"#64748b":day>=0?"#4ade80":"#f87171"}}>
@@ -5357,10 +5394,14 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
         .rkPod1 .rkPodVal{font-size:clamp(18px,5vw,28px)}
         .rkPodDay{margin-top:2px;font-variant-numeric:tabular-nums;font-size:clamp(10.5px,2.7vw,12.5px);font-weight:600}
         .rkPodDay em{font-style:normal;font-weight:600;color:#94a3b8;margin-left:2px}
-        .rkPodBall{position:relative;z-index:2;margin:clamp(12px,2.4vw,20px) 0 calc(clamp(34px,7vw,52px) / -2.4);width:clamp(34px,7vw,52px);aspect-ratio:1;border-radius:50%;display:flex;align-items:center;justify-content:center;
+        .rkPodBallWrap{position:relative;display:flex;justify-content:center;margin:clamp(24px,4vw,36px) 0 calc(clamp(34px,7vw,52px) / -2.4)}
+        .rkPod1 .rkPodBallWrap{margin-top:clamp(34px,5.6vw,50px);margin-bottom:calc(clamp(42px,9vw,64px) / -2.4)}
+        .rkPodLaurel{position:absolute;left:50%;top:50%;width:calc(clamp(34px,7vw,52px) * 1.9);height:calc(clamp(34px,7vw,52px) * 1.9);overflow:visible;transform:translate(-50%,-69%);clip-path:inset(-15% -15% 17% -15%);pointer-events:none;z-index:0;filter:drop-shadow(0 3px 5px rgba(0,0,0,0.4)) drop-shadow(0 0 8px rgba(var(--pod),0.3))}
+        .rkPod1 .rkPodLaurel{width:calc(clamp(42px,9vw,64px) * 1.9);height:calc(clamp(42px,9vw,64px) * 1.9)}
+        .rkPodBall{position:relative;z-index:2;margin:0;width:clamp(34px,7vw,52px);aspect-ratio:1;border-radius:50%;display:flex;align-items:center;justify-content:center;
           background:radial-gradient(circle at 32% 26%,#fff 0%,rgba(var(--pod),1) 28%,rgba(var(--pod),0.78) 62%,rgba(0,0,0,0.55) 100%);
           box-shadow:0 10px 12px -2px rgba(0,0,0,0.45),0 0 14px rgba(var(--pod),0.35),inset 0 -4px 8px rgba(0,0,0,0.35),inset 0 2px 3px rgba(255,255,255,0.7)}
-        .rkPod1 .rkPodBall{width:clamp(42px,9vw,64px);margin-bottom:calc(clamp(42px,9vw,64px) / -2.4)}
+        .rkPod1 .rkPodBall{width:clamp(42px,9vw,64px)}
         .rkPodBallIn{width:56%;aspect-ratio:1;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:clamp(13px,3vw,20px);color:#1e293b;
           background:radial-gradient(circle at 40% 30%,#fff,#e2e8f0 70%,#cbd5e1);box-shadow:inset 0 1px 3px rgba(0,0,0,0.3)}
         .rkPod1 .rkPodBallIn{background:radial-gradient(circle at 40% 30%,#fff7d6,#fde68a 70%,#f59e0b);color:#451a03;font-size:clamp(16px,3.8vw,26px)}
