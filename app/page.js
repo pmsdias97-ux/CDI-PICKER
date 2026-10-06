@@ -6237,37 +6237,68 @@ function GameStandings({standings,pf}){
 // reais (StockLogo → img.logo.dev, com fallback Monograma) e mostra os lugares Geral/Mensal/Semanal.
 function PortfolioShareCard({cardRef,name,total,stocks,ranks}){
   const pos=total>=0;
-  const rankItems=[
-    ranks?.geral!=null&&{label:"Geral",v:ranks.geral},
-    ranks?.month!=null&&{label:"Mensal",v:ranks.month},
-    ranks?.week!=null&&{label:"Semanal",v:ranks.week},
+  const A=pos?{rgb:"52,211,153",c:"#34d399"}:{rgb:"251,113,133",c:"#fb7185"}; // verde / vermelho do resultado
+  const list=[...(stocks||[])].sort((a,b)=>b.ret-a.ret);
+  const maxAbs=Math.max(0.0001,...list.map(s=>Math.abs(s.ret)));
+  const nPos=list.filter(s=>rSign(s.ret)>0).length, nNeg=list.filter(s=>rSign(s.ret)<0).length;
+  const tiles=[
+    ranks?.geral!=null&&{label:"Geral",v:ranks.geral,c:"#60a5fa",bg:"#13264d",bd:"rgba(96,165,250,0.45)"},
+    ranks?.month!=null&&{label:"Mensal",v:ranks.month,c:"#a78bfa",bg:"#231d4a",bd:"rgba(167,139,250,0.45)"},
+    ranks?.week!=null&&{label:"Semanal",v:ranks.week,c:"#2dd4bf",bg:"#0f3040",bd:"rgba(45,212,191,0.45)"},
   ].filter(Boolean);
+  const date=new Date().toLocaleDateString("pt-PT",{day:"numeric",month:"short",year:"numeric"});
   return(
-    <div ref={cardRef} style={{width:420,boxSizing:"border-box",padding:28,fontFamily:"var(--font-app), system-ui, sans-serif",
-      background:"linear-gradient(180deg,#0f1e3d 0%,#0a1428 100%)",color:"#e2e8f0",borderRadius:20,border:"1px solid rgba(255,255,255,0.10)"}}>
-      <div style={{textAlign:"center"}}>
-        <div style={{fontSize:23,fontWeight:800,letterSpacing:"-0.4px"}}>{name}</div>
-        <div style={{fontSize:44,fontWeight:800,letterSpacing:"-1px",lineHeight:1.1,marginTop:8,color:pos?"#34d399":"#fb7185"}}>{pct(total)}</div>
-        {rankItems.length>0&&(
-          <div style={{display:"flex",justifyContent:"center",alignItems:"center",marginTop:12}}>
-            {rankItems.map((r,i)=>(
-              <span key={r.label} style={{fontSize:13,color:"#94a3b8",padding:"0 13px",borderLeft:i>0?"1px solid rgba(255,255,255,0.14)":"none"}}>
-                {r.label} <strong style={{color:"#e2e8f0",fontWeight:800}}>{r.v}º</strong>
-              </span>
-            ))}
-          </div>
-        )}
+    <div ref={cardRef} style={{width:420,boxSizing:"border-box",padding:"26px 24px 24px",fontFamily:"var(--font-app), system-ui, sans-serif",
+      background:`radial-gradient(420px 260px at 50% -40px, rgba(${A.rgb},0.20) 0%, rgba(${A.rgb},0) 70%), linear-gradient(180deg,#0f1e3d 0%,#0a1428 100%)`,
+      color:"#e2e8f0",borderRadius:22,border:`1px solid rgba(${A.rgb},0.28)`}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",fontSize:11,fontWeight:800,letterSpacing:"2.4px",textTransform:"uppercase",color:"#64748b"}}>
+        <span style={{display:"inline-flex",alignItems:"center",gap:7}}><span style={{width:7,height:7,borderRadius:"50%",background:A.c,display:"inline-block"}}/>CDI Picker</span>
+        <span style={{letterSpacing:"0.4px",textTransform:"none",fontWeight:600}}>{date}</span>
       </div>
-      <div style={{marginTop:22,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-        {(stocks||[]).map((s,i)=>(
-          <div key={i} style={{display:"flex",alignItems:"center",gap:9,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:11,padding:"9px 11px"}}>
-            <StockLogo ticker={s.ticker} size={24}/>
-            <span style={{fontWeight:800,fontSize:13.5,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.ticker}{s.side==="short"?" ↓":""}</span>
-            <span style={{fontFamily:"ui-monospace,monospace",fontWeight:800,fontSize:12.5,color:(s.ret>=0)?"#34d399":"#fb7185"}}>{pct(s.ret)}</span>
-          </div>
-        ))}
+      <div style={{textAlign:"center",marginTop:22}}>
+        <div style={{fontSize:24,fontWeight:800,letterSpacing:"-0.4px"}}>{name}</div>
+        <div style={{fontSize:11,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#64748b",marginTop:14}}>Rentabilidade total</div>
+        <div style={{display:"inline-flex",alignItems:"center",gap:10,marginTop:4,color:A.c,fontSize:56,fontWeight:800,letterSpacing:"-1.5px",lineHeight:1.05}}>
+          <Tri up={pos} size={34} color={A.c}/>{pct(Math.abs(total))}
+        </div>
       </div>
-      <div style={{fontSize:12,letterSpacing:"3px",color:"#64748b",fontWeight:800,textTransform:"uppercase",textAlign:"center",marginTop:20}}>CDI Picker</div>
+      {list.length>0&&(
+        <div style={{marginTop:18}}>
+          <div style={{display:"flex",gap:4}}>
+            {list.map((s,i)=>{ const d=rSign(s.ret); return <span key={i} style={{flex:1,height:6,borderRadius:3,background:d>0?"#34d399":d<0?"#fb7185":"#64748b"}}/>; })}
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:7,fontSize:12,fontWeight:700}}>
+            <span style={{color:"#34d399"}}>{nPos} positivas</span><span style={{color:"#fb7185"}}>{nNeg} negativas</span>
+          </div>
+        </div>
+      )}
+      {tiles.length>0&&(
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${tiles.length},1fr)`,gap:9,marginTop:18}}>
+          {tiles.map(t=>(
+            <div key={t.label} style={{background:t.bg,border:`1px solid ${t.bd}`,borderRadius:14,padding:"11px 6px 12px",textAlign:"center"}}>
+              <div style={{fontSize:10.5,fontWeight:800,letterSpacing:"1.6px",textTransform:"uppercase",color:t.c}}>{t.label}</div>
+              <div style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px",lineHeight:1.1,marginTop:4,color:"#f8fafc"}}>{t.v}º</div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{marginTop:18,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        {list.map((s,i)=>{
+          const up=s.ret>=0, w=Math.max(8,Math.min(100,Math.abs(s.ret)/maxAbs*100));
+          return(
+            <div key={i} style={{background:"#101c36",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"9px 11px 10px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <StockLogo ticker={s.ticker} size={22}/>
+                <span style={{fontWeight:800,fontSize:13.5,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.ticker}{s.side==="short"?" ↓":""}</span>
+                <span style={{fontWeight:800,fontSize:13,color:up?"#34d399":"#fb7185"}}>{pct(s.ret)}</span>
+              </div>
+              <div style={{height:4,borderRadius:2,background:"rgba(255,255,255,0.07)",marginTop:8,overflow:"hidden"}}>
+                <div style={{width:`${w}%`,height:"100%",borderRadius:2,background:up?"#34d399":"#fb7185"}}/>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -6293,7 +6324,7 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
         if(!blob){ setShareMsg("Falha ao gerar a imagem."); return; }
         setShareBlob(blob);
         const rd=new FileReader(); rd.onload=()=>{ if(!cancel) setShareUrl(String(rd.result||"")); }; rd.readAsDataURL(blob);
-      }catch{ if(!cancel) setShareMsg("Falha ao gerar a imagem."); }
+      }catch(e){ console.error("Partilha: falha ao gerar a imagem",e); if(!cancel) setShareMsg("Falha ao gerar a imagem."); }
     },250);
     return()=>{ cancel=true; clearTimeout(t); };
   },[shareOpen]);
