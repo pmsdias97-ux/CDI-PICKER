@@ -2030,6 +2030,7 @@ export default function App(){
     };
   },[detailPf,ranking,monthBase,weekBase,livePrices,winners,weekOpens,weekCloses]);
 
+  if(loading&&page==="ranking") return <RankingSkeleton/>;
   if(loading) return(
     <div style={{minHeight:"100vh",
       background:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",
@@ -2437,6 +2438,67 @@ const RANK_BADGE={
   2:{background:"linear-gradient(145deg,#f8fafc,#94a3b8)",color:"#1e293b",boxShadow:"0 0 12px rgba(203,213,225,0.5), 0 3px 10px rgba(148,163,184,0.3)"},
   3:{background:"linear-gradient(145deg,#fcd9a8,#b45309)",color:"#2e1800",boxShadow:"0 0 12px rgba(217,119,6,0.5), 0 3px 10px rgba(180,83,9,0.3)"},
 };
+
+// Pódio do ranking: Top 3 em 2-1-3, o 1.º maior e elevado. Substitui as 3 primeiras linhas da lista.
+const PODIUM_TONE={
+  1:{rgb:"250,204,21",ink:"#fde68a"},
+  2:{rgb:"203,213,225",ink:"#e2e8f0"},
+  3:{rgb:"217,119,6",ink:"#fbbf77"},
+};
+function RankPodium({items,onPick,meKey,highlightKey,meRef,hiRef,meFlash}){
+  const order=[items[1],items[0],items[2]].filter(Boolean); // 2.º · 1.º · 3.º
+  return(
+    <div className="rkPodium" role="list" aria-label="Pódio">
+      {order.map(({p,rank,val,day})=>{
+        const t=PODIUM_TONE[rank], me=p.key===meKey;
+        return(
+          <div key={p.key} role="listitem" tabIndex={0}
+            ref={(me||p.key===highlightKey)?((el)=>{ if(me) meRef.current=el; if(p.key===highlightKey) hiRef.current=el; }):null}
+            className={"rkPodCol rkPod"+rank+((me&&meFlash)||p.key===highlightKey?" rkHiFlash":"")}
+            onClick={()=>onPick(p.key)} onKeyDown={e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); onPick(p.key); } }}
+            style={{"--pod":t.rgb}}>
+            <span className="rkPodName" title={p.name}><span className="rkPodNameTx">{p.name}</span>{me&&<span className="rkPodYou">Tu</span>}</span>
+            <span className="rkPodBall" aria-label={`${rank}.º lugar`}><span className="rkPodBallIn">{rank}</span></span>
+            <span className="rkPodBase"><i className="rkPodTop" aria-hidden="true"/><span className="rkPodIn">
+            <span className="rkPodVal" style={{color:(val??0)>=0?"#4ade80":"#f87171"}}>{val==null?"—":<Rolling text={pct(val)}/>}</span>
+            <span className="rkPodDay" style={{color:day==null?"#64748b":day>=0?"#4ade80":"#f87171"}}>
+              {day==null?"—":<>{day>=0?"▲":"▼"} <Rolling text={pct(Math.abs(day)).replace("+","")}/> <em>hoje</em></>}
+            </span>
+            </span></span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+// Skeleton da página de ranking (substitui o splash enquanto os dados chegam): mesma forma final.
+function RankingSkeleton(){
+  return(
+    <div style={{minHeight:"100vh",background:"linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#070d1c 100%)",backgroundAttachment:"fixed",padding:"84px 16px 40px",fontFamily:"var(--font-app), system-ui, sans-serif"}} aria-busy="true" aria-label="A carregar o ranking">
+      <div style={{maxWidth:980,margin:"0 auto"}}>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12,marginBottom:22}}>
+          <Skeleton w={220} h={26} r={8}/><Skeleton w={300} h={12} r={6}/>
+        </div>
+        <Skeleton w="100%" h={220} r={16} style={{display:"block",marginBottom:18}}/>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,alignItems:"end",marginBottom:18}}>
+          <Skeleton w="100%" h={128} r={16} style={{display:"block"}}/>
+          <Skeleton w="100%" h={156} r={16} style={{display:"block"}}/>
+          <Skeleton w="100%" h={118} r={16} style={{display:"block"}}/>
+        </div>
+        <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16,overflow:"hidden"}}>
+          {Array.from({length:9}).map((_,i)=>(
+            <div key={i} style={{display:"grid",gridTemplateColumns:"28px minmax(0,1fr) 84px 64px",gap:12,alignItems:"center",padding:"14px 16px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+              <Skeleton w={20} h={14} r={5}/>
+              <Skeleton w={`${48+((i*17)%34)}%`} h={14} r={6}/>
+              <Skeleton w="100%" h={20} r={6}/>
+              <Skeleton w="100%" h={14} r={6}/>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 function WinnerCard({p,rank,livePrices,series,onClick}){
   const up=p.total>=0;
   const col=up?"#34d399":"#fb7185";
@@ -4455,16 +4517,28 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
     const posCount=(searchable&&pq)?ranked.filter(matchesPos).length:0; // quantos membros têm a posição
     // Demos (searchable=false): tudo, como antes. Oficiais: filtra (nome + posição) → ordena (coluna)
     // → fatia (render progressivo, só quando não há pesquisa nenhuma → a pesquisa vê a lista toda).
-    let shown=ranked;
+    let shown=ranked, showPodium=false;
     if(searchable){
       if(q) shown=shown.filter(p=>norm(p.name).includes(q));
       if(pq) shown=shown.filter(matchesPos);
       const valOf=perActive?(sortKey==="day"?pfDayReturn:valForPeriod):(sortKey==="day"?pfDayReturn:(p=>p.total));
       const sign=sortDir==="asc"?1:-1;
       shown=[...shown].sort((a,b)=>{ const va=valOf(a),vb=valOf(b); if(va==null&&vb==null)return 0; if(va==null)return 1; if(vb==null)return -1; return (va-vb)*sign; });
+      // Pódio: só na ordem por defeito (rentabilidade ↓) e sem pesquisa → o Top 3 sai da lista (aparece no pódio).
+      if(!preStartWk&&!q&&!pq&&sortKey==="total"&&sortDir==="desc"&&ranked.length>=3){
+        showPodium=true;
+        shown=shown.filter(x=>x._rank>3);
+      }
       if(!q&&!pq) shown=shown.slice(0,shownRows);
     }
+    const podiumEl=showPodium?(
+      <RankPodium meKey={myRow?myRow.key:null} highlightKey={highlightKey} meRef={meRowRef} hiRef={highlightRef} meFlash={meFlash}
+        onPick={k=>cmp?toggleSel(k):onSelect(k)}
+        items={ranked.slice(0,3).map(p=>({p,rank:p._rank,val:perActive?valForPeriod(p):p.total,day:pfDayReturn(p)}))}/>
+    ):null;
     return(
+    <>
+    {podiumEl}
     <div className={cvOff?"rkNoCV":undefined} style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"clip"}}>
       <div className="rkRow rkStickyHead" style={{padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.10)",
         fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,alignItems:"center"}}>
@@ -4533,14 +4607,20 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
           {bg:"rgba(245,158,11,0.11)",hov:"rgba(245,158,11,0.17)",bar:"#d97706"},
         ][i]:null;
         const inTop10=!preStartWk&&i>=3&&i<10;          // 4º–10º (o Top 3 são as medalhas)
-        const barColor=rr?rr.bar:(inTop10?"#22c55e":null);
-        // Top 3 e 4–10: só a barra em repouso (sem fundo); o tom verde aparece só no hover.
-        const baseBg=picked?"rgba(59,130,246,0.16)":me?"rgba(34,197,94,0.04)":"transparent";
-        const hoverBg=picked?baseBg:rr?rr.hov:inTop10?"rgba(34,197,94,0.10)":me?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.05)";
+        // A TUA linha: se não estiver já colorida por posição (Top 3/Top 10), ganha a sua própria
+        // barra + fundo no acento do período — antes era só 4% de verde, quase invisível a meio de
+        // 124 linhas. Posição/seleção continuam a ter prioridade visual sobre "é a tua linha".
+        const barColor=rr?rr.bar:inTop10?"#22c55e":me?thA:null;
+        // "é a tua linha" fora do Top 10 ganha tratamento mais forte que as outras: barra mais grossa
+        // COM brilho (não só cor) + fundo mais vivo — para ser impossível de perder a meio de 124 linhas.
+        const meUnranked=me&&!rr&&!inTop10;
+        const baseBg=picked?"rgba(59,130,246,0.16)":meUnranked?`rgba(${thRGB},0.13)`:me?`rgba(${thRGB},0.09)`:"transparent";
+        const hoverBg=picked?baseBg:rr?rr.hov:inTop10?"rgba(34,197,94,0.10)":meUnranked?`rgba(${thRGB},0.19)`:"rgba(255,255,255,0.05)";
+        const meShadow=meUnranked?`inset 5px 0 0 ${thA}, inset 0 0 22px rgba(${thRGB},0.16), 0 0 14px rgba(${thRGB},0.14)`:null;
         return(
           <div key={p.key} ref={(me||p.key===highlightKey)?((el)=>{ if(me) meRowRef.current=el; if(p.key===highlightKey) highlightRef.current=el; }):null} className={"rkRow rkDataRow"+((p.key===highlightKey||(me&&meFlash))?" rkHiFlash":"")} onClick={()=>cmp?toggleSel(p.key):onSelect(p.key)}
             style={{padding:"14px 14px",borderBottom:"1px solid rgba(255,255,255,0.10)",cursor:"pointer",
-              background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":barColor?`inset 3px 0 0 ${barColor}`:"none",transition:"background 0.15s"}}
+              background:baseBg,boxShadow:picked?"inset 3px 0 0 #3b82f6":meShadow||(barColor?`inset 3px 0 0 ${barColor}`:"none"),transition:"background 0.15s"}}
             onMouseEnter={e=>{ if(!picked) e.currentTarget.style.background=hoverBg; }}
             onMouseLeave={e=>{ e.currentTarget.style.background=baseBg; }}>
             <span style={{display:"flex",alignItems:"center",justifyContent:"flex-end"}}>
@@ -4551,7 +4631,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
             <span style={{fontWeight:600,fontSize:"clamp(11.5px,3.1vw,15px)",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
               <span style={{minWidth:0,overflowWrap:"normal",wordBreak:"normal",lineHeight:1.2}}>{p.name}</span>
               {winners&&winners[p.key]&&<span style={{display:"inline-flex",alignItems:"center",gap:4,flexShrink:0}}><WinnerMedals w={winners[p.key]} size={20}/></span>}
-              {me&&<span style={{flexShrink:0,fontSize:10,background:"rgba(34,197,94,0.15)",color:"#4ade80",borderRadius:999,padding:"2px 8px",fontWeight:700}}>Tu</span>}
+              {me&&<span style={{flexShrink:0,fontSize:10,background:`rgba(${thRGB},0.22)`,color:thL,border:`1px solid rgba(${thRGB},0.55)`,boxShadow:`0 0 10px rgba(${thRGB},0.35)`,borderRadius:999,padding:"2px 9px",fontWeight:800,letterSpacing:".2px"}}>Tu</span>}
             </span>
             <span className="rkSpark">
               {/* Sem sparkline no pré-arranque semanal — ainda não há histórico da semana.
@@ -4585,6 +4665,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
         <div style={{padding:"28px 20px",textAlign:"center",color:"#64748b",fontSize:13}}>{pq?<>Nenhum membro tem “{posQuery.trim()}”.</>:<>Nenhum membro encontrado para “{query.trim()}”.</>}</div>
       )}
     </div>
+    </>
     );
   };
   // Lista de inscritos (em espera): sem classificação; só o próprio dono vê o seu.
@@ -4745,13 +4826,23 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
     </div>
   ):null;
   const myM=myRow?metricOf(myRow):null;
-  const wYou=myRow?railCard(
-    <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
-      <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:22,height:22,borderRadius:"50%",background:`rgba(${thRGB},0.12)`,border:`1px solid rgba(${thRGB},0.35)`}}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={thA} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg>
-      </span>
-      A tua posição
-    </span>,(
+  // "A tua posição" é o cartão mais pessoal da página — merece destacar-se dos restantes (hoje todos
+  // partilham o mesmo fundo plano). Reaproveita a MESMA receita de gradiente+brilho do cartão de campeão
+  // (fonte de consistência do sistema), tingida no acento do período ativo.
+  const youFadeRGB=period==="month"?"17,12,36":period==="week"?"6,25,28":"8,14,28";
+  const wYou=myRow?(
+    <GlowBehind color={`rgba(${thRGB},0.55)`} mid={`rgba(${thRGB},0.18)`}>
+    <div style={{position:"relative",overflow:"hidden",background:`linear-gradient(165deg,rgba(${thRGB},0.24),rgba(${youFadeRGB},0.94) 68%)`,
+      border:`1px solid rgba(${thRGB},0.48)`,borderRadius:16,padding:"13px 16px",
+      boxShadow:`0 14px 36px rgba(0,0,0,0.38), 0 0 36px rgba(${thRGB},0.20), inset 0 1px 0 rgba(${thRGB},0.22)`}}>
+      <div style={{fontSize:10.5,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:800,marginBottom:9,display:"flex",alignItems:"center",gap:6}}>
+        <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
+          <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:22,height:22,borderRadius:"50%",background:`rgba(${thRGB},0.16)`,border:`1px solid rgba(${thRGB},0.42)`,boxShadow:`0 0 10px rgba(${thRGB},0.25)`}}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={thA} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg>
+          </span>
+          A tua posição
+        </span>
+      </div>
     <div style={{position:"relative"}}>
       <div aria-hidden="true" style={{position:"absolute",top:-11,right:-14,bottom:-11,left:-14,overflow:"hidden",borderRadius:14,pointerEvents:"none"}}>
         <svg viewBox="0 0 220 150" fill="none" style={{position:"absolute",right:-4,top:10,width:"60%",opacity:.9,
@@ -4770,7 +4861,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
       </div>
     <div onClick={preStartWk?undefined:scrollToMe} title={preStartWk?undefined:"Ver a minha posição no ranking"} style={{position:"relative",zIndex:1,cursor:preStartWk?"default":"pointer"}}>
       <div style={{display:"flex",alignItems:"baseline",gap:7,marginBottom:2}}>
-        <span style={{fontSize:44,fontWeight:800,letterSpacing:"-1.5px",lineHeight:1.05,color:"#f1f5f9"}}>{preStartWk?"—":myRank}</span>
+        <span style={{fontSize:52,fontWeight:800,letterSpacing:"-2px",lineHeight:1.05,color:"#f8fafc",textShadow:`0 0 24px rgba(${thRGB},0.55)`}}>{preStartWk?"—":myRank}</span>
         <span style={{fontSize:17,color:"#475569",fontWeight:700}}>/</span>
         <span style={{fontSize:17,color:thA,fontWeight:800}}>{stats?stats.n:officials.length}</span>
       </div>
@@ -4805,7 +4896,9 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
             </>}
     </div>
     </div>
-  )):null;
+    </div>
+    </GlowBehind>
+  ):null;
   const wHi=(!preStartWk&&stats)?railCard("Destaques",(
     <div style={{marginTop:-3}}>
       {hiRow("Líder",stats.leader,mono(pct(stats.leaderM),stats.leaderM>=0),true)}
@@ -5248,6 +5341,44 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
         /* Coluna do nome = largura FIXA do nome mais comprido (--rk-name-w, medido em runtime) →
            todas as linhas alinhadas e as sparklines (1fr) começam todas no mesmo sítio, colado ao
            maior nome. Fallback 190px enquanto não mede. */
+        .rkPodium{display:grid;grid-template-columns:1fr 1.18fr 1fr;gap:clamp(6px,2vw,22px);align-items:end;margin:6px 0 -48px;padding:0 clamp(0px,1.5vw,16px)}
+        .rkPodium + div{position:relative;z-index:2}  /* a tabela sobrepõe-se à base desvanecida do pódio */
+        .rkPodCol{--h:92px;position:relative;display:flex;flex-direction:column;align-items:center;min-width:0;cursor:pointer;outline:none;text-align:center;transition:transform .2s ease}
+        .rkPod1{--h:196px}.rkPod2{--h:160px}.rkPod3{--h:140px}
+        .rkPodCol:hover,.rkPodCol:focus-visible{transform:translateY(-4px)}
+        .rkPodCol:focus-visible .rkPodBase{outline:2px solid rgba(var(--pod),0.8);outline-offset:4px;border-radius:8px}
+        .rkPodName{margin-bottom:2px;display:flex;align-items:center;justify-content:center;gap:6px;max-width:100%;font-weight:800;font-size:clamp(12.5px,3.2vw,16px);color:#f1f5f9}
+        .rkPodNameTx{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+        .rkPod1 .rkPodName{font-size:clamp(14px,3.6vw,19px)}
+        .rkPodYou{flex-shrink:0;font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;background:rgba(var(--pod),0.25);border:1px solid rgba(var(--pod),0.6);color:#fff}
+        .rkPodIn{position:absolute;z-index:1;left:0;right:0;top:0;display:flex;flex-direction:column;align-items:center;padding:calc(clamp(34px,7vw,52px) / 2.4 + 10px) 6px 0}
+        .rkPod1 .rkPodIn{padding-top:calc(clamp(42px,9vw,64px) / 2.4 + 12px)}
+        .rkPodVal{margin-top:3px;font-variant-numeric:tabular-nums;font-weight:800;letter-spacing:-.2px;font-size:clamp(15px,4.2vw,22px)}
+        .rkPod1 .rkPodVal{font-size:clamp(18px,5vw,28px)}
+        .rkPodDay{margin-top:2px;font-variant-numeric:tabular-nums;font-size:clamp(10.5px,2.7vw,12.5px);font-weight:600}
+        .rkPodDay em{font-style:normal;font-weight:600;color:#94a3b8;margin-left:2px}
+        .rkPodBall{position:relative;z-index:2;margin:clamp(12px,2.4vw,20px) 0 calc(clamp(34px,7vw,52px) / -2.4);width:clamp(34px,7vw,52px);aspect-ratio:1;border-radius:50%;display:flex;align-items:center;justify-content:center;
+          background:radial-gradient(circle at 32% 26%,#fff 0%,rgba(var(--pod),1) 28%,rgba(var(--pod),0.78) 62%,rgba(0,0,0,0.55) 100%);
+          box-shadow:0 10px 12px -2px rgba(0,0,0,0.45),0 0 14px rgba(var(--pod),0.35),inset 0 -4px 8px rgba(0,0,0,0.35),inset 0 2px 3px rgba(255,255,255,0.7)}
+        .rkPod1 .rkPodBall{width:clamp(42px,9vw,64px);margin-bottom:calc(clamp(42px,9vw,64px) / -2.4)}
+        .rkPodBallIn{width:56%;aspect-ratio:1;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:clamp(13px,3vw,20px);color:#1e293b;
+          background:radial-gradient(circle at 40% 30%,#fff,#e2e8f0 70%,#cbd5e1);box-shadow:inset 0 1px 3px rgba(0,0,0,0.3)}
+        .rkPod1 .rkPodBallIn{background:radial-gradient(circle at 40% 30%,#fff7d6,#fde68a 70%,#f59e0b);color:#451a03;font-size:clamp(16px,3.8vw,26px)}
+        .rkPodBase{position:relative;width:min(100%,260px);height:var(--h);margin-top:0}
+        .rkPodBase::before{content:"";position:absolute;inset:0;
+          background:linear-gradient(90deg,rgba(var(--pod),0.08) 0%,rgba(var(--pod),0.36) 26%,rgba(var(--pod),0.20) 62%,rgba(var(--pod),0.05) 100%);
+          -webkit-mask-image:linear-gradient(180deg,#000 0%,#000 55%,transparent 100%);mask-image:linear-gradient(180deg,#000 0%,#000 55%,transparent 100%);
+          border-left:1px solid rgba(var(--pod),0.28);border-right:1px solid rgba(var(--pod),0.28)}
+        .rkPod1{--hi:#fff1a8;--lo:#c8921a}.rkPod2{--hi:#f1f5f9;--lo:#7b8799}.rkPod3{--hi:#fbd29a;--lo:#a35c14}
+        /* Topo do cilindro: ELIPSE OPACA (sem transparência → não deixa ver a aresta do corpo por baixo = sem linha parasita) */
+        .rkPodTop{position:absolute;z-index:1;left:0;right:0;top:calc(var(--ell,15px) / -1);height:calc(var(--ell,15px) * 2);border-radius:50%;
+          background:radial-gradient(ellipse at 50% 38%,var(--hi) 0%,var(--lo) 100%);
+          box-shadow:0 0 18px rgba(var(--pod),0.35),inset 0 -2px 5px rgba(0,0,0,0.28),inset 0 1px 1px rgba(255,255,255,0.7)}
+        .rkPodTop::after{content:"";position:absolute;inset:18% 7%;border-radius:50%;
+          background:radial-gradient(ellipse at 50% 40%,rgba(255,255,255,0.38),rgba(255,255,255,0) 70%);box-shadow:inset 0 1px 2px rgba(0,0,0,0.18)}
+        .rkPod1 .rkPodBase{--ell:19px}
+        @media(max-width:560px){.rkPodBase{--ell:11px}.rkPod1 .rkPodBase{--ell:14px}.rkPod1{--h:150px}.rkPod2{--h:122px}.rkPod3{--h:108px}.rkPodium{margin-bottom:-40px}}
+        @media(prefers-reduced-motion:reduce){.rkPodCol{transition:none}}
         .rkRow{display:grid;grid-template-columns:28px calc(var(--rk-name-w,190px) + 32px) 1fr 72px 72px 56px 150px;gap:8px}
         /* NOTA: já NÃO usamos content-visibility:auto nas linhas. Com sparkline em SVG leve (não Recharts)
            as ~124 linhas pintam bem de uma vez; o content-visibility fazia as linhas aparecerem EM BRANCO
@@ -5439,7 +5570,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
       </div>{/* /rkHeadCard */}
       {ranking.length>0&&(<>
         {/* Season Race + (demos) + pílula do vencedor — a toda a largura, por cima da grelha */}
-        <div style={{marginBottom:16}} ref={raceWrapRef}>
+        <div style={{marginBottom:10}} ref={raceWrapRef}>
           {/* Semanal pré-arranque → grelha de partida (frameStart); ao vivo/mês/geral → gráfico normal.
               Quando 2ª feira o cron captura os baselines, hasWeek fica true e entra o gráfico ao vivo. */}
           <GlowBehind><SeasonRace ranking={ranking} preLaunch={preLaunch} myNorm={myNorm} spy={spy} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""}
@@ -5519,7 +5650,7 @@ function EvoTooltip({active,payload,label,ownLabel="A tua"}){
     </div>
   );
 }
-function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarted,gameStartDate,spy,spyInitialPrice,mine=true,ownerName}){
+function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarted,gameStartDate,spy,spyInitialPrice,mine=true,ownerName,height=210}){
   // No perfil de OUTRO membro, o tooltip/legenda mostram o nome dele (não "A tua").
   const ownLabel=mine?"A tua":(ownerName||"Membro");
   const legendLabel=mine?"A tua rentabilidade":(ownerName||"Rentabilidade");
@@ -5578,13 +5709,13 @@ function EvolutionChart({portfolioId,currentReturn,submittedAt,competitionStarte
   return(
     <div style={{width:"100%"}}>
       {!mounted?(
-        <div style={{height:210}}/>
+        <div style={{height}}/>
       ):!enough?(
         <div style={{height:120,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:"#4b5563",textAlign:"center"}}>
           Começa a preencher-se nos próximos dias.
         </div>
       ):(
-        <ResponsiveContainer width="100%" height={210}>
+        <ResponsiveContainer width="100%" height={height}>
           <LineChart data={data} margin={{top:8,right:14,left:-6,bottom:0}}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.12)" vertical={false}/>
             <XAxis dataKey="t" tickFormatter={raceTick} ticks={dayTicks} tick={{fill:"#94a3b8",fontSize:11}} minTickGap={28} axisLine={false} tickLine={false}/>
@@ -6031,7 +6162,7 @@ const BADGE_ICONS={
   "green-streak":<><path d="M12 2s5 4 5 9a5 5 0 0 1-10 0c0-2 1-3.5 1.5-4.5C9 8 11 6 12 2z"/></>,
 };
 // Badges de conquistas de um portefólio (gamificação leve). Vive dentro da box "Overview".
-function AchievementBadges({pf,rank}){
+function AchievementBadges({pf,rank,wins,card}){
   const [badges,setBadges]=useState(null);
   useEffect(()=>{
     let cancel=false;
@@ -6049,8 +6180,9 @@ function AchievementBadges({pf,rank}){
     return()=>{cancel=true};
   },[pf?.name,pf?.normName,rank]);
 
-  // Enquanto carrega ou sem badges → nada (não deixa separador/etiqueta vazios na box).
-  if(!badges||!badges.length) return null;
+  // Enquanto carrega ou sem conquistas → nada (não deixa o cartão vazio).
+  const hasWins=!!(wins&&wins.length);
+  if(!badges||(!badges.length&&!hasWins)) return null;
 
   const colors={
     "beat-spy":{bg:"rgba(245,158,11,0.15)",border:"rgba(245,158,11,0.35)",color:"#facc15"},
@@ -6064,15 +6196,30 @@ function AchievementBadges({pf,rank}){
     "gain-20":{bg:"rgba(16,185,129,0.18)",border:"rgba(16,185,129,0.4)",color:"#34d399"},
     "green-streak":{bg:"rgba(251,146,60,0.16)",border:"rgba(251,146,60,0.38)",color:"#fb923c"},
   };
+  const tiles=[
+    ...(hasWins?[{id:"weekly-wins",label:`Vencedor ${wins.length>1?`(${wins.length}×)`:"semanal"}`,description:wins.join(", "),_c:{bg:"rgba(250,204,21,0.16)",border:"rgba(250,204,21,0.42)",color:"#fde047"},_emoji:"🏆"}]:[]),
+    ...badges,
+  ];
   return(
-    <div style={{marginTop:6,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.07)"}}>
-      <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center"}}>
-        {badges.map((b)=>{
-          const c=colors[b.id]||{bg:"rgba(255,255,255,0.08)",border:"rgba(255,255,255,0.18)",color:"#e2e8f0"};
+    <div style={card}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",minHeight:34,marginBottom:12}}>
+        <h3 style={{fontSize:15,fontWeight:700,margin:0,color:"#e2e8f0"}}>Conquistas</h3>
+        <span style={{fontSize:11.5,fontWeight:800,color:"#94a3b8",padding:"3px 10px",borderRadius:999,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)"}}>{tiles.length} {tiles.length===1?"desbloqueada":"desbloqueadas"}</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10}}>
+        {tiles.map((b)=>{
+          const c=b._c||colors[b.id]||{bg:"rgba(255,255,255,0.08)",border:"rgba(255,255,255,0.18)",color:"#e2e8f0"};
           return(
-            <div key={b.id} title={b.description} style={{display:"inline-flex",alignItems:"center",gap:6,background:c.bg,border:`1px solid ${c.border}`,borderRadius:999,padding:"6px 12px",fontSize:12,fontWeight:700,color:c.color,whiteSpace:"nowrap"}}>
-              <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{flexShrink:0}}>{BADGE_ICONS[b.id]||null}</svg>
-              <span>{b.label}</span>
+            <div key={b.id} title={b.description} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:14,minWidth:0,
+              background:`linear-gradient(135deg,${c.bg},rgba(255,255,255,0.02))`,border:`1px solid ${c.border}`,boxShadow:`0 0 18px ${c.bg}`}}>
+              <span style={{width:38,height:38,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+                background:c.bg,border:`1px solid ${c.border}`,color:c.color,boxShadow:`0 0 14px ${c.bg}`,fontSize:18}}>
+                {b._emoji||<svg viewBox="0 0 24 24" width={19} height={19} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{BADGE_ICONS[b.id]||null}</svg>}
+              </span>
+              <span style={{minWidth:0}}>
+                <span style={{display:"block",fontSize:13.5,fontWeight:800,color:c.color,lineHeight:1.2}}>{b.label}</span>
+                {b.description&&<span style={{display:"block",fontSize:11.5,color:"#94a3b8",marginTop:3,lineHeight:1.3}}>{b.description}</span>}
+              </span>
             </div>
           );
         })}
@@ -6080,45 +6227,11 @@ function AchievementBadges({pf,rank}){
     </div>
   );
 }
-// Cartão "Overview": posição do membro em Geral / Mensal / Semanal + badges de conquistas. standings vem do App.
+// Cartão "Conquistas": troféus/badges do membro (as posições Geral/Mensal/Semanal vivem agora no hero). standings vem do App.
 function GameStandings({standings,pf}){
-  if(!standings) return null;
+  if(!standings||!pf) return null;
   const card={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:24};
-  const posColor=(r)=> r===1?"#facc15":r===2?"#e2e8f0":r===3?"#d97706":"#94a3b8";
-  const games=[
-    {label:"Geral",   dot:"#60a5fa", sub:null,                 data:standings.geral},
-    {label:"Mensal",  dot:"#a78bfa", sub:standings.monthLabel, data:standings.mensal},
-    {label:"Semanal", dot:"#2dd4bf", sub:null,                 data:standings.semanal, isWeek:true},
-  ];
-  return(
-    <div style={card}>
-      {/* Cabeçalho com a MESMA altura do dos "Comentários" (minHeight 34) → os títulos "Overview" e
-          "Comentários" ficam alinhados na mesma linha (ambos os cartões arrancam ao mesmo Y). */}
-      <div style={{display:"flex",alignItems:"center",minHeight:34,marginBottom:6}}>
-        <h3 style={{fontSize:15,fontWeight:700,margin:0,color:"#e2e8f0"}}>Overview</h3>
-      </div>
-      {games.map((g,i)=>(
-        <div key={g.label} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 0",borderTop:i===0?"none":"1px solid rgba(255,255,255,0.07)"}}>
-          <span style={{width:8,height:8,borderRadius:"50%",background:g.dot,flexShrink:0}}/>
-          <div style={{minWidth:0,flex:1,fontSize:13.5,fontWeight:700,color:"#e2e8f0"}}>
-            {g.label}{g.sub&&<span style={{fontWeight:500,fontSize:12.5,color:"#64748b",marginLeft:7}}>{g.sub}</span>}
-          </div>
-          <div style={{display:"flex",alignItems:"baseline",gap:8,flexShrink:0}}>
-            {g.data?(<>
-              <span style={{fontSize:16,fontWeight:800,color:posColor(g.data.rank),lineHeight:1}}>{g.data.rank}º</span>
-              <span style={{fontSize:11,color:"#64748b"}}>/ {g.data.n}</span>
-              <span style={{fontFamily:"ui-monospace, monospace",fontWeight:800,fontSize:13,color:g.data.ret>=0?"#4ade80":"#f87171",minWidth:58,textAlign:"right"}}>{pct(g.data.ret)}</span>
-            </>):g.isWeek&&standings.weeklyWins.length?(
-              <span style={{fontSize:12.5,fontWeight:700,color:"#facc15"}}>🏆 {standings.weeklyWins.join(", ")}</span>
-            ):(
-              <span style={{fontSize:12.5,color:"#64748b"}}>{g.isWeek?"Arranca 2ª feira":"—"}</span>
-            )}
-          </div>
-        </div>
-      ))}
-      {pf&&<AchievementBadges pf={pf} rank={standings?.geral?.rank}/>}
-    </div>
-  );
+  return <AchievementBadges pf={pf} rank={standings?.geral?.rank} wins={standings.weeklyWins} card={card}/>;
 }
 // Cartão PARTILHÁVEL do portefólio (fundos SÓLIDOS → captura limpa com html-to-image). Usa os logótipos
 // reais (StockLogo → img.logo.dev, com fallback Monograma) e mostra os lugares Geral/Mensal/Semanal.
@@ -6227,6 +6340,8 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
     if(!Number.isFinite(raw)) return null;
     return {...s,ret:s.side==="short"?-raw:raw};
   }).filter(Boolean).sort((a,b)=>b.ret-a.ret);
+  // Maior |retorno| da coluna ativa → escala as barras de magnitude da tabela.
+  const retMaxAbs=Math.max(0.0001,...bySorted.map(s=>{ if(retMode==="day"){ const d=dc[s.ticker]; return Number.isFinite(d)?Math.abs(d):0; } return Math.abs(s.ret); }));
   const GLASS={background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)"};
   return(
     <div style={{maxWidth:1320,margin:"0 auto",padding:"40px 20px 80px"}}>
@@ -6313,22 +6428,62 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
           </div>
           <div style={{fontSize:"clamp(34px,9vw,42px)",fontWeight:800,fontFamily:"monospace",lineHeight:1,
             color:st.total>=0?"#4ade80":"#f87171"}}><Tri up={st.total>=0} size="0.78em"/> <Rolling text={pct(Math.abs(st.total)).replace(/[+-]/,"")}/></div>
-          <div style={{fontSize:11,color:"#94a3b8",marginTop:6,textTransform:"uppercase",letterSpacing:"0.5px"}}>Ranking Geral</div>
-          <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"10px 24px",marginTop:18,fontSize:13,color:"#94a3b8"}}>
-            <span style={{color:"#4ade80"}}><Tri size={11}/> {st.pos} positivas</span>
-            <span style={{color:"#f87171"}}><Tri up={false} size={11}/> {st.neg} negativas</span>
+          <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",justifyContent:"center",gap:"8px 12px",marginTop:10}}>
+            <span style={{fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.8px",fontWeight:700}}>Rentabilidade total</span>
             {dayRet!=null&&(
-              <span title={marketClosed?"Rentabilidade no último pregão":"Rentabilidade do portefólio hoje"}>
-                {lastDayLabel()}: <strong style={{color:dayRet>=0?"#4ade80":"#f87171"}}><Rolling text={pct(dayRet)}/></strong>
+              <span title={marketClosed?"Rentabilidade no último pregão":"Rentabilidade do portefólio hoje"}
+                style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,color:"#cbd5e1",padding:"4px 11px",borderRadius:999,
+                  background:dayRet>=0?"rgba(34,197,94,0.10)":"rgba(239,68,68,0.10)",border:`1px solid ${dayRet>=0?"rgba(34,197,94,0.32)":"rgba(239,68,68,0.32)"}`}}>
+                {lastDayLabel()}
+                <strong style={{fontFamily:"monospace",color:dayRet>=0?"#4ade80":"#f87171"}}><Rolling text={pct(dayRet)}/></strong>
               </span>
             )}
           </div>
-          {standings&&(
-            <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:"8px 22px",margin:"16px 0 0",fontSize:13,color:"#94a3b8"}}>
-              <span>Mensal <strong style={{color:"#e2e8f0"}}>{standings.mensal?`${standings.mensal.rank}º`:"—"}</strong></span>
-              <span>Semanal <strong style={{color:"#e2e8f0"}}>{standings.semanal?`${standings.semanal.rank}º`:(standings.weeklyWins&&standings.weeklyWins.length?"—":"Arranca 2ª feira")}</strong></span>
+          {/* Saúde da carteira: 1 segmento por ação (verde = ganho, vermelho = perda), da melhor à pior. */}
+          <div style={{marginTop:22,textAlign:"left"}}>
+            <div style={{display:"flex",gap:5,height:10}}>
+              {bySorted.map(s=>{ const g=rSign(s.ret); return(
+                <span key={s.ticker} title={`${s.ticker} ${pct(s.ret)}`} style={{flex:1,borderRadius:5,
+                  background:g>0?"linear-gradient(180deg,#4ade80,#16a34a)":g<0?"linear-gradient(180deg,#f87171,#dc2626)":"#475569",
+                  boxShadow:g>0?"0 0 10px rgba(74,222,128,0.35)":g<0?"0 0 10px rgba(248,113,113,0.30)":"none"}}/>
+              );})}
             </div>
-          )}
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:9,fontSize:12.5,fontWeight:600}}>
+              <span style={{color:"#4ade80"}}><Tri size={11}/> {st.pos} {st.pos===1?"positiva":"positivas"}</span>
+              <span style={{color:"#f87171"}}>{st.neg} {st.neg===1?"negativa":"negativas"} <Tri up={false} size={11}/></span>
+            </div>
+          </div>
+          {/* Posição nos 3 jogos: mosaicos nas cores de cada período (azul/roxo/verde-água). */}
+          {standings&&(()=>{
+            const medal=(r)=>r===1?"#facc15":r===2?"#e2e8f0":r===3?"#fb923c":"#f8fafc";
+            const T=[
+              {k:"Geral",   rgb:"96,165,250",  a:"#60a5fa", d:standings.geral},
+              {k:"Mensal",  rgb:"167,139,250", a:"#a78bfa", d:standings.mensal},
+              {k:"Semanal", rgb:"45,212,191",  a:"#2dd4bf", d:standings.semanal, wins:standings.weeklyWins},
+            ];
+            return(
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:10,marginTop:20}}>
+                {T.map(t=>(
+                  <div key={t.k} style={{borderRadius:14,padding:"12px 6px 11px",textAlign:"center",minWidth:0,
+                    background:`linear-gradient(180deg,rgba(${t.rgb},0.20),rgba(${t.rgb},0.04))`,border:`1px solid rgba(${t.rgb},0.36)`,
+                    boxShadow:`0 0 22px rgba(${t.rgb},0.10), inset 0 1px 0 rgba(${t.rgb},0.20)`}}>
+                    <div style={{fontSize:10.5,fontWeight:800,letterSpacing:"1.2px",textTransform:"uppercase",color:t.a}}>{t.k}</div>
+                    {t.d?(<>
+                      <div style={{marginTop:5,lineHeight:1.1,whiteSpace:"nowrap"}}>
+                        <span style={{fontSize:28,fontWeight:800,letterSpacing:"-0.5px",color:medal(t.d.rank),textShadow:t.d.rank<=3?`0 0 16px ${medal(t.d.rank)}66`:"none"}}>{t.d.rank}º</span>
+                        
+                      </div>
+                      <div style={{fontFamily:"monospace",fontSize:12,fontWeight:800,marginTop:4,color:t.d.ret>=0?"#4ade80":"#f87171"}}>{pct(t.d.ret)}</div>
+                    </>):(
+                      <div style={{fontSize:12.5,fontWeight:700,marginTop:12,lineHeight:1.3,color:t.wins&&t.wins.length?"#facc15":"#64748b"}}>
+                        {t.wins&&t.wins.length?`🏆 ${t.wins.join(", ")}`:t.k==="Semanal"?"Arranca 2ª feira":"—"}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       </TiltCard>
       </div>
@@ -6394,14 +6549,20 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
               const toggle=()=>setRetMode(m=>m==="total"?"day":"total");
               // Célula preenche a altura toda da linha (margem negativa cobre o padding)
               // → clicar em qualquer ponto da coluna alterna, não só no número.
-              const base={fontFamily:"monospace",fontSize:"clamp(11px,2.9vw,15px)",fontWeight:700,
+              const base={fontFamily:"monospace",fontSize:"clamp(11px,2.9vw,15px)",fontWeight:800,
                 whiteSpace:"nowrap",cursor:"pointer",userSelect:"none",
-                alignSelf:"stretch",margin:"-14px 0",display:"flex",alignItems:"center",justifyContent:"center"};
+                alignSelf:"stretch",margin:"-14px 0",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6};
               if(v==null) return <span onClick={toggle} title="Alternar Desde o início / Diário" style={{...base,color:"#4b5563"}}>—</span>;
+              const w=Math.max(8,Math.min(100,Math.abs(v)/retMaxAbs*100)); // magnitude relativa à maior da lista
               return(
                 <span onClick={toggle} title="Alternar Desde o início / Diário"
                   style={{...base,color:v>=0?"#4ade80":"#f87171"}}>
-                  <Tri up={v>=0} size={13}/> {pct(Math.abs(v)).replace(/[+-]/,"")}
+                  <span style={{display:"inline-flex",alignItems:"center",gap:4}}><Tri up={v>=0} size={13}/> {pct(Math.abs(v)).replace(/[+-]/,"")}</span>
+                  <span aria-hidden="true" style={{display:"block",width:"76%",height:4,borderRadius:3,background:"rgba(255,255,255,0.07)",overflow:"hidden"}}>
+                    <span style={{display:"block",height:"100%",width:`${w}%`,borderRadius:3,
+                      background:v>=0?"linear-gradient(90deg,#16a34a,#4ade80)":"linear-gradient(90deg,#dc2626,#f87171)",
+                      boxShadow:v>=0?"0 0 8px rgba(74,222,128,0.5)":"0 0 8px rgba(248,113,113,0.5)"}}/>
+                  </span>
                 </span>
               );
             })()}
@@ -6417,12 +6578,12 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
       {/* Evolução (#5) + Exposição por setor */}
       <Reveal>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16,marginBottom:16}}>
-        <TiltCard style={{...GLASS,borderRadius:16,padding:24}}>
-          <h3 className="detailCardTitle" style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Evolução da rentabilidade</h3>
-          <EvolutionChart portfolioId={pf.id} currentReturn={st.total} submittedAt={pf.submittedAt} competitionStarted={competitionStarted} gameStartDate={gameStartDate} spy={spy} spyInitialPrice={pf.spyInitialPrice} mine={!!isOwn} ownerName={pf.name}/>
+        <TiltCard style={{...GLASS,borderRadius:16,padding:24,display:"flex",flexDirection:"column"}}>
+          <h3 className="detailCardTitle" style={{fontSize:13,fontWeight:800,letterSpacing:"1px",textTransform:"uppercase",marginBottom:16,color:"#cbd5e1",display:"flex",alignItems:"center",gap:10}}><span aria-hidden="true" style={{width:4,height:16,borderRadius:2,background:"linear-gradient(180deg,#60a5fa,#a78bfa)"}}/>Evolução da rentabilidade</h3>
+          <EvolutionChart portfolioId={pf.id} currentReturn={st.total} submittedAt={pf.submittedAt} competitionStarted={competitionStarted} gameStartDate={gameStartDate} spy={spy} spyInitialPrice={pf.spyInitialPrice} mine={!!isOwn} ownerName={pf.name} height={250}/>
         </TiltCard>
-        <TiltCard style={{...GLASS,borderRadius:16,padding:24}}>
-          <h3 className="detailCardTitle" style={{fontSize:14,fontWeight:600,marginBottom:14,color:"#9ca3af"}}>Exposição por setor</h3>
+        <TiltCard style={{...GLASS,borderRadius:16,padding:24,display:"flex",flexDirection:"column"}}>
+          <h3 className="detailCardTitle" style={{fontSize:13,fontWeight:800,letterSpacing:"1px",textTransform:"uppercase",marginBottom:16,color:"#cbd5e1",display:"flex",alignItems:"center",gap:10}}><span aria-hidden="true" style={{width:4,height:16,borderRadius:2,background:"linear-gradient(180deg,#60a5fa,#a78bfa)"}}/>Exposição por setor</h3>
           <SectorDonut stocks={pf.stocks}/>
         </TiltCard>
       </div>
@@ -6431,27 +6592,25 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
       {/* Destaques — melhores/piores DO DIA. Cabeçalho: texto à ESQUERDA + seta à direita. */}
       <style>{`
         .dayGrid{display:grid;gap:16px;align-items:start;grid-template-columns:1fr 1fr;grid-template-areas:"best worst"}
-        .dayLblBest{right:0}   /* desktop: "Melhores do dia" à direita (lado interior) */
-        @media(max-width:560px){.dayGrid{grid-template-columns:1fr;grid-template-areas:"best" "worst"}
-          .dayLblBest{right:auto;left:0}}   /* mobile (empilhado): à esquerda, igual a "Piores do dia" */
+        @media(max-width:560px){.dayGrid{grid-template-columns:1fr;grid-template-areas:"best" "worst"}}
       `}</style>
       <Reveal delay={80}>
       <div className="dayGrid">
         <TiltCard style={{...GLASS,gridArea:"best",minWidth:0,borderRadius:16,padding:24,
           background:"linear-gradient(160deg, rgba(34,197,94,0.12), rgba(34,197,94,0.03))",
           border:"1px solid rgba(34,197,94,0.20)"}}>
-          <div style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center",minHeight:26,marginBottom:14}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,minHeight:26,marginBottom:14}}>
             <DayChip up/>
-            <span className="dayLblBest" style={{position:"absolute",top:"50%",transform:"translateY(-50%)",fontSize:6,fontWeight:700,letterSpacing:".5px",textTransform:"uppercase",color:"#4ade80",whiteSpace:"nowrap"}}>Melhores do dia</span>
+            <span style={{fontSize:12.5,fontWeight:800,letterSpacing:"1px",textTransform:"uppercase",color:"#4ade80",whiteSpace:"nowrap"}}>Melhores do dia</span>
           </div>
           {byDay.length?<TopList items={byDay.slice(0,3)}/>:<p style={{fontSize:13,color:"#6b7280",textAlign:"center",margin:0}}>Sem variação do dia disponível.</p>}
         </TiltCard>
         <TiltCard style={{...GLASS,gridArea:"worst",minWidth:0,borderRadius:16,padding:24,
           background:"linear-gradient(160deg, rgba(239,68,68,0.12), rgba(239,68,68,0.03))",
           border:"1px solid rgba(239,68,68,0.20)"}}>
-          <div style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center",minHeight:26,marginBottom:14}}>
-            <DayChip/>
-            <span style={{position:"absolute",left:0,top:"50%",transform:"translateY(-50%)",fontSize:6,fontWeight:700,letterSpacing:".5px",textTransform:"uppercase",color:"#f87171",whiteSpace:"nowrap"}}>Piores do dia</span>
+          <div style={{display:"flex",alignItems:"center",gap:10,minHeight:26,marginBottom:14}}>
+            <DayChip up={false}/>
+            <span style={{fontSize:12.5,fontWeight:800,letterSpacing:"1px",textTransform:"uppercase",color:"#f87171",whiteSpace:"nowrap"}}>Piores do dia</span>
           </div>
           {byDay.length?<TopList items={[...byDay].reverse().slice(0,3)}/>:<p style={{fontSize:13,color:"#6b7280",textAlign:"center",margin:0}}>Sem variação do dia disponível.</p>}
         </TiltCard>
@@ -6479,7 +6638,7 @@ function Tri({up=true,size=12,color="currentColor",style}){
     </svg>
   );
 }
-function DayChip({up}){
+function DayChip({up=false}){
   const c=up?"#4ade80":"#f87171";
   const bg=up?"rgba(34,197,94,0.15)":"rgba(239,68,68,0.15)";
   const bd=up?"rgba(34,197,94,0.3)":"rgba(239,68,68,0.3)";
