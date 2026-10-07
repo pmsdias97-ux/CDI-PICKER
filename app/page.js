@@ -115,9 +115,14 @@ function lastDayLabel(){
     // Sessão de HOJE já começou (dia de pregão e >= 09:30 ET) → o "dia" mostrado é hoje (ao vivo ou já fechado).
     if(isTrading(new Date(Date.UTC(y,mo-1,d)))&&mins>=570){ last=todayET; }
     else { for(let i=1;i<=10;i++){ const c=new Date(Date.UTC(y,mo-1,d-i)); if(isTrading(c)){ last=key(c); break; } } } // senão, recua ao pregão anterior
-    const yst=key(new Date(Date.UTC(y,mo-1,d-1)));
-    if(last===todayET) return "Hoje";
-    if(last===yst) return "Ontem";
+    // "Hoje"/"Ontem" medem-se contra o dia CIVIL em Portugal (não o de Nova Iorque): a sessão que fecha às
+    // 21h de Lisboa continua "Hoje" até à meia-noite; depois da meia-noite passa a "Ontem" até a sessão
+    // seguinte abrir (14:30 Lisboa). Fins de semana/feriados: último pregão há >1 dia → "Último dia".
+    const [ly,lmo,ld]=new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Lisbon",year:"numeric",month:"2-digit",day:"2-digit"}).format(now).split("-").map(Number);
+    const todayPT=key(new Date(Date.UTC(ly,lmo-1,ld)));
+    const ystPT=key(new Date(Date.UTC(ly,lmo-1,ld-1)));
+    if(last===todayPT) return "Hoje";
+    if(last===ystPT) return "Ontem";
     return "Último dia";
   }catch{ return "Último dia"; }
 }
@@ -2499,7 +2504,7 @@ function RankPodium({items,onPick,meKey,highlightKey,meRef,hiRef,meFlash}){
             <span className="rkPodBase"><i className="rkPodTop" aria-hidden="true"/><span className="rkPodIn">
             <span className="rkPodVal" style={{color:(val??0)>=0?"#4ade80":"#f87171"}}>{val==null?"—":<Rolling text={pct(val)}/>}</span>
             <span className="rkPodDay" style={{color:day==null?"#64748b":day>=0?"#4ade80":"#f87171"}}>
-              {day==null?"—":<>{day>=0?"▲":"▼"} <Rolling text={pct(Math.abs(day)).replace("+","")}/> <em>hoje</em></>}
+              {day==null?"—":<>{day>=0?"▲":"▼"} <Rolling text={pct(Math.abs(day)).replace("+","")}/> <em>{lastDayLabel().toLowerCase()}</em></>}
             </span>
             </span></span>
           </div>
