@@ -2484,6 +2484,60 @@ const PODIUM_TONE={
   2:{rgb:"203,213,225",ink:"#e2e8f0",hi:"#f8fafc",lo:"#8794a8"},
   3:{rgb:"217,119,6",ink:"#fbbf77",hi:"#fcd9a8",lo:"#b4620f"},
 };
+// Pilha de moedas (SVG vetorial, muito detalhada) sobre um prato metálico: ouro (1.º), prata (2.º), bronze (3.º).
+// Cada moeda: corpo com sombreado metálico + serrilha vertical + oclusão de sombra da moeda de cima + aro biselado
+// + brilho especular; a de cima tem face em relevo (aro, campo rebaixado, anel interior).
+const COIN_SET={
+  1:{n:10,rx:104,side:[["0","#4d2a02"],[".1","#9a5f0a"],[".28","#f0bd48"],[".4","#fff3b0"],[".52","#e8ad2c"],[".78","#a0640c"],["1","#3e2202"]],
+     top:["#fff8c9","#f2b92e","#b4710c"],field:["#c98c14","#f7d56e"],rim:"#fff0a8",dark:"#5a3203"},
+  2:{n:7,rx:96,side:[["0","#3b4556"],[".1","#7f8b9e"],[".28","#d6dde8"],[".4","#ffffff"],[".52","#bcc6d4"],[".78","#707c90"],["1","#303a4a"]],
+     top:["#ffffff","#c9d2df","#8793a6"],field:["#97a3b5","#e4eaf3"],rim:"#ffffff",dark:"#2c3646"},
+  3:{n:6,rx:92,side:[["0","#341705"],[".1","#7a3d12"],[".28","#d98d4c"],[".4","#ffd6a6"],[".52","#c97b3a"],[".78","#7a3d12"],["1","#301504"]],
+     top:["#ffe0bb","#d38a45","#8f4a17"],field:["#a8602a","#efb27a"],rim:"#ffd9b0",dark:"#4a2208"},
+};
+const COIN_DX=[0,-5,4,-3,6,-4,3,-6,2,-3,5], COIN_DR=[0,-1.2,0.9,-0.6,1.4,-1,0.7,-1.3,0.5,-0.8,1.1], COIN_DRX=[0,2,-1,1,-2,1,0,-2,2,-1,1];
+function CoinStack({rank}){
+  const C=COIN_SET[rank], T=19, RY=15, topCy=RY+2, n=C.n;
+  const baseCy=topCy+n*T, H=baseCy+RY+6; // sem prato: as moedas continuam por trás da tabela
+  const gS="cs"+rank, gT="ct"+rank, gF="cf"+rank, gA="ca"+rank;
+  const coins=[];
+  for(let k=0;k<n;k++){ // k=0 → moeda de baixo
+    const cy=baseCy-(k+1)*T, cx=150+COIN_DX[k%11], rx=C.rx+COIN_DRX[k%11], top=k===n-1;
+    const side=`M${cx-rx} ${cy} L${cx-rx} ${cy+T} A${rx} ${RY} 0 0 0 ${cx+rx} ${cy+T} L${cx+rx} ${cy} Z`;
+    coins.push(
+      <g key={k} transform={`rotate(${COIN_DR[k%11]} ${cx} ${cy})`}>
+        <path d={side} fill={`url(#${gS})`}/>
+        <path d={side} fill="url(#coinMill)"/>
+        <path d={side} fill={`url(#${gA})`}/>
+        {/* aro inferior: sombra + brilho biselado — recortados ao contorno da moeda e a seguir a mesma curva (sem "caudas" fora dela) */}
+        <clipPath id={`cc${rank}-${k}`}><path d={side}/></clipPath>
+        <g clipPath={`url(#cc${rank}-${k})`}>
+          <path d={`M${cx-rx} ${cy+T} A${rx} ${RY} 0 0 0 ${cx+rx} ${cy+T}`} fill="none" stroke={C.dark} strokeOpacity="0.8" strokeWidth="3.6"/>
+          <path d={`M${cx-rx} ${cy+T} A${rx} ${RY} 0 0 0 ${cx+rx} ${cy+T}`} fill="none" stroke={C.rim} strokeOpacity="0.5" strokeWidth="1.2" transform="translate(0 -3.4)"/>
+        </g>
+        {/* face superior */}
+        <ellipse cx={cx} cy={cy} rx={rx} ry={RY} fill={`url(#${gT})`} stroke={C.rim} strokeOpacity="0.8" strokeWidth="1.2"/>
+        <ellipse cx={cx} cy={cy} rx={rx-8} ry={RY-3.4} fill={`url(#${gF})`} stroke={C.dark} strokeOpacity="0.45" strokeWidth="1"/>
+        <ellipse cx={cx} cy={cy+0.6} rx={rx-8} ry={RY-3.4} fill="none" stroke={C.rim} strokeOpacity="0.35" strokeWidth="0.8" transform={`translate(0 1)`}/>
+        {top&&<ellipse cx={cx} cy={cy} rx={(rx-8)*0.7} ry={(RY-3.4)*0.62} fill="none" stroke={C.rim} strokeOpacity="0.55" strokeWidth="1.2" strokeDasharray="1.6 3.2"/>}
+        {/* brilho especular no aro (canto superior esquerdo) */}
+        <path d={`M${cx-rx*0.78} ${cy-RY*0.52} A${rx} ${RY} 0 0 1 ${cx-rx*0.18} ${cy-RY*0.98}`} fill="none" stroke="#fff" strokeOpacity="0.8" strokeWidth="2.2" strokeLinecap="round"/>
+      </g>
+    );
+  }
+  return(
+    <svg viewBox={`0 0 300 ${H}`} aria-hidden="true" focusable="false">
+      <defs>
+        <pattern id="coinMill" patternUnits="userSpaceOnUse" width="3.4" height="20"><rect width="1.2" height="20" fill="rgba(0,0,0,0.30)"/><rect x="1.8" width="0.7" height="20" fill="rgba(255,255,255,0.12)"/></pattern>
+        <linearGradient id={gS} x1="0" y1="0" x2="1" y2="0">{C.side.map(([o,c])=><stop key={o} offset={o} stopColor={c}/>)}</linearGradient>
+        <linearGradient id={gA} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#000" stopOpacity="0.5"/><stop offset="0.45" stopColor="#000" stopOpacity="0.08"/><stop offset="1" stopColor="#000" stopOpacity="0.18"/></linearGradient>
+        <radialGradient id={gT} cx="0.4" cy="0.3" r="0.9"><stop offset="0" stopColor={C.top[0]}/><stop offset="0.5" stopColor={C.top[1]}/><stop offset="1" stopColor={C.top[2]}/></radialGradient>
+        <linearGradient id={gF} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor={C.field[0]}/><stop offset="1" stopColor={C.field[1]}/></linearGradient>
+      </defs>
+      {coins}
+    </svg>
+  );
+}
 function RankPodium({items,onPick,meKey,highlightKey,meRef,hiRef,meFlash}){
   const order=[items[1],items[0],items[2]].filter(Boolean); // 2.º · 1.º · 3.º
   return(
@@ -2497,16 +2551,26 @@ function RankPodium({items,onPick,meKey,highlightKey,meRef,hiRef,meFlash}){
             onClick={()=>onPick(p.key)} onKeyDown={e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); onPick(p.key); } }}
             style={{"--pod":t.rgb}}>
             <span className="rkPodName" title={p.name}><span className="rkPodNameTx">{p.name}</span>{me&&<span className="rkPodYou">Tu</span>}</span>
+            {/* Telemóvel: rentabilidade por baixo do nome (a placa sobre as moedas não cabe em colunas estreitas) */}
+            <span className="rkPodStat">
+              <span className="rkPodVal" style={{color:(val??0)>=0?"#4ade80":"#f87171"}}>{val==null?"—":<Rolling text={pct(val)}/>}</span>
+              <span className="rkPodDay" style={{color:day==null?"#64748b":day>=0?"#4ade80":"#f87171"}}>
+                {day==null?"—":<>{day>=0?"▲":"▼"} <Rolling text={pct(Math.abs(day)).replace("+","")}/> <em>{lastDayLabel().toLowerCase()}</em></>}
+              </span>
+            </span>
             <span className="rkPodBallWrap">
               <PodiumLaurel rank={rank} hi={PODIUM_TONE[rank].hi} lo={PODIUM_TONE[rank].lo}/>
-              <span className="rkPodBall" aria-label={`${rank}.º lugar`}><span className="rkPodBallIn">{rank}</span></span>
+              <span className="rkPodBall" aria-label={`${rank}.º lugar`}><span className="rkPodBallIn"><span className="rkPodNum">{rank}</span></span></span>
             </span>
-            <span className="rkPodBase"><i className="rkPodTop" aria-hidden="true"/><span className="rkPodIn">
-            <span className="rkPodVal" style={{color:(val??0)>=0?"#4ade80":"#f87171"}}>{val==null?"—":<Rolling text={pct(val)}/>}</span>
-            <span className="rkPodDay" style={{color:day==null?"#64748b":day>=0?"#4ade80":"#f87171"}}>
-              {day==null?"—":<>{day>=0?"▲":"▼"} <Rolling text={pct(Math.abs(day)).replace("+","")}/> <em>{lastDayLabel().toLowerCase()}</em></>}
+            <span className="rkPodStack">
+              <CoinStack rank={rank}/>
+              <span className="rkPodPlaque">
+                <span className="rkPodVal" style={{color:(val??0)>=0?"#4ade80":"#f87171"}}>{val==null?"—":<Rolling text={pct(val)}/>}</span>
+                <span className="rkPodDay" style={{color:day==null?"#64748b":day>=0?"#4ade80":"#f87171"}}>
+                  {day==null?"—":<>{day>=0?"▲":"▼"} <Rolling text={pct(Math.abs(day)).replace("+","")}/> <em>{lastDayLabel().toLowerCase()}</em></>}
+                </span>
+              </span>
             </span>
-            </span></span>
           </div>
         );
       })}
@@ -5383,63 +5447,51 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
         /* Coluna do nome = largura FIXA do nome mais comprido (--rk-name-w, medido em runtime) →
            todas as linhas alinhadas e as sparklines (1fr) começam todas no mesmo sítio, colado ao
            maior nome. Fallback 190px enquanto não mede. */
-        .rkPodium{display:grid;grid-template-columns:1fr 1.18fr 1fr;gap:clamp(6px,2vw,22px);align-items:end;margin:6px 0 -48px;padding:0 clamp(0px,1.5vw,16px)}
-        .rkPodium + div{position:relative;z-index:2}  /* a tabela sobrepõe-se à base desvanecida do pódio */
-        .rkPodCol{--h:92px;position:relative;display:flex;flex-direction:column;align-items:center;min-width:0;cursor:pointer;outline:none;text-align:center;transition:transform .2s ease}
-        .rkPod1{--h:196px}.rkPod2{--h:160px}.rkPod3{--h:140px}
+        .rkPodium{display:grid;grid-template-columns:1fr 1.22fr 1fr;gap:clamp(4px,1.6vw,18px);align-items:end;margin:6px 0 clamp(-28px,-1.8vw,-14px);padding:0 clamp(0px,1vw,10px)}
+        .rkPodium + div{position:relative;z-index:2}  /* a tabela fica POR CIMA da base das moedas (as moedas surgem por trás dela) */
+        .rkPodCol{position:relative;display:flex;flex-direction:column;align-items:center;min-width:0;cursor:pointer;outline:none;text-align:center}
         /* Destaque ao voltar de um portefólio: brilho na cor do lugar que se desvanece (o flash azul retangular das linhas não serve aqui) */
         @keyframes rkPodGlow{0%{filter:drop-shadow(0 0 16px rgba(var(--pod),0.95)) drop-shadow(0 0 4px rgba(var(--pod),0.9))}100%{filter:drop-shadow(0 0 0 rgba(var(--pod),0))}}
         .rkPodCol.rkHiFlash{animation:rkPodGlow 2.2s ease-out}
-        /* Hover/foco: a bola salta com mola, os louros abrem, o topo e o corpo do pedestal acendem e a rentabilidade cresce */
+        /* Hover/foco: a bola salta com mola, os louros abrem, as moedas acendem e a rentabilidade cresce */
         .rkPodBall{transition:transform .38s cubic-bezier(.34,1.56,.64,1)}
         .rkPodLaurel{transition:transform .45s cubic-bezier(.34,1.56,.64,1),filter .3s ease}
-        .rkPodBase{transition:filter .3s ease}
-        .rkPodTop{transition:box-shadow .3s ease,filter .3s ease}
-        .rkPodVal{transition:transform .35s cubic-bezier(.34,1.56,.64,1)}
+        .rkPodStack svg{transition:filter .3s ease}
+        .rkPodPlaque{transition:transform .35s cubic-bezier(.34,1.56,.64,1)}
         .rkPodName{transition:transform .35s cubic-bezier(.34,1.56,.64,1),filter .3s ease}
         .rkPodCol:hover .rkPodBall,.rkPodCol:focus-visible .rkPodBall{transform:translateY(-9px) scale(1.07)}
         .rkPodCol:hover .rkPodLaurel,.rkPodCol:focus-visible .rkPodLaurel{transform:translate(-50%,-69%) scale(1.14);filter:drop-shadow(0 3px 5px rgba(0,0,0,0.4)) drop-shadow(0 0 14px rgba(var(--pod),0.65))}
-        .rkPodCol:hover .rkPodBase,.rkPodCol:focus-visible .rkPodBase{filter:brightness(1.22) saturate(1.15)}
-        .rkPodCol:hover .rkPodTop,.rkPodCol:focus-visible .rkPodTop{box-shadow:0 0 30px rgba(var(--pod),0.7),inset 0 -2px 5px rgba(0,0,0,0.28),inset 0 1px 1px rgba(255,255,255,0.8)}
-        .rkPodCol:hover .rkPodVal,.rkPodCol:focus-visible .rkPodVal{transform:scale(1.07)}
+        .rkPodCol:hover .rkPodStack svg,.rkPodCol:focus-visible .rkPodStack svg{filter:drop-shadow(0 10px 14px rgba(0,0,0,0.45)) drop-shadow(0 0 16px rgba(var(--pod),0.55)) brightness(1.12)}
+        .rkPodCol:hover .rkPodPlaque,.rkPodCol:focus-visible .rkPodPlaque{transform:translateX(-50%) scale(1.06)}
         .rkPodCol:hover .rkPodName,.rkPodCol:focus-visible .rkPodName{transform:translateY(-5px) scale(1.07);filter:drop-shadow(0 0 8px rgba(var(--pod),0.8))}
-        .rkPodCol:focus-visible .rkPodBase{outline:2px solid rgba(var(--pod),0.8);outline-offset:4px;border-radius:8px}
+        .rkPodCol:focus-visible .rkPodStack{outline:2px solid rgba(var(--pod),0.8);outline-offset:4px;border-radius:14px}
         .rkPodName{margin-bottom:2px;display:flex;align-items:center;justify-content:center;gap:6px;max-width:100%;font-weight:800;font-size:clamp(12.5px,3.2vw,16px);color:#f1f5f9}
         .rkPodNameTx{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:2px 0}
         .rkPod1 .rkPodName{font-size:clamp(14px,3.6vw,19px)}
         .rkPodYou{flex-shrink:0;font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;background:rgba(var(--pod),0.25);border:1px solid rgba(var(--pod),0.6);color:#fff}
-        .rkPodIn{position:absolute;z-index:1;left:0;right:0;top:0;display:flex;flex-direction:column;align-items:center;padding:calc(clamp(34px,7vw,52px) / 2.4 + 10px) 6px 0}
-        .rkPod1 .rkPodIn{padding-top:calc(clamp(42px,9vw,64px) / 2.4 + 12px)}
-        .rkPodVal{margin-top:3px;font-variant-numeric:tabular-nums;font-weight:800;letter-spacing:-.2px;font-size:clamp(15px,4.2vw,22px)}
-        .rkPod1 .rkPodVal{font-size:clamp(18px,5vw,28px)}
-        .rkPodDay{margin-top:2px;font-variant-numeric:tabular-nums;font-size:clamp(10.5px,2.7vw,12.5px);font-weight:600}
-        .rkPodDay em{font-style:normal;font-weight:600;color:#94a3b8;margin-left:2px}
-        .rkPodBallWrap{position:relative;display:flex;justify-content:center;margin:clamp(24px,4vw,36px) 0 calc(clamp(34px,7vw,52px) / -2.4)}
-        .rkPod1 .rkPodBallWrap{margin-top:clamp(34px,5.6vw,50px);margin-bottom:calc(clamp(42px,9vw,64px) / -2.4)}
+        .rkPodBallWrap{position:relative;display:flex;justify-content:center;margin:clamp(24px,4vw,36px) 0 calc(clamp(34px,7vw,52px) / -2.2)}
+        .rkPod1 .rkPodBallWrap{margin-top:clamp(34px,5.6vw,50px);margin-bottom:calc(clamp(42px,9vw,64px) / -2.2)}
         .rkPodLaurel{position:absolute;left:50%;top:50%;width:calc(clamp(34px,7vw,52px) * 1.9);height:calc(clamp(34px,7vw,52px) * 1.9);overflow:visible;transform:translate(-50%,-69%);clip-path:inset(-15% -15% 17% -15%);pointer-events:none;z-index:0;filter:drop-shadow(0 3px 5px rgba(0,0,0,0.4)) drop-shadow(0 0 8px rgba(var(--pod),0.3))}
         .rkPod1 .rkPodLaurel{width:calc(clamp(42px,9vw,64px) * 1.9);height:calc(clamp(42px,9vw,64px) * 1.9)}
-        .rkPodBall{position:relative;z-index:2;margin:0;width:clamp(34px,7vw,52px);aspect-ratio:1;border-radius:50%;display:flex;align-items:center;justify-content:center;
+        .rkPodBall{position:relative;z-index:3;margin:0;width:clamp(34px,7vw,52px);aspect-ratio:1;border-radius:50%;display:flex;align-items:center;justify-content:center;
           background:radial-gradient(circle at 32% 26%,#fff 0%,rgba(var(--pod),1) 28%,rgba(var(--pod),0.78) 62%,rgba(0,0,0,0.55) 100%);
           box-shadow:0 10px 12px -2px rgba(0,0,0,0.45),0 0 14px rgba(var(--pod),0.35),inset 0 -4px 8px rgba(0,0,0,0.35),inset 0 2px 3px rgba(255,255,255,0.7)}
         .rkPod1 .rkPodBall{width:clamp(42px,9vw,64px)}
         .rkPodBallIn{width:56%;aspect-ratio:1;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:clamp(13px,3vw,20px);color:#1e293b;
           background:radial-gradient(circle at 40% 30%,#fff,#e2e8f0 70%,#cbd5e1);box-shadow:inset 0 1px 3px rgba(0,0,0,0.3)}
+        .rkPod1 .rkPodNum{display:block;transform:translateX(-0.035em)}  /* o "1" ligeiramente para a esquerda do centro do disco */
         .rkPod1 .rkPodBallIn{background:radial-gradient(circle at 40% 30%,#fff7d6,#fde68a 70%,#f59e0b);color:#451a03;font-size:clamp(16px,3.8vw,26px)}
-        .rkPodBase{position:relative;width:min(100%,260px);height:var(--h);margin-top:0}
-        .rkPodBase::before{content:"";position:absolute;inset:0;
-          background:linear-gradient(90deg,rgba(var(--pod),0.08) 0%,rgba(var(--pod),0.36) 26%,rgba(var(--pod),0.20) 62%,rgba(var(--pod),0.05) 100%);
-          -webkit-mask-image:linear-gradient(180deg,#000 0%,#000 55%,transparent 100%);mask-image:linear-gradient(180deg,#000 0%,#000 55%,transparent 100%);
-          border-left:1px solid rgba(var(--pod),0.28);border-right:1px solid rgba(var(--pod),0.28)}
-        .rkPod1{--hi:#fff1a8;--lo:#c8921a}.rkPod2{--hi:#f1f5f9;--lo:#7b8799}.rkPod3{--hi:#fbd29a;--lo:#a35c14}
-        /* Topo do cilindro: ELIPSE OPACA (sem transparência → não deixa ver a aresta do corpo por baixo = sem linha parasita) */
-        .rkPodTop{position:absolute;z-index:1;left:0;right:0;top:calc(var(--ell,15px) / -1);height:calc(var(--ell,15px) * 2);border-radius:50%;
-          background:radial-gradient(ellipse at 50% 38%,var(--hi) 0%,var(--lo) 100%);
-          box-shadow:0 0 18px rgba(var(--pod),0.35),inset 0 -2px 5px rgba(0,0,0,0.28),inset 0 1px 1px rgba(255,255,255,0.7)}
-        .rkPodTop::after{content:"";position:absolute;inset:18% 7%;border-radius:50%;
-          background:radial-gradient(ellipse at 50% 40%,rgba(255,255,255,0.38),rgba(255,255,255,0) 70%);box-shadow:inset 0 1px 2px rgba(0,0,0,0.18)}
-        .rkPod1 .rkPodBase{--ell:19px}
-        @media(max-width:560px){.rkPodBase{--ell:11px}.rkPod1 .rkPodBase{--ell:14px}.rkPod1{--h:150px}.rkPod2{--h:122px}.rkPod3{--h:108px}.rkPodium{margin-bottom:-40px}}
-        @media(prefers-reduced-motion:reduce){.rkPodCol,.rkPodBall,.rkPodLaurel,.rkPodBase,.rkPodTop,.rkPodVal,.rkPodName{transition:none!important}.rkPodCol:hover .rkPodBall,.rkPodCol:hover .rkPodLaurel,.rkPodCol:hover .rkPodVal,.rkPodCol:hover .rkPodName{transform:none}.rkPodCol:hover .rkPodLaurel{transform:translate(-50%,-69%)}}
+        .rkPodStack{position:relative;z-index:1;width:100%}
+        .rkPodStack svg{display:block;width:100%;height:auto;overflow:visible;filter:drop-shadow(0 10px 14px rgba(0,0,0,0.45))}
+        .rkPodPlaque{position:absolute;left:50%;bottom:27%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;max-width:64%;box-sizing:border-box;
+          padding:8px 14px 9px;border-radius:14px;background:rgba(8,14,30,0.74);border:1px solid rgba(var(--pod),0.4);box-shadow:0 6px 16px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.08);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+        .rkPodVal{font-variant-numeric:tabular-nums;font-weight:800;letter-spacing:-.2px;font-size:clamp(13px,3.4vw,22px);white-space:nowrap}
+        .rkPod1 .rkPodVal{font-size:clamp(15px,4.2vw,28px)}
+        .rkPodDay{margin-top:2px;font-variant-numeric:tabular-nums;font-size:clamp(9.5px,2.3vw,12.5px);font-weight:600;white-space:nowrap}
+        .rkPodDay em{font-style:normal;font-weight:600;color:#94a3b8;margin-left:2px}
+        .rkPodStat{display:none}
+        @media(max-width:560px){.rkPodPlaque{display:none}.rkPodStat{display:flex;flex-direction:column;align-items:center;margin-top:1px}.rkPodStat .rkPodVal{font-size:clamp(13px,3.9vw,16px)}.rkPod1 .rkPodStat .rkPodVal{font-size:clamp(16px,4.9vw,21px)}.rkPodStat .rkPodDay{font-size:clamp(9.5px,2.6vw,11px)}.rkPodBallWrap{margin-top:clamp(26px,6.4vw,36px)!important}.rkPod1 .rkPodBallWrap{margin-top:clamp(32px,7.8vw,44px)!important}}
+        @media(prefers-reduced-motion:reduce){.rkPodCol,.rkPodBall,.rkPodLaurel,.rkPodStack svg,.rkPodPlaque,.rkPodName{transition:none!important}.rkPodCol:hover .rkPodBall,.rkPodCol:hover .rkPodName{transform:none}.rkPodCol:hover .rkPodLaurel{transform:translate(-50%,-69%)}.rkPodCol:hover .rkPodPlaque{transform:translateX(-50%)}}
         .rkRow{display:grid;grid-template-columns:28px calc(var(--rk-name-w,190px) + 32px) 1fr 72px 72px 56px 150px;gap:8px}
         /* NOTA: já NÃO usamos content-visibility:auto nas linhas. Com sparkline em SVG leve (não Recharts)
            as ~124 linhas pintam bem de uma vez; o content-visibility fazia as linhas aparecerem EM BRANCO
