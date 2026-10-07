@@ -5387,7 +5387,20 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
         .rkPodium + div{position:relative;z-index:2}  /* a tabela sobrepõe-se à base desvanecida do pódio */
         .rkPodCol{--h:92px;position:relative;display:flex;flex-direction:column;align-items:center;min-width:0;cursor:pointer;outline:none;text-align:center;transition:transform .2s ease}
         .rkPod1{--h:196px}.rkPod2{--h:160px}.rkPod3{--h:140px}
-        .rkPodCol:hover,.rkPodCol:focus-visible{transform:translateY(-4px)}
+        /* Destaque ao voltar de um portefólio: brilho na cor do lugar que se desvanece (o flash azul retangular das linhas não serve aqui) */
+        @keyframes rkPodGlow{0%{filter:drop-shadow(0 0 16px rgba(var(--pod),0.95)) drop-shadow(0 0 4px rgba(var(--pod),0.9))}100%{filter:drop-shadow(0 0 0 rgba(var(--pod),0))}}
+        .rkPodCol.rkHiFlash{animation:rkPodGlow 2.2s ease-out}
+        /* Hover/foco: a bola salta com mola, os louros abrem, o topo e o corpo do pedestal acendem e a rentabilidade cresce */
+        .rkPodBall{transition:transform .38s cubic-bezier(.34,1.56,.64,1)}
+        .rkPodLaurel{transition:transform .45s cubic-bezier(.34,1.56,.64,1),filter .3s ease}
+        .rkPodBase{transition:filter .3s ease}
+        .rkPodTop{transition:box-shadow .3s ease,filter .3s ease}
+        .rkPodVal{transition:transform .35s cubic-bezier(.34,1.56,.64,1)}
+        .rkPodCol:hover .rkPodBall,.rkPodCol:focus-visible .rkPodBall{transform:translateY(-9px) scale(1.07)}
+        .rkPodCol:hover .rkPodLaurel,.rkPodCol:focus-visible .rkPodLaurel{transform:translate(-50%,-69%) scale(1.14);filter:drop-shadow(0 3px 5px rgba(0,0,0,0.4)) drop-shadow(0 0 14px rgba(var(--pod),0.65))}
+        .rkPodCol:hover .rkPodBase,.rkPodCol:focus-visible .rkPodBase{filter:brightness(1.22) saturate(1.15)}
+        .rkPodCol:hover .rkPodTop,.rkPodCol:focus-visible .rkPodTop{box-shadow:0 0 30px rgba(var(--pod),0.7),inset 0 -2px 5px rgba(0,0,0,0.28),inset 0 1px 1px rgba(255,255,255,0.8)}
+        .rkPodCol:hover .rkPodVal,.rkPodCol:focus-visible .rkPodVal{transform:scale(1.07)}
         .rkPodCol:focus-visible .rkPodBase{outline:2px solid rgba(var(--pod),0.8);outline-offset:4px;border-radius:8px}
         .rkPodName{margin-bottom:2px;display:flex;align-items:center;justify-content:center;gap:6px;max-width:100%;font-weight:800;font-size:clamp(12.5px,3.2vw,16px);color:#f1f5f9}
         .rkPodNameTx{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
@@ -5424,7 +5437,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
           background:radial-gradient(ellipse at 50% 40%,rgba(255,255,255,0.38),rgba(255,255,255,0) 70%);box-shadow:inset 0 1px 2px rgba(0,0,0,0.18)}
         .rkPod1 .rkPodBase{--ell:19px}
         @media(max-width:560px){.rkPodBase{--ell:11px}.rkPod1 .rkPodBase{--ell:14px}.rkPod1{--h:150px}.rkPod2{--h:122px}.rkPod3{--h:108px}.rkPodium{margin-bottom:-40px}}
-        @media(prefers-reduced-motion:reduce){.rkPodCol{transition:none}}
+        @media(prefers-reduced-motion:reduce){.rkPodCol,.rkPodBall,.rkPodLaurel,.rkPodBase,.rkPodTop,.rkPodVal{transition:none!important}.rkPodCol:hover .rkPodBall,.rkPodCol:hover .rkPodLaurel,.rkPodCol:hover .rkPodVal{transform:none}.rkPodCol:hover .rkPodLaurel{transform:translate(-50%,-69%)}}
         .rkRow{display:grid;grid-template-columns:28px calc(var(--rk-name-w,190px) + 32px) 1fr 72px 72px 56px 150px;gap:8px}
         /* NOTA: já NÃO usamos content-visibility:auto nas linhas. Com sparkline em SVG leve (não Recharts)
            as ~124 linhas pintam bem de uma vez; o content-visibility fazia as linhas aparecerem EM BRANCO
