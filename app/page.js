@@ -2704,43 +2704,26 @@ function CountUp({to=0}){
   return <span>{Number(to||0).toLocaleString("pt-PT")}</span>;
 }
 /* ---- Updates e feedbacks (homepage, área do membro) ---------------------- */
-// Recap diário do que a plataforma levou (escrito pelo admin) + feedback dos membros.
-// O feedback é PÚBLICO mas ANÓNIMO: mostra-se o texto, nunca o autor (o admin vê o autor no painel).
+// Recap diário do que a plataforma levou (escrito pelo admin). A área de feedback dos membros foi removida.
 function UpdatesFeedback({myName}){
   const [updates,setUpdates]=useState([]);
-  const [feedback,setFeedback]=useState([]);
   const [activeDay,setActiveDay]=useState(null); // data antiga (chip) ativa — mostra o conteúdo por baixo
-  const [msg,setMsg]=useState("");
-  const [sending,setSending]=useState(false);
-  const [sent,setSent]=useState(false);
-  const [err,setErr]=useState("");
-  const loadFeedback=async()=>{ try{ const r=await fetch("/api/feedback/list"); const j=await r.json(); if(Array.isArray(j.feedback)) setFeedback(j.feedback); }catch{} };
   useEffect(()=>{ let ok=true;
     (async()=>{ try{ const r=await fetch("/api/updates/list"); const j=await r.json(); if(ok&&Array.isArray(j.updates)) setUpdates(j.updates); }catch{} })();
-    loadFeedback();
     return()=>{ ok=false; };
   },[]);
   const fmtDay=(d)=>{ try{ return new Date(d+"T00:00:00Z").toLocaleDateString("pt-PT",{day:"numeric",month:"short",timeZone:"UTC"}); }catch{ return d; } };
   const fmtDayShort=(d)=>{ try{ const [,m,dd]=String(d).split("-"); return `${dd}/${m}`; }catch{ return d; } };
   const bodyLines=(t)=>String(t||"").split("\n").map(s=>s.replace(/^\s*[-•]\s*/,"").trim()).filter(Boolean);
-  const submit=async()=>{ const m=msg.trim(); if(!m||sending) return; setSending(true); setErr("");
-    try{
-      const r=await fetch("/api/feedback/submit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:m,name:myName||""})});
-      const j=await r.json().catch(()=>({}));
-      if(!r.ok){ setErr(j.error||"Não foi possível enviar."); }
-      else { setMsg(""); setSent(true); setTimeout(()=>setSent(false),3200); loadFeedback(); }
-    }catch{ setErr("Não foi possível enviar."); }
-    finally{ setSending(false); }
-  };
   return(
     <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"clamp(20px,4vw,32px)"}}>
       <h2 style={{fontSize:20,fontWeight:700,letterSpacing:"-0.3px",margin:"0 0 4px",textAlign:"center"}}>
         Updates e feedbacks
       </h2>
-      <p style={{fontSize:13,color:"#6b7280",margin:"0 0 22px",textAlign:"center"}}>O que vai mudando na plataforma — e o que achas disto.</p>
+      <p style={{fontSize:13,color:"#6b7280",margin:"0 0 22px",textAlign:"center"}}>O que vai mudando na plataforma.</p>
 
       {/* Updates */}
-      <div style={{marginBottom:28}}>
+      <div>
         <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:700,marginBottom:14}}>Novidades</div>
         {updates.length===0?(
           <p style={{fontSize:14,color:"#6b7280",margin:0}}>Ainda sem novidades por aqui. Fica atento. 👀</p>
@@ -2796,32 +2779,6 @@ function UpdatesFeedback({myName}){
             </div>
           );
         })()}
-      </div>
-
-      {/* Feedback */}
-      <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:22}}>
-        <div style={{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"1.2px",fontWeight:700,marginBottom:6,textAlign:"center"}}>O teu feedback</div>
-        <p style={{fontSize:12.5,color:"#6b7280",margin:"0 0 12px",textAlign:"center"}}>Deixa uma sugestão ou opinião. Fica visível para todos, mas <strong style={{color:"#94a3b8"}}>de forma anónima</strong>.</p>
-        <textarea value={msg} onChange={e=>setMsg(e.target.value.slice(0,500))} rows={3}
-          placeholder="O que gostavas de ver, ou o que melhorarias?"
-          style={{width:"100%",boxSizing:"border-box",resize:"vertical",background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"11px 13px",color:"#e2e8f0",fontSize:14,lineHeight:1.5,fontFamily:"inherit",textAlign:"center"}}/>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginTop:10,flexWrap:"wrap"}}>
-          <span style={{fontSize:12,color:sent?"#4ade80":err?"#f87171":"#6b7280"}}>
-            {sent?"Obrigado pelo feedback! 🙌":err?err:`${msg.length}/500`}
-          </span>
-          <Btn onClick={submit} primary disabled={sending||!msg.trim()}>{sending?"A enviar…":"Enviar"}</Btn>
-        </div>
-
-        {feedback.length>0&&(
-          <div style={{marginTop:22,display:"flex",flexDirection:"column",gap:12}}>
-            {feedback.map(f=>(
-              <div key={f.id} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"11px 14px"}}>
-                <div style={{fontSize:14,color:"#cbd5e1",lineHeight:1.5,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{f.message}</div>
-                <div style={{fontSize:11,color:"#64748b",marginTop:6}}>Anónimo · {timeAgo(f.created_at)}</div>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -6573,7 +6530,6 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
           <div style={{fontSize:"clamp(34px,9vw,42px)",fontWeight:800,fontFamily:"monospace",lineHeight:1,
             color:st.total>=0?"#4ade80":"#f87171"}}><Tri up={st.total>=0} size="0.78em"/> <Rolling text={pct(Math.abs(st.total)).replace(/[+-]/,"")}/></div>
           <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",justifyContent:"center",gap:"8px 12px",marginTop:10}}>
-            <span style={{fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.8px",fontWeight:700}}>Rentabilidade total</span>
             {dayRet!=null&&(
               <span title={marketClosed?"Rentabilidade no último pregão":"Rentabilidade do portefólio hoje"}
                 style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,color:"#cbd5e1",padding:"4px 11px",borderRadius:999,

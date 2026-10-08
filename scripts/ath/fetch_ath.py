@@ -297,6 +297,19 @@ def fetch_full():
     print(f"[ath] full: {len(rows)} linhas (com marketcap: {with_cap})")
     post_rows(rows)
 
+    # Rebaixa (in_sp500=false) quem já não consta no S&P → deixa de aparecer na lista principal.
+    # Só depois de o upsert ter corrido bem e só se o download trouxe (quase) todo o índice.
+    sp_ok = [r["symbol"] for r in rows if r.get("in_sp500") is True and r.get("ath")]
+    if len(sp_ok) >= 400:
+        try:
+            r = requests.post(INGEST_URL, json={"members": symbols},
+                              headers={"Authorization": f"Bearer {CRON_SECRET}", "Content-Type": "application/json"}, timeout=60)
+            print(f"[ath] membros S&P -> {r.status_code} {r.text[:200]}")
+        except Exception as e:
+            print(f"[ath] membros S&P erro (não bloqueia): {e}")
+    else:
+        print(f"[ath] membros S&P: só {len(sp_ok)} com ATH — não rebaixo ninguém")
+
 
 def site_shares():
     """{symbol: shares} a partir do Supabase (anon)."""

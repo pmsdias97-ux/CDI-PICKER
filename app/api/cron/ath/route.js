@@ -15,6 +15,28 @@ export async function POST(request) {
   let body;
   try { body = await request.json(); } catch { body = null; }
   const rows = Array.isArray(body?.rows) ? body.rows : null;
+  // "members": lista COMPLETA dos símbolos que fazem parte do S&P agora (só o run "full" a envia).
+  // Quem estava marcado in_sp500=true e já não consta é rebaixado para false → sai da lista principal
+  // (empresas que saem do índice ou são adquiridas ficavam para trás, sem ATH nem preço atualizado).
+  const members = Array.isArray(body?.members) ? body.members.map((s) => String(s).toUpperCase().trim()).filter(Boolean) : null;
+  if (members) {
+    // Guarda: uma lista curta/vazia (Wikipédia ou download a falhar) NUNCA pode esvaziar a lista do S&P.
+    if (members.length < 400) return Response.json({ error: "Lista de membros demasiado curta — ignorada." }, { status: 400 });
+    let supabaseM;
+    try { supabaseM = getSupabaseAdmin(); }
+    catch (e) { return Response.json({ error: e.message }, { status: 500 }); }
+    const { data: cur, error: curErr } = await supabaseM.from("sp500_ath").select("symbol").eq("in_sp500", true).range(0, 999);
+    if (curErr) return Response.json({ error: curErr.message }, { status: 500 });
+    const keep = new Set(members);
+    const stale = (cur || []).map((r) => r.symbol).filter((s) => !keep.has(s));
+    // Segurança extra: nunca rebaixar mais de 30 de uma vez (uma troca normal do índice são poucas).
+    if (stale.length > 30) return Response.json({ error: `Rebaixaria ${stale.length} símbolos — demasiados, ignorado.` }, { status: 400 });
+    if (stale.length) {
+      const { error: upErr } = await supabaseM.from("sp500_ath").update({ in_sp500: false }).in("symbol", stale);
+      if (upErr) return Response.json({ error: upErr.message }, { status: 500 });
+    }
+    if (!rows || !rows.length) return Response.json({ ok: true, demoted: stale });
+  }
   if (!rows || !rows.length) return Response.json({ error: "Sem linhas." }, { status: 400 });
 
   const now = new Date().toISOString();
