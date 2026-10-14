@@ -43,14 +43,15 @@ async function athMap() {
   if (athSnap.map && Date.now() - athSnap.at < ATH_TTL_MS) return athSnap.map;
   const supabase = getSupabaseAdmin();
   // Resiliente: se a coluna prev_close ainda não existir, lê só symbol+price (sem variação).
-  let { data, error } = await supabase.from("sp500_ath").select("symbol, price, prev_close");
+  let { data, error } = await supabase.from("sp500_ath").select("symbol, price, prev_close, updated_at");
   if (error) ({ data } = await supabase.from("sp500_ath").select("symbol, price"));
   const map = new Map();
   for (const r of data || []) {
     const price = Number(r.price);
     if (!Number.isFinite(price) || price <= 0) continue;
     const prev = r.prev_close == null ? null : Number(r.prev_close);
-    map.set(norm(r.symbol), { price, prev: Number.isFinite(prev) && prev > 0 ? prev : null });
+    const ts = r.updated_at ? new Date(r.updated_at).getTime() : null;
+    map.set(norm(r.symbol), { price, prev: Number.isFinite(prev) && prev > 0 ? prev : null, ts: Number.isFinite(ts) ? ts : null });
   }
   athSnap = { at: Date.now(), map };
   return map;
@@ -104,10 +105,12 @@ export async function GET(request) {
   let ath;
   try { ath = await athMap(); } catch { ath = new Map(); }
   const missing = [];
+  let asOf = 0; // instante (ms) da cotação MAIS RECENTE servida do pipeline → o "Atualizado às" mostra a idade dos números que o utilizador vê
   const needChange = []; // no pipeline com preço, mas sem fecho anterior → variação ao vivo
   for (const ticker of tickers) {
     const a = ath.get(norm(ticker));
     if (a) {
+      if (a.ts && a.ts > asOf) asOf = a.ts;
       prices[ticker] = a.price;
       if (a.prev) changes[ticker] = a.price / a.prev - 1;
       else needChange.push(ticker);
@@ -175,5 +178,5 @@ export async function GET(request) {
   } catch { /* guarda best-effort */ }
 
   // marketClosed → a UI mostra "Último dia" (variação do último pregão congelada) em vez de "Diário".
-  return Response.json({ prices, changes, errors, marketClosed: !marketOpen });
+  return Response.json({ prices, changes, errors, marketClosed: !marketOpen, asOf: asOf ? new Date(asOf).toISOString() : null });
 }

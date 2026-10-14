@@ -8,7 +8,7 @@ import { createPortal } from "react-dom";
 const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 import { BUILD_VERSION } from "./version";
 import { supabase } from "./supabase";
-import { buildPeriodSparklineSeries, fetchPaginatedRows, prepareSparklinePoints } from "./lib/ranking-sparkline.mjs";
+import { buildPeriodSparklineSeries, prepareSparklinePoints } from "./lib/ranking-sparkline.mjs";
 import { fetchStockInfo, fetchStockPrices, fetchStockHistory, searchTickers } from "./lib/stocks";
 // weekly_baselines/monthly_baselines já passaram das 1000 linhas (limite por resposta do Supabase) → a
 // query simples truncava e a semana/mês ATUAL ficava com baseline INCOMPLETO → o pfWeekRet caía no
@@ -331,8 +331,29 @@ function weekNum(key){ return Math.max(1, Math.round((Date.parse(key+"T00:00:00Z
 function weekLabel(key){ return `Semana ${weekNum(key)}`; }
 // Fim da semana = SEXTA-feira (2ª feira + 4). O ranking semanal é 2ª (abertura) → 6ª (fecho).
 function weekFriday(key){ const t=new Date(key+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+4); return t.toISOString().slice(0,10); }
-// Semana fechada? 6ª feira depois do fecho US (16:00 ET) ou fim de semana → vencedor apurado.
+// Abertura US (09:30 ET) do 1.º PREGÃO da semana (2ª; salta feriados) — instante em ms (UTC).
+function weekFirstOpenMs(mondayKey){
+  for(let i=0;i<5;i++){
+    const d=new Date(Date.parse(mondayKey+"T00:00:00Z")+i*86400000);
+    const key=d.toISOString().slice(0,10);
+    if(MARKET_HOLIDAYS_US.has(key)) continue;
+    const guess=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate(),9,30);
+    return guess-etOffsetMs(new Date(guess));
+  }
+  return null;
+}
+// 2ª feira (ou depois de um feriado) ANTES da abertura do 1.º pregão: a semana nova ainda não arrancou.
+function weekPreOpen(now){
+  const n=now||new Date(); const mk=weekKey(n); const t=weekFirstOpenMs(mk);
+  return t!=null && Date.parse(mk+"T00:00:00Z")<=n.getTime() && n.getTime()<t;
+}
+function prevWeek(key){ const t=new Date(key+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()-7); return t.toISOString().slice(0,10); }
+// Semana da COMPETIÇÃO "em jogo": a calendário, EXCETO até à abertura do 1.º pregão — aí ainda é a semana
+// que acabou de fechar (congelada, com o vencedor), tal como ao fim de semana.
+function compWeekKey(now){ const n=now||new Date(); const k=weekKey(n); return weekPreOpen(n)?prevWeek(k):k; }
+// Semana fechada? 6ª feira depois do fecho US (16:00 ET), fim de semana, ou 2ª antes da abertura → vencedor apurado.
 function weekTradingDone(now){
+  if(weekPreOpen(now)) return true;
   const parts=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",weekday:"short",hour:"2-digit",hour12:false}).formatToParts(now||new Date());
   const wd=parts.find(x=>x.type==="weekday")?.value;
   let h=parseInt(parts.find(x=>x.type==="hour")?.value||"0",10); if(h===24)h=0;
@@ -1508,6 +1529,11 @@ function CompetitionTimer({settings,period,hasWeek}){
       // Trading da semana terminou (hora US): 6ª pós-fecho → vencedor apurado; fim de semana → próxima 2ª.
       const nyWd=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",weekday:"short"}).format(nd);
       if(nyWd==="Fri"){ pre=`${weekLabel(wk)} · vencedor apurado`; dateStr=null; d=null; }
+      else if(weekPreOpen(nd)){                    // 2ª antes da abertura: "Semana 16 arranca hoje às 14:30"
+        const t=weekFirstOpenMs(wk); const sameDay=t!=null&&dayDiff(new Date(t),nd)===0;
+        pre=`${weekLabel(wk)} arranca ${sameDay?"hoje":"às"}`; dateStr=t!=null?new Date(t).toLocaleTimeString("pt-PT",{hour:"2-digit",minute:"2-digit"}):null; d=null;
+        if(!sameDay&&t!=null){ pre=`${weekLabel(wk)} arranca ${new Date(t).toLocaleDateString("pt-PT",{weekday:"long"})},`; }
+      }
       else arranca(dowUTC===1?wk:nextWeek(wk));   // fim de semana → 2ª seguinte (madrugada 2ª UTC = ainda hoje)
     }else if(!hasWeek&&dowUTC===1){
       d=null; pre="Arranca hoje,"; dateStr=fmtDateShort(wk); // 2ª de manhã, antes da abertura (baseline por capturar)
@@ -1665,8 +1691,11 @@ export default function App(){
   const [pastBaselines,setPastBaselines]=useState({}); // {period:{ticker:preço}} p/ campeões de meses fechados
   const [monthCloses,setMonthCloses]=useState({});     // {period:{ticker:fecho}} meses já fechados (close_price)
   const [rankPeriod,setRankPeriod]=useState("total"); // toggle Geral|Mensal|Semanal — elevado p/ o Shell trocar o fundo
-  const [weekBase,setWeekBase]=useState({}); // {ticker:abertura} da semana atual (rentabilidade ao vivo)
   const [weekOpens,setWeekOpens]=useState({}); // {weekKey:{ticker:abertura}} todas as semanas
+  // Semana em jogo (muda sozinha às 00:00 UTC de 2ª→… e à abertura do 1.º pregão): verifica a cada 20 s.
+  const [compWk,setCompWk]=useState(()=>compWeekKey(new Date()));
+  useEffect(()=>{ const id=setInterval(()=>setCompWk(k=>{ const n=compWeekKey(new Date()); return n===k?k:n; }),20000); return()=>clearInterval(id); },[]);
+  const weekBase=useMemo(()=>weekOpens[compWk]||{},[weekOpens,compWk]); // {ticker:abertura} da semana em jogo (rentabilidade ao vivo)
   const [weekCloses,setWeekCloses]=useState({}); // {weekKey:{ticker:fecho}} semanas já fechadas (6ª ao fecho)
   const [myName,setMyName]=useState(null);
   const [hasSubmitted,setHasSubmitted]=useState(false);
@@ -1674,6 +1703,7 @@ export default function App(){
   const detailFocusRef=useRef(null); // {commentId} — intenção de aterrar num comentário ao abrir um perfil
   const [livePrices,setLivePrices]=useState({});
   const [dayChange,setDayChange]=useState({}); // variação do dia por ticker
+  const [pricesAsOf,setPricesAsOf]=useState(null); // quando foi gerada a cotação que está no ecrã (vem da própria resposta)
   const [marketClosed,setMarketClosed]=useState(false); // mercado US fechado → coluna/widgets mostram "Último dia" (último pregão)
   const [pricesLoading,setPricesLoading]=useState(false);
   const [detailSlug,setDetailSlug]=useState(null);
@@ -1714,7 +1744,8 @@ export default function App(){
     if(!tickers.length){ setLivePrices({}); setDayChange({}); return; }
     if(!silent) setPricesLoading(true);
     try{
-      const { prices, changes, marketClosed:mc }=await fetchStockPrices(tickers);
+      const { prices, changes, marketClosed:mc, asOf }=await fetchStockPrices(tickers);
+      if(asOf) setPricesAsOf(asOf);
       setLivePrices(prices);
       setDayChange(changes||{});
       setMarketClosed(!!mc);
@@ -1813,12 +1844,11 @@ export default function App(){
 
     // Baselines semanais (mini-época "Vencedor da Semana"): abertura (2ª) + fecho (6ª). Falha em silêncio.
     fetchAllBaselines("weekly_baselines").then((data)=>{
-      const wk=weekKey(new Date()); // 2ª feira UTC da semana atual
       const cur={}, opens={}, closes={};
       (data||[]).forEach(r=>{ const o=Number(r.price); const c=r.close_price==null?null:Number(r.close_price);
-        if(o>0){ (opens[r.period]=opens[r.period]||{})[r.ticker]=o; if(r.period===wk) cur[r.ticker]=o; }
+        if(o>0){ (opens[r.period]=opens[r.period]||{})[r.ticker]=o; }
         if(c>0){ (closes[r.period]=closes[r.period]||{})[r.ticker]=c; } });
-      setWeekBase(cur); setWeekOpens(opens); setWeekCloses(closes);
+      setWeekOpens(opens); setWeekCloses(closes);
     }).catch(()=>{});
 
     setLoading(false);
@@ -1832,10 +1862,10 @@ export default function App(){
   const portfoliosRef=useRef(portfolios); portfoliosRef.current=portfolios;
   useEffect(()=>{
     const refetch=()=>{ if(typeof document!=="undefined"&&document.visibilityState==="visible"&&portfoliosRef.current.length) refreshLivePrices(portfoliosRef.current,{silent:true}); };
-    const iv=setInterval(refetch,5*60*1000);
+    const iv=setInterval(refetch,marketClosed?5*60*1000:2*60*1000); // sessão aberta: 2 min (alinhado com o backend, que escreve de ~2 em 2 min); fechada: 5 min
     document.addEventListener("visibilitychange",refetch);
     return ()=>{ clearInterval(iv); document.removeEventListener("visibilitychange",refetch); };
-  },[refreshLivePrices]);
+  },[refreshLivePrices,marketClosed]);
   // Últimos comentários (cartão do rail do Ranking) — 1× no load (política "refresca no load").
   useEffect(()=>{ (async()=>{ try{ const r=await fetch("/api/comments/recent"); const j=await r.json(); if(Array.isArray(j?.comments)) setRecentComments(j.comments); }catch{} })(); },[]);
   // Ao mudar de ecrã (ou de portefólio aberto), começa no topo do scroll.
@@ -1902,7 +1932,7 @@ export default function App(){
     // Semanal: medalha logo que a semana FECHA (não só na 2ª feira seguinte). Semana fechada = tem
     // fecho de 6ª (weekCloses, gravado pela weekly-close das 22:00 UTC). A semana ATUAL conta assim que
     // o pregão terminou (weekTradingDone: 6ª pós-fecho ou fim de semana) E o fecho está gravado ('to').
-    const now=new Date(); const curW=weekKey(now); const weekDone=weekTradingDone(now); const seen=new Set();
+    const now=new Date(); const curW=compWeekKey(now); const weekDone=weekTradingDone(now); const seen=new Set();
     for(const per of Object.keys(weekCloses).sort()){
       if(per>curW) continue;                    // semanas futuras: nunca
       if(per===curW && !weekDone) continue;      // semana atual: só depois de fechada
@@ -2024,7 +2054,7 @@ export default function App(){
     const hasMonth=!!(monthBase&&Object.keys(monthBase).length);
     const hasWeek=!!(weekBase&&Object.keys(weekBase).length);
     // Semana fechada → posição semanal pelo resultado OFICIAL congelado (open→close), como a lista/vencedor.
-    const curWk=weekKey(new Date());
+    const curWk=compWeekKey(new Date());
     const wkFrozen=(weekTradingDone(new Date())&&weekOpens&&weekOpens[curWk]&&weekCloses&&weekCloses[curWk])?{from:weekOpens[curWk],to:weekCloses[curWk]}:null;
     const monthLabel=(()=>{ const n=new Date().toLocaleDateString("pt-PT",{month:"long"}); return n.charAt(0).toUpperCase()+n.slice(1); })();
     return {
@@ -2070,7 +2100,7 @@ export default function App(){
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
   if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} pickCounts={compStats.counts} compTickers={compStats.tickers} showToast={showToast}/>);
-  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} spy={spy} dayChange={dayChange} marketClosed={marketClosed} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} monthBase={monthBase} pastBaselines={pastBaselines} monthCloses={monthCloses} weekBase={weekBase} weekOpens={weekOpens} weekCloses={weekCloses} period={rankPeriod} setPeriod={setRankPeriod} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)} winners={winners} showToast={showToast} recentComments={recentComments.filter(c=>portfolios.some(p=>p.id===c.portfolioId))} openComments={openComments}/>);
+  if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} pricesAsOf={pricesAsOf} spy={spy} dayChange={dayChange} marketClosed={marketClosed} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} monthBase={monthBase} pastBaselines={pastBaselines} monthCloses={monthCloses} weekBase={weekBase} weekOpens={weekOpens} weekCloses={weekCloses} period={rankPeriod} setPeriod={setRankPeriod} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)} winners={winners} showToast={showToast} recentComments={recentComments.filter(c=>portfolios.some(p=>p.id===c.portfolioId))} openComments={openComments}/>);
   if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} dayChange={dayChange} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} marketClosed={marketClosed} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} myUserId={myPf?.userId||null} adminPw={adminPw} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} winners={winners} standings={detailStandings} monthBase={monthBase} weekBase={weekBase} reload={load} showToast={showToast} onOpenMember={openMember} focusRef={detailFocusRef}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast} adminPw={adminPw} setAdminPw={setAdminPw}/>);
@@ -3702,6 +3732,30 @@ function SnapshotCard({cardRef,shown,data,raceYMin,raceYMax,dateStr,compDay,dayT
 // Cache em memória (dura a sessão SPA, não sobrevive a reload) dos snapshots por conjunto de membros.
 // Ao voltar ao Ranking, o gráfico usa logo o que já tinha (instantâneo) e revalida em fundo sem re-animar.
 const RACE_SNAP_CACHE=new Map();
+// Cache PERSISTENTE (localStorage) dos snapshots do gráfico: no F5 mostra logo os últimos dados conhecidos e
+// atualiza por trás (stale-while-revalidate) → as linhas deixam de esperar pela rede. Formato compacto.
+const RACE_LS_PREFIX="ci_race_v1:";
+function raceLsGet(key){
+  try{
+    const raw=localStorage.getItem(RACE_LS_PREFIX+key); if(!raw) return null;
+    const rows=JSON.parse(raw); if(!Array.isArray(rows)) return null;
+    return rows.map(r=>({portfolio_id:r[0],captured_at:r[1],total_return:r[2]}));
+  }catch{ return null; }
+}
+function raceLsSet(key,arr){
+  try{
+    // só uma entrada guardada (a mais recente) → não acumula lixo no localStorage
+    for(let i=localStorage.length-1;i>=0;i--){ const k=localStorage.key(i); if(k&&k.startsWith(RACE_LS_PREFIX)&&k!==RACE_LS_PREFIX+key) localStorage.removeItem(k); }
+    localStorage.setItem(RACE_LS_PREFIX+key,JSON.stringify(arr.map(r=>[r.portfolio_id,r.captured_at,r.total_return])));
+  }catch{ /* quota/indisponível → ignora */ }
+}
+// Fundo do ecrã inteiro do gráfico = o MESMO do ranking respetivo (Geral azul / Mensal roxo / Semanal teal) — iguais
+// aos temas BLUE/PURPLE/TEAL do Shell.
+const RACE_FS_BG={
+  total:{bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(37,99,235,0.28) 0%, rgba(37,99,235,0.10) 38%, transparent 72%), linear-gradient(180deg,#0c1a36 0%,#0a1428 55%,#080f20 80%,#070d1c 100%)",color:"#070d1c"},
+  month:{bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(88,60,160,0.24) 0%, rgba(67,42,130,0.10) 42%, transparent 72%), linear-gradient(180deg,#1e1640 0%,#181230 52%,#110c24 80%,#0c0819 100%)",color:"#0c0819"},
+  week:{bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(20,160,150,0.22) 0%, rgba(13,120,120,0.09) 42%, transparent 72%), linear-gradient(180deg,#0c2e2e 0%,#0a2626 52%,#071c1d 80%,#051315 100%)",color:"#051315"},
+};
 function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDate,periodStart,periodLabelText,frameStart,periodRetOf,gamePeriod,hist}){
   const [snaps,setSnaps]=useState([]); // [] em vez de null → o gráfico desenha logo (baseline início→agora)
   const nowIso=useMemo(()=>new Date().toISOString(),[]); // "agora" fixo → conteúdo do data estável (não re-anima)
@@ -3722,6 +3776,30 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
     return()=>{ clearInterval(id); if(typeof window!=="undefined") window.removeEventListener("resize",ck); };
   },[]);
   const [snapOpen,setSnapOpen]=useState(false); // modal do snapshot (desktop)
+  // ECRÃ INTEIRO do gráfico: API nativa (requestFullscreen) quando existe; senão (ex.: iPhone) cai num
+  // "ecrã inteiro" por CSS (position:fixed). Esc / botão sai nos dois casos.
+  const fsRef=useRef(null);
+  const [fsMode,setFsMode]=useState(null); // null | "native" | "css"
+  const isFs=fsMode!==null;
+  const [winH,setWinH]=useState(0);
+  const toggleFs=async()=>{
+    if(fsMode){ try{ if(document.fullscreenElement) await document.exitFullscreen(); }catch{} setFsMode(null); return; }
+    try{ if(fsRef.current?.requestFullscreen){ await fsRef.current.requestFullscreen(); setFsMode("native"); return; } }catch{}
+    setFsMode("css");
+  };
+  useEffect(()=>{
+    const onChange=()=>{ if(!document.fullscreenElement) setFsMode(m=>m==="native"?null:m); }; // saiu com Esc (modo nativo)
+    document.addEventListener("fullscreenchange",onChange);
+    return()=>document.removeEventListener("fullscreenchange",onChange);
+  },[]);
+  useEffect(()=>{
+    if(!fsMode) return;
+    const onKey=(e)=>{ if(e.key==="Escape") setFsMode(null); };       // Esc no modo CSS (o nativo já trata)
+    const onResize=()=>setWinH(window.innerHeight);
+    onResize(); window.addEventListener("resize",onResize); window.addEventListener("keydown",onKey);
+    const prev=document.body.style.overflow; if(fsMode==="css") document.body.style.overflow="hidden";
+    return()=>{ window.removeEventListener("resize",onResize); window.removeEventListener("keydown",onKey); document.body.style.overflow=prev; };
+  },[fsMode]);
   const [snapUrl,setSnapUrl]=useState("");      // data-URL (pré-visualização + descarregar)
   const [snapBlob,setSnapBlob]=useState(null);  // blob (copiar — sem fetch, seguro com o CSP)
   const [snapMsg,setSnapMsg]=useState("");
@@ -3770,7 +3848,8 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
     if(!idList.length){ setSnaps([]); return; } // sem membros ainda → mantém em "a carregar" (placeholder)
     // Chave de cache independente da ORDEM (Geral/Semanal/Mensal têm os mesmos snaps crus, só re-baseiam).
     const cacheKey=idList.slice().sort().join(",");
-    const cached=RACE_SNAP_CACHE.get(cacheKey);
+    let cached=RACE_SNAP_CACHE.get(cacheKey);
+    if(!cached){ const ls=raceLsGet(cacheKey); if(ls&&ls.length){ cached=ls; RACE_SNAP_CACHE.set(cacheKey,ls); } } // F5: último estado conhecido, já
     // Anima SEMPRE o crescimento; a cache serve só para eliminar o DELAY do fetch na revisita.
     if(cached){ setSnaps(cached); setSnapsLoaded(true); } // revisita: dados já em cache → anima logo, sem esperar a rede
     else { setSnapsLoaded(false); }                       // 1ª carga: placeholder até os dados chegarem
@@ -3780,13 +3859,22 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
       try{
         // Paginação: sem isto o Supabase corta aos 1000 registos (os mais ANTIGOS, por ordem ascendente),
         // deixando as semanas recentes de fora → o gráfico do período ficava só com 2 pontos (reta). Busca TUDO.
-        const { data, cancelled }=await fetchPaginatedRows(
-          (cursor,limit)=>{ let q=supabase.from("portfolio_snapshots").select("id,portfolio_id,captured_at,total_return").in("portfolio_id",idList).order("id",{ascending:true}).limit(limit); if(cursor!=null) q=q.gt("id",cursor); return q; },
-          {isCancelled:()=>cancel},
-        );
+        // Em PARALELO: pede a 1.ª página com a contagem total e dispara as restantes todas de uma vez
+        // (antes eram páginas em série: a demora era a SOMA dos pedidos). Mesma ordem (id asc), mesmos dados.
+        const PAGE=1000, cols="id,portfolio_id,captured_at,total_return";
+        const mk=(q)=>q.in("portfolio_id",idList).order("id",{ascending:true});
+        const first=await mk(supabase.from("portfolio_snapshots").select(cols,{count:"exact"})).range(0,PAGE-1);
+        if(first.error) throw first.error;
+        let data=[...(first.data||[])]; const cancelled=false;
+        const total=first.count??data.length;
+        if(total>PAGE&&!cancel){
+          const pages=Math.ceil(total/PAGE);
+          const rest=await Promise.all(Array.from({length:pages-1},(_,i)=>mk(supabase.from("portfolio_snapshots").select(cols)).range((i+1)*PAGE,(i+2)*PAGE-1)));
+          for(const r of rest){ if(r.error) throw r.error; data.push(...(r.data||[])); }
+        }
         if(!cancel&&!cancelled){
           const arr=data||[]; const prev=RACE_SNAP_CACHE.get(cacheKey);
-          RACE_SNAP_CACHE.set(cacheKey,arr);
+          RACE_SNAP_CACHE.set(cacheKey,arr); raceLsSet(cacheKey,arr);
           const same=prev&&prev.length===arr.length&&prev.every((r,i)=>r.portfolio_id===arr[i].portfolio_id&&r.captured_at===arr[i].captured_at&&r.total_return===arr[i].total_return);
           // Só re-aplica se os dados MUDARAM. Igual (revisita típica) → não mexe: a animação em curso não é interrompida
           // nem recomeça. Se mudaram numa revisita, aplica sem re-animar (animate=false) p/ evitar duplo crescimento.
@@ -3931,6 +4019,10 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
   const raceYMin=Math.floor(yLo-Math.min(Math.max(ySpan*0.25,0.8),1.5));
   const raceYMax=Math.ceil(yHi+Math.min(Math.max(ySpan*0.12,0.4),1.5));
 
+  const accRGB=gamePeriod==="month"?"167,139,250":gamePeriod==="week"?"45,212,191":"96,165,250"; // cor do ranking
+  const fsBg=RACE_FS_BG[gamePeriod]||RACE_FS_BG.total;
+  const accL=gamePeriod==="month"?"#c4b5fd":gamePeriod==="week"?"#5eead4":"#93c5fd";
+  const chartH=isFs?Math.max(280,(winH||700)-250):320; // em ecrã inteiro o gráfico ocupa a altura toda menos título+legenda
   const snapDate=fmtDateShort(nowIso);
   const snapDay=(()=>{ const d=gameStartDate?new Date(gameStartDate):null; if(!d||isNaN(d)) return 1; return Math.max(1,Math.min(365,Math.floor((Date.now()-d.getTime())/86400000)+1)); })();
   const snapDownload=()=>{ if(!snapUrl) return; const a=document.createElement("a"); a.href=snapUrl; a.download=`cdi-picker-${gamePeriod||"geral"}-top10-${nowIso.slice(0,10)}.png`; a.click(); };
@@ -3943,12 +4035,18 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
       setSnapMsg("Imagem copiada ✓");
     }catch(e){ console.error("snapshot copy failed:",e); setSnapMsg("O browser não deixou copiar — descarrega em vez disso."); }
   };
-  return(<>
-    <style>{`.raceLegendV{display:none;flex-direction:column;gap:2px}@media(max-width:640px){.snapBtn{display:none}.raceLegendH{display:none}.raceLegendV{display:flex}}`}</style>
-    <div style={{position:"relative",background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px 16px 12px"}}>
+  // Conteúdo do cartão (JSX) — usado no sítio normal, em ecrã inteiro nativo, ou num portal (fallback CSS).
+  const cardBody=(<>
+      {enoughData&&!frameMode&&(
+      <button className="fsBtn" onClick={toggleFs} title={isFs?"Sair do ecrã inteiro (Esc)":"Ver em ecrã inteiro"} aria-label={isFs?"Sair do ecrã inteiro":"Ver em ecrã inteiro"}
+        style={{position:isFs?"fixed":"absolute",top:isFs?14:12,zIndex:2,display:"inline-flex",alignItems:"center",justifyContent:"center",width:32,height:32,borderRadius:9,cursor:"pointer",background:`rgba(${accRGB},0.14)`,border:`1px solid rgba(${accRGB},0.50)`,color:accL}}>
+        {isFs
+          ?<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
+          :<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>}
+      </button>)}
       {!frameMode&&!hist&&(
       <button className="snapBtn" onClick={()=>setSnapOpen(true)} title="Guardar imagem do Top 10"
-        style={{position:"absolute",top:12,right:12,zIndex:2,display:"inline-flex",alignItems:"center",justifyContent:"center",width:32,height:32,borderRadius:9,cursor:"pointer",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)",color:"#cbd5e1"}}>
+        style={{position:isFs?"fixed":"absolute",top:isFs?14:12,right:52,zIndex:2,display:"inline-flex",alignItems:"center",justifyContent:"center",width:32,height:32,borderRadius:9,cursor:"pointer",background:`rgba(${accRGB},0.14)`,border:`1px solid rgba(${accRGB},0.50)`,color:accL}}>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
       </button>)}
       <p style={{fontSize:12,margin:"0 0 12px",textAlign:"center",minHeight:17,lineHeight:1.4}}>
@@ -3964,10 +4062,10 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
         })()}
       </p>
       {(!mounted||(!hist&&!frameMode&&!snapsLoaded))?(
-        <div style={{height:320}}/>
+        <div style={{height:chartH}}/>
       ):frameMode?(
         // Grelha de partida: frame completo (2ª→6ª feira), todos a 0% — pronto a preencher 2ª feira.
-        <ResponsiveContainer width="100%" height={320}>
+        <ResponsiveContainer width="100%" height={chartH}>
           <LineChart data={frameData} margin={{top:8,right:14,left:-6,bottom:0}}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.12)" vertical={false}/>
             <XAxis dataKey="t" tickFormatter={raceTick} ticks={frameDays} tick={{fill:"#94a3b8",fontSize:11}} minTickGap={20} axisLine={false} tickLine={false}/>
@@ -3982,7 +4080,7 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
           Ainda sem histórico suficiente — o gráfico preenche-se a partir dos próximos dias.
         </div>
       ):(
-        <ResponsiveContainer width="100%" height={320}>
+        <ResponsiveContainer width="100%" height={chartH}>
           <LineChart data={data} margin={{top:8,right:14,left:-6,bottom:0}}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.12)" vertical={false}/>
             <XAxis dataKey="t" tickFormatter={raceTick} ticks={dayTicks} tick={{fill:"#94a3b8",fontSize:11}} minTickGap={28} axisLine={false} tickLine={false}/>
@@ -4000,11 +4098,11 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
                   strokeWidth={hi===p.name?(p._me?4.5:3.2):(p._me?3.5:2)}
                   strokeOpacity={dim?0.15:1}
                   dot={(live&&!dim)?((dp)=> dp&&dp.index===lastIdx?<RaceLiveDot key={`ld-${p.key}`} cx={dp.cx} cy={dp.cy} color={raceColorOf(p,i)}/>:null):false}
-                  connectNulls isAnimationActive={animate} animationDuration={1000} animationEasing="ease-out" animationBegin={i*30}
+                  connectNulls isAnimationActive={animate} animationDuration={550} animationEasing="ease-out" animationBegin={i*10}
                   activeDot={hi===p.name?{r:4}:(p._me?{r:3.5}:false)}/>
               );
             }); })()}
-            {hasSpy&&<Line type="monotone" dataKey="S&P 500" name="S&P 500" stroke="#ffffff" strokeWidth={1.8} strokeDasharray="6 5" strokeOpacity={0.75} dot={false} connectNulls isAnimationActive={animate} animationDuration={1000} animationEasing="ease-out"/>}
+            {hasSpy&&<Line type="monotone" dataKey="S&P 500" name="S&P 500" stroke="#ffffff" strokeWidth={1.8} strokeDasharray="6 5" strokeOpacity={0.75} dot={false} connectNulls isAnimationActive={animate} animationDuration={550} animationEasing="ease-out"/>}
           </LineChart>
         </ResponsiveContainer>
       )}
@@ -4059,7 +4157,14 @@ function SeasonRace({ranking,preLaunch,myNorm,spy,competitionStarted,gameStartDa
           </div>
         );
       })()}
+  </>);
+  return(<>
+    <style>{`.raceLegendV{display:none;flex-direction:column;gap:2px}.fsBtn{right:12px}.fsBtn:hover,.snapBtn:hover{filter:brightness(1.35)}@media(max-width:640px){.snapBtn{display:none}.fsBtn{right:12px!important}.raceLegendH{display:none}.raceLegendV{display:flex}}`}</style>
+    <div ref={fsRef} style={fsMode==="native"?{...{boxSizing:"border-box",overflow:"auto",background:fsBg.bg,backgroundColor:fsBg.color,padding:"26px 24px 18px",borderRadius:0},position:"relative"}:{position:"relative",background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"20px 16px 12px"}}>
+      {fsMode==="css"?<div style={{minHeight:380}}/>:cardBody}
     </div>
+    {fsMode==="css"&&typeof document!=="undefined"&&createPortal(
+      <div style={{...{boxSizing:"border-box",overflow:"auto",background:fsBg.bg,backgroundColor:fsBg.color,padding:"26px 24px 18px",borderRadius:0},position:"fixed",inset:0,zIndex:9500}}>{cardBody}</div>,document.body)}
     {snapOpen && (<>
       <div aria-hidden="true" style={{position:"fixed",left:-99999,top:0,pointerEvents:"none"}}>
         <SnapshotCard cardRef={cardRef} shown={shown} data={data} raceYMin={raceYMin} raceYMax={raceYMax} dateStr={snapDate} compDay={snapDay} dayTicks={dayTicks} hasSpy={hasSpy} valueOf={snapValueOf} gamePeriod={gamePeriod} periodLabelText={periodLabelText}/>
@@ -4260,7 +4365,7 @@ function PeriodToggle({period,setPeriod,accentL,accentD,accentRGB}){
     </div>
   );
 }
-function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePrices,preLaunch,settings,monthBase,pastBaselines,monthCloses,weekBase,weekOpens,weekCloses,period,setPeriod,onSelect,onCompare,highlightKey,clearHighlight,winners,showToast,recentComments,openComments}){
+function Ranking({ranking,myNorm,pricesLoading,pricesAsOf,spy,dayChange,marketClosed,livePrices,preLaunch,settings,monthBase,pastBaselines,monthCloses,weekBase,weekOpens,weekCloses,period,setPeriod,onSelect,onCompare,highlightKey,clearHighlight,winners,showToast,recentComments,openComments}){
   const [cmp,setCmp]=useState(false);
   const [sel,setSel]=useState([]);
   // Mini-curva por linha: snapshots por portefólio (histórico). Recarrega só quando o
@@ -4329,7 +4434,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
   const monthOf=(p)=>pfMonthRet(p,monthBase,livePrices);
   const hasMonth=!!(monthBase&&Object.keys(monthBase).length); // só há corrida mensal distinta quando há baselines do mês (a partir de agosto)
   const hasWeek=!!(weekBase&&Object.keys(weekBase).length); // baseline da semana capturado (a partir de 2ª feira)
-  const curWk=weekKey(new Date());                                  // 2ª feira UTC da semana atual
+  const curWk=compWeekKey(new Date());                              // 2ª feira UTC da semana EM JOGO (até à abertura de 2ª ainda é a que fechou)
   // Semana JÁ FECHADA (6ª pós-fecho / fim de semana) e com o fecho gravado → a lista E o gráfico semanais
   // CONGELAM no resultado OFICIAL (open→close), tal como o vencedor. Antes usavam preços AO VIVO, que ao
   // fim de semana derrapam do fecho de 6ª (sp500_ath atualizado, split, ATLN instável…) → trocava o 1º.
@@ -4425,7 +4530,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
     return histFromTo?pfPeriodRet(p,histFromTo.from,histFromTo.to):null; };
   const histTop=useMemo(()=>{ if(!histActive) return [];
     return [...officials].map(p=>({p,r:histRetOf(p)})).filter(x=>Number.isFinite(x.r)).sort((a,b)=>b.r-a.r).slice(0,10); },[histActive,histKey,officials,period,seedRet]);
-  const weekOpts=[{key:null,label:`${weekLabel(curWk)} (atual)`},...pastWeeks.map(w=>({key:w,label:weekLabel(w)}))];
+  const weekOpts=[{key:null,label:`${weekLabel(curWk)} (${weekTradingDone(new Date())?"final":"atual"})`},...pastWeeks.map(w=>({key:w,label:weekLabel(w)}))];
   const monthOpts=[{key:null,label:`${periodLabel(curMonthYM)} (atual)`},...pastMonths.map(m=>({key:m,label:periodLabel(m)}))];
   // Coluna do nome = largura do NOME MAIS COMPRIDO (medido na fonte real) → todas as linhas
   // alinhadas e as sparklines começam todas no MESMO sítio (logo a seguir ao maior nome).
@@ -5622,7 +5727,7 @@ function Ranking({ranking,myNorm,pricesLoading,spy,dayChange,marketClosed,livePr
           const seg2Icon=histActive?checkIcon:clockIcon;
           const seg2Text=histActive
             ? "Resultados finais"
-            : (pricesLoading?"A atualizar preços…":(pricesAt?`Atualizado ${new Date(pricesAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}`:null));
+            : (pricesLoading?"A atualizar preços…":((pricesAsOf||pricesAt)?`Atualizado ${new Date(pricesAsOf||pricesAt).toLocaleString("pt-PT",{dateStyle:"short",timeStyle:"short"})}`:null));
           const pillIcon=(path)=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={thL} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{flexShrink:0}}>{path}</svg>;
           return(
             <div className="rkHeadPills" style={{position:"relative",display:"flex",flexWrap:"wrap",alignItems:"center",justifyContent:"center",gap:10,marginTop:18}}>
