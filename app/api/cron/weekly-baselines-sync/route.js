@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
-import { usMarketOpen } from "../../../lib/marketHours";
+import { usMarketOpen, weekFirstOpenMs } from "../../../lib/marketHours";
 import { fetchQuote } from "../../../lib/marketData";
 import { isCrypto } from "../../../lib/crypto";
 
@@ -33,6 +33,16 @@ export async function GET(request) {
 
   // NUNCA reconciliar com sessão a decorrer (o feed seria preço vivo de hoje, não o fecho de 6ª).
   if (!force && usMarketOpen(now)) return Response.json({ ok: true, period, synced: 0, skipped: "mercado aberto — não reconcilia" });
+
+  // NUNCA reconciliar depois de a 1.ª sessão da semana ter ABERTO. "Mercado fechado" não chega: se este job
+  // correr atrasado (o GitHub Actions atrasa agendamentos horas) já depois do fecho de 2ª, o sp500_ath.price é o
+  // FECHO DE 2ª e gravá-lo como abertura da semana apagava o movimento de 2ª a todos (ex.: 31-ago, 28-set, 5/12/19-out).
+  if (!force) {
+    const firstOpen = weekFirstOpenMs(period);
+    if (firstOpen != null && now.getTime() >= firstOpen) {
+      return Response.json({ ok: true, period, synced: 0, skipped: "a 1.ª sessão da semana já abriu — baseline já não se reconcilia" });
+    }
+  }
 
   let supabase; try { supabase = getSupabaseAdmin(); } catch (e) { return Response.json({ error: e.message }, { status: 500 }); }
 

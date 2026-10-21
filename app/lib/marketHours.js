@@ -39,3 +39,22 @@ export function usMarketOpen(now) {
   const close = US_MARKET_HALF_DAYS.has(dateET) ? 13 * 60 + 15 : 16 * 60 + 15; // 13:15 ou 16:15 ET
   return mins >= 570 && mins <= close; // abertura 9:30 (570 min)
 }
+
+// Instante (ms UTC) da ABERTURA (09:30 ET) do 1.º pregão da semana cuja 2ª feira é `mondayKey` ('YYYY-MM-DD');
+// salta feriados (2ª feira feriado → a abertura é na 3ª). Trata do horário de verão/inverno via Intl.
+export function weekFirstOpenMs(mondayKey) {
+  const etOffset = (instant) => {
+    const p = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).formatToParts(instant);
+    const m = {}; for (const x of p) m[x.type] = x.value;
+    let h = parseInt(m.hour, 10); if (h === 24) h = 0;
+    return Date.UTC(+m.year, +m.month - 1, +m.day, h, +m.minute, +m.second) - instant.getTime();
+  };
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(Date.parse(mondayKey + "T00:00:00Z") + i * 86400000);
+    if (US_MARKET_HOLIDAYS.has(d.toISOString().slice(0, 10))) continue;
+    const guess = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 9, 30);
+    return guess - etOffset(new Date(guess));
+  }
+  return null;
+}
