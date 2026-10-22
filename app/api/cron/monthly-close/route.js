@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
-import { usMarketOpen } from "../../../lib/marketHours";
+import { usMarketOpen, lastClosedSession } from "../../../lib/marketHours";
 import { fetchQuote } from "../../../lib/marketData";
 
 export const maxDuration = 30;
@@ -30,14 +30,15 @@ export async function GET(request) {
   const url = new URL(request.url);
   const force = url.searchParams.get("force") === "1";
   const now = new Date();
-  const period = url.searchParams.get("period") || now.toISOString().slice(0, 7); // 'YYYY-MM'
+  // O período e o "último dia útil" medem-se pela SESSÃO de bolsa em hora de Nova Iorque, não pela data UTC: o
+  // GitHub atrasa este job horas (22:00 UTC → 01:00 UTC do dia seguinte) e a data UTC já era "dia 30" quando a
+  // última sessão fechada ainda era a de 29 → gravou o fecho de 29/09 como fecho de setembro.
+  const closed = lastClosedSession(now);
+  const period = url.searchParams.get("period") || closed.period; // 'YYYY-MM'
 
-  // Só no ÚLTIMO dia útil do mês (ou depois) — nos outros dias 28–31 salta. O guard de idempotência
-  // garante 1 captura por mês, mesmo correndo em vários dias.
-  if (!force) {
-    const last = lastWeekdayUTC(now.getUTCFullYear(), now.getUTCMonth());
-    if (now.getUTCDate() < last.getUTCDate()) return Response.json({ ok: true, period, captured: 0, skipped: "ainda há pregões este mês" });
-  }
+  // Só quando a sessão fechada mais recente é o ÚLTIMO pregão do mês — nos outros dias salta. O guard de
+  // idempotência garante 1 captura por mês, mesmo correndo em vários dias.
+  if (!force && !closed.isMonthEnd) return Response.json({ ok: true, period, captured: 0, skipped: "ainda há pregões este mês", session: closed.session });
   // Só DEPOIS do fecho do mercado US (senão gravaria preços intradiários como "fecho").
   if (!force && usMarketOpen(now)) return Response.json({ ok: true, period, captured: 0, skipped: "mercado ainda aberto" });
 

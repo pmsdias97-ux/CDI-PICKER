@@ -58,3 +58,20 @@ export function weekFirstOpenMs(mondayKey) {
   }
   return null;
 }
+
+// Sessão de bolsa mais recente JÁ FECHADA (16:00 ET), como 'YYYY-MM-DD' em hora de Nova Iorque, e se é o ÚLTIMO
+// pregão do seu mês. Usa a data/hora de NOVA IORQUE (não a UTC): um job atrasado que corra às 01:00 UTC de dia 30
+// ainda está na noite de dia 29 em ET — a sessão fechada é a de 29, não a de 30.
+export function lastClosedSession(now) {
+  const f = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false });
+  const parts = Object.fromEntries(f.formatToParts(now).map((x) => [x.type, x.value]));
+  let [y, m, d] = [+parts.year, +parts.month, +parts.day]; let h = parseInt(parts.hour, 10); if (h === 24) h = 0;
+  const t = new Date(Date.UTC(y, m - 1, d));
+  const isTrading = (c) => c.getUTCDay() !== 0 && c.getUTCDay() !== 6 && !US_MARKET_HOLIDAYS.has(c.toISOString().slice(0, 10));
+  if (h < 16 || !isTrading(t)) t.setUTCDate(t.getUTCDate() - 1);         // hoje ainda não fechou (ou não é pregão)
+  while (!isTrading(t)) t.setUTCDate(t.getUTCDate() - 1);                // recua a fins de semana/feriados
+  const session = t.toISOString().slice(0, 10);
+  const lastOfMonth = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0));
+  while (!isTrading(lastOfMonth)) lastOfMonth.setUTCDate(lastOfMonth.getUTCDate() - 1);
+  return { session, period: session.slice(0, 7), isMonthEnd: lastOfMonth.toISOString().slice(0, 10) === session };
+}
