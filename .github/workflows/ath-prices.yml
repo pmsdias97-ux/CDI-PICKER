@@ -1,19 +1,14 @@
-name: ATH — preços (hora a hora)
+name: ATH — preços (3×/dia)
 
-# Atualiza o preço atual + marketcap (shares lidas do site) do S&P 500, de hora a hora,
-# em dias úteis, na janela de mercado US (14:00–21:00 UTC). A distância ao ATH (% abaixo)
+# Atualiza o preço atual + marketcap (shares lidas do site) do S&P 500, 3 vezes por dia útil
+# (depois da abertura US, a meio da sessão e depois do fecho). A distância ao ATH (% abaixo)
 # é recalculada no site a partir destes valores. O ATH em si é atualizado pelo workflow diário.
 # Também disparável à mão. Segredos: CRON_SECRET, SUPABASE_URL, SUPABASE_ANON_KEY.
 
+# GATILHO: só por disparo (workflow_dispatch). Quem dispara é a rota /api/cron/dispatch-prices (crons da Vercel às
+# 14:35, 18:00 e 21:20 UTC), que garante NO MÁXIMO 3 execuções por dia útil — uma por janela — por mais vezes que seja
+# chamada. Sem `schedule` aqui de propósito: somado ao disparo daria 6/dia.
 on:
-  schedule:
-    # Atualização de TODAS as cotações 1 min após a abertura do mercado US (09:31 ET = 14:31 Portugal),
-    # em dias de pregão. GitHub cron é UTC e não sabe do horário de verão → duas linhas, uma por estação;
-    # a "errada" da estação cai fora de horas e é inofensiva (o _feed_fresh evita escrever dados velhos).
-    # Fins de semana já excluídos pelo "1-5"; feriados: o fetch_prices salta (guard por _is_trading_day).
-    - cron: "31 13 * * 1-5"    # 09:31 ET no VERÃO (EDT, UTC-4)
-    - cron: "31 14 * * 1-5"    # 09:31 ET no INVERNO (EST, UTC-5)
-    - cron: "0 14-21 * * 1-5"  # de hora a hora durante a sessão (mantém as cotações frescas)
   workflow_dispatch:
 
 # Um trigger novo não empilha com um a meio (cancela o anterior — só interessa o mais recente).

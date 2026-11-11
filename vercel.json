@@ -1,18 +1,56 @@
 {
   "crons": [
-    { "path": "/api/cron/dispatch-ath", "schedule": "0 6 * * 1-5" },
-    { "path": "/api/cron/dispatch-prices", "schedule": "30 13 * * 1-5" },
-    { "path": "/api/cron/dispatch-prices", "schedule": "30 14 * * 1-5" },
-    { "path": "/api/cron/dispatch-prices", "schedule": "0 18 * * 1-5" },
-    { "path": "/api/cron/dispatch-prices", "schedule": "0 21 * * 1-5" },
-    { "path": "/api/cron/weekly-baselines", "schedule": "0 15 * * 1-5" },
-    { "path": "/api/cron/weekly-baselines-sync", "schedule": "0 11 * * 1" },
-    { "path": "/api/cron/monthly-baselines", "schedule": "0 12 1-5 * *" },
-    { "path": "/api/cron/monthly-close", "schedule": "0 22 28-31 * *" },
-    { "path": "/api/cron/weekly-close", "schedule": "0 22 * * 5" },
-    { "path": "/api/cron/rank-notify", "schedule": "0 22 * * 1-5" },
-    { "path": "/api/cron/snapshot", "schedule": "0 15 * * 1-5" },
-    { "path": "/api/cron/snapshot", "schedule": "0 17 * * 1-5" },
-    { "path": "/api/cron/snapshot", "schedule": "0 19 * * 1-5" }
+    {
+      "path": "/api/cron/dispatch-ath",
+      "schedule": "0 6 * * 1-5"
+    },
+    {
+      "path": "/api/cron/dispatch-prices",
+      "schedule": "35 14 * * 1-5"
+    },
+    {
+      "path": "/api/cron/dispatch-prices",
+      "schedule": "0 18 * * 1-5"
+    },
+    {
+      "path": "/api/cron/dispatch-prices",
+      "schedule": "20 21 * * 1-5"
+    },
+    {
+      "path": "/api/cron/weekly-baselines",
+      "schedule": "0 15 * * 1-5"
+    },
+    {
+      "path": "/api/cron/weekly-baselines-sync",
+      "schedule": "0 11 * * 1"
+    },
+    {
+      "path": "/api/cron/monthly-baselines",
+      "schedule": "0 12 1-5 * *"
+    },
+    {
+      "path": "/api/cron/monthly-close",
+      "schedule": "0 22 28-31 * *"
+    },
+    {
+      "path": "/api/cron/weekly-close",
+      "schedule": "0 22 * * 5"
+    },
+    {
+      "path": "/api/cron/rank-notify",
+      "schedule": "0 22 * * 1-5"
+    },
+    {
+      "path": "/api/cron/snapshot",
+      "schedule": "0 15 * * 1-5"
+    },
+    {
+      "path": "/api/cron/snapshot",
+      "schedule": "0 17 * * 1-5"
+    },
+    {
+      "path": "/api/cron/snapshot",
+      "schedule": "0 19 * * 1-5"
+    }
   ]
 }
