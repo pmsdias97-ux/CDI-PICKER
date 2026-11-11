@@ -115,8 +115,26 @@ export async function POST(request) {
         .in("portfolio_id", [...affectedPfs]).gte("captured_at", todayStartIso);
     }
 
+    // ABERTURAS EM CURSO: a abertura da semana/mês que ainda não fechou (close_price nulo), se foi capturada ANTES
+    // do split, está na escala antiga e o fecho virá na nova → rentabilidade semanal/mensal fantasma (NXTS 1:5,
+    // 9-nov-2026: +367% numa semana). Divide-se pelo mesmo fator. Períodos já fechados ficam como estão (abertura e
+    // fecho na mesma escala). Corre 1× por split (o ledger trava repetições); o `.eq("price")` evita pisar um valor
+    // entretanto reconciliado.
+    const openAdjusted = [];
+    for (const table of ["weekly_baselines", "monthly_baselines"]) {
+      const { data: rows } = await supabase.from(table).select("period, ticker, price, captured_at").in("ticker", forms).is("close_price", null);
+      for (const r of rows || []) {
+        if (String(r.captured_at || "").slice(0, 10) >= date) continue; // capturada no dia do split ou depois → já na escala nova
+        const open = Number(r.price);
+        if (!Number.isFinite(open) || open <= 0) continue;
+        const { error: oErr } = await supabase.from(table).update({ price: round2(open / factor) })
+          .eq("period", r.period).eq("ticker", r.ticker).eq("price", r.price);
+        if (!oErr) openAdjusted.push({ table, period: r.period, from: open, to: round2(open / factor) });
+      }
+    }
+
     if (failed.length) skipped.push({ symbol, date, reason: `ledger ok, ${failed.length} holding(s) por corrigir — correção manual`, failed });
-    applied.push({ symbol, date, factor, adjusted, intended: updates.length });
+    applied.push({ symbol, date, factor, adjusted, intended: updates.length, openAdjusted });
   }
 
   return Response.json({ ok: true, applied, skipped });

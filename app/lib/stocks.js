@@ -30,7 +30,7 @@ export async function fetchStockPrices(tickers) {
   const res = await fetch(`/api/stocks/prices?tickers=${encodeURIComponent(unique.join(","))}`);
   const data = await res.json();
   if (!res.ok) return { prices: {}, changes: {}, marketClosed: false };
-  return { prices: data.prices || {}, changes: data.changes || {}, marketClosed: !!data.marketClosed, asOf: data.asOf || null };
+  return { prices: data.prices || {}, changes: data.changes || {}, marketClosed: !!data.marketClosed, asOf: data.asOf || null, stale: data.stale || {} };
 }
 
 // Daily close history [{date,close}] for a ticker (used for the S&P benchmark).

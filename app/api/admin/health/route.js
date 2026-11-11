@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
 import { checkAdminPassword, rateLimited } from "../../../lib/apiGuards";
 import { isCrypto } from "../../../lib/crypto";
+import { runIntegrityChecks } from "../../../lib/integrityChecks";
 
 export const maxDuration = 30;
 
@@ -77,6 +78,10 @@ export async function POST(request) {
     suspicious.sort((x, y) => Math.abs(y.dev ?? 9) - Math.abs(x.dev ?? 9));
     out.prices = { athLatest, staleHours: athLatest ? Math.round((Date.now() - Date.parse(athLatest)) / 3600000) : null, suspicious: suspicious.slice(0, 40), suspiciousCount: suspicious.length };
   } catch (e) { out.error = String(e?.message || e); }
+
+  // Integridade (as mesmas verificações do alerta automático /api/cron/health-check).
+  try { out.integrity = await runIntegrityChecks(supabase, now); }
+  catch (e) { out.integrity = { ok: false, problems: [{ code: "check-failed", msg: String(e?.message || e) }], warnings: [] }; }
 
   return Response.json(out);
 }

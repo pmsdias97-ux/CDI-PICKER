@@ -53,6 +53,9 @@ async function athMap() {
     const ts = r.updated_at ? new Date(r.updated_at).getTime() : null;
     map.set(norm(r.symbol), { price, prev: Number.isFinite(prev) && prev > 0 ? prev : null, ts: Number.isFinite(ts) ? ts : null });
   }
+  // Instante da cotação mais recente de TODO o pipeline → serve para detetar tickers parados (delistados, ex.: ATLN).
+  let maxTs = 0; for (const v of map.values()) if (v.ts && v.ts > maxTs) maxTs = v.ts;
+  map.maxTs = maxTs;
   athSnap = { at: Date.now(), map };
   return map;
 }
@@ -106,11 +109,13 @@ export async function GET(request) {
   try { ath = await athMap(); } catch { ath = new Map(); }
   const missing = [];
   let asOf = 0; // instante (ms) da cotação MAIS RECENTE servida do pipeline → o "Atualizado às" mostra a idade dos números que o utilizador vê
+  const stale = {}; // ticker → ISO da última cotação, quando parou há >4 dias face ao resto do pipeline (sem cotação/delistado)
   const needChange = []; // no pipeline com preço, mas sem fecho anterior → variação ao vivo
   for (const ticker of tickers) {
     const a = ath.get(norm(ticker));
     if (a) {
       if (a.ts && a.ts > asOf) asOf = a.ts;
+      if (a.ts && ath.maxTs && ath.maxTs - a.ts > 4 * 86400000) stale[ticker] = new Date(a.ts).toISOString();
       prices[ticker] = a.price;
       if (a.prev) changes[ticker] = a.price / a.prev - 1;
       else needChange.push(ticker);
@@ -178,5 +183,5 @@ export async function GET(request) {
   } catch { /* guarda best-effort */ }
 
   // marketClosed → a UI mostra "Último dia" (variação do último pregão congelada) em vez de "Diário".
-  return Response.json({ prices, changes, errors, marketClosed: !marketOpen, asOf: asOf ? new Date(asOf).toISOString() : null });
+  return Response.json({ prices, changes, errors, marketClosed: !marketOpen, asOf: asOf ? new Date(asOf).toISOString() : null, stale });
 }

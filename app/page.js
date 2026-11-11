@@ -1703,6 +1703,7 @@ export default function App(){
   const detailFocusRef=useRef(null); // {commentId} — intenção de aterrar num comentário ao abrir um perfil
   const [livePrices,setLivePrices]=useState({});
   const [dayChange,setDayChange]=useState({}); // variação do dia por ticker
+  const [priceStale,setPriceStale]=useState({}); // {ticker: ISO} tickers sem cotação há >4 dias (delistados) → aviso no portefólio
   const [pricesAsOf,setPricesAsOf]=useState(null); // quando foi gerada a cotação que está no ecrã (vem da própria resposta)
   const [marketClosed,setMarketClosed]=useState(false); // mercado US fechado → coluna/widgets mostram "Último dia" (último pregão)
   const [pricesLoading,setPricesLoading]=useState(false);
@@ -1744,8 +1745,9 @@ export default function App(){
     if(!tickers.length){ setLivePrices({}); setDayChange({}); return; }
     if(!silent) setPricesLoading(true);
     try{
-      const { prices, changes, marketClosed:mc, asOf }=await fetchStockPrices(tickers);
+      const { prices, changes, marketClosed:mc, asOf, stale }=await fetchStockPrices(tickers);
       if(asOf) setPricesAsOf(asOf);
+      setPriceStale(stale||{});
       setLivePrices(prices);
       setDayChange(changes||{});
       setMarketClosed(!!mc);
@@ -2102,7 +2104,7 @@ export default function App(){
   if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} pickCounts={compStats.counts} compTickers={compStats.tickers} showToast={showToast}/>);
   if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} pricesAsOf={pricesAsOf} spy={spy} dayChange={dayChange} marketClosed={marketClosed} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} monthBase={monthBase} pastBaselines={pastBaselines} monthCloses={monthCloses} weekBase={weekBase} weekOpens={weekOpens} weekCloses={weekCloses} period={rankPeriod} setPeriod={setRankPeriod} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)} winners={winners} showToast={showToast} recentComments={recentComments.filter(c=>portfolios.some(p=>p.id===c.portfolioId))} openComments={openComments}/>);
   if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} dayChange={dayChange} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
-  if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} dayChange={dayChange} marketClosed={marketClosed} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} myUserId={myPf?.userId||null} adminPw={adminPw} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} winners={winners} standings={detailStandings} monthBase={monthBase} weekBase={weekBase} reload={load} showToast={showToast} onOpenMember={openMember} focusRef={detailFocusRef}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
+  if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} priceStale={priceStale} dayChange={dayChange} marketClosed={marketClosed} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} myUserId={myPf?.userId||null} adminPw={adminPw} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} winners={winners} standings={detailStandings} monthBase={monthBase} weekBase={weekBase} reload={load} showToast={showToast} onOpenMember={openMember} focusRef={detailFocusRef}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="admin")  return sh(<Admin settings={settings} setSettings={setSettings} portfolios={portfolios} ranking={ranking} livePrices={livePrices} reload={load} showToast={showToast} adminPw={adminPw} setAdminPw={setAdminPw}/>);
   return null;
 }
@@ -2210,7 +2212,7 @@ function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRank,subm
           )}
         </div>
         {page==="home"&&submitted&&(
-          <button className={"cdiUpdatesLink"+(clockHidden?" cdiClockHidden":"")} title="Ir para Updates e feedbacks"
+          <button className={"cdiUpdatesLink"+(clockHidden?" cdiClockHidden":"")} title="Ir para Updates"
             onClick={()=>{ const el=document.getElementById("updates-feedbacks"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); }}>
             Updates
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
@@ -2520,9 +2522,9 @@ const PODIUM_TONE={
 const COIN_SET={
   1:{n:10,rx:104,side:[["0","#4d2a02"],[".1","#9a5f0a"],[".28","#f0bd48"],[".4","#fff3b0"],[".52","#e8ad2c"],[".78","#a0640c"],["1","#3e2202"]],
      top:["#fff8c9","#f2b92e","#b4710c"],field:["#c98c14","#f7d56e"],rim:"#fff0a8",dark:"#5a3203"},
-  2:{n:7,rx:96,side:[["0","#3b4556"],[".1","#7f8b9e"],[".28","#d6dde8"],[".4","#ffffff"],[".52","#bcc6d4"],[".78","#707c90"],["1","#303a4a"]],
+  2:{n:8,rx:96,side:[["0","#3b4556"],[".1","#7f8b9e"],[".28","#d6dde8"],[".4","#ffffff"],[".52","#bcc6d4"],[".78","#707c90"],["1","#303a4a"]],
      top:["#ffffff","#c9d2df","#8793a6"],field:["#97a3b5","#e4eaf3"],rim:"#ffffff",dark:"#2c3646"},
-  3:{n:6,rx:92,side:[["0","#341705"],[".1","#7a3d12"],[".28","#d98d4c"],[".4","#ffd6a6"],[".52","#c97b3a"],[".78","#7a3d12"],["1","#301504"]],
+  3:{n:7,rx:92,side:[["0","#341705"],[".1","#7a3d12"],[".28","#d98d4c"],[".4","#ffd6a6"],[".52","#c97b3a"],[".78","#7a3d12"],["1","#301504"]],
      top:["#ffe0bb","#d38a45","#8f4a17"],field:["#a8602a","#efb27a"],rim:"#ffd9b0",dark:"#4a2208"},
 };
 const COIN_DX=[0,-5,4,-3,6,-4,3,-6,2,-3,5], COIN_DR=[0,-1.2,0.9,-0.6,1.4,-1,0.7,-1.3,0.5,-0.8,1.1], COIN_DRX=[0,2,-1,1,-2,1,0,-2,2,-1,1];
@@ -2572,7 +2574,7 @@ function RankPodium({items,onPick,meKey,highlightKey,meRef,hiRef,meFlash}){
   const order=[items[1],items[0],items[2]].filter(Boolean); // 2.º · 1.º · 3.º
   return(
     <div className="rkPodium" role="list" aria-label="Pódio">
-      {order.map(({p,rank,val,day})=>{
+      {order.map(({p,rank,val,day,logos})=>{
         const t=PODIUM_TONE[rank], me=p.key===meKey;
         return(
           <div key={p.key} role="listitem" tabIndex={0}
@@ -2599,6 +2601,11 @@ function RankPodium({items,onPick,meKey,highlightKey,meRef,hiRef,meFlash}){
                 <span className="rkPodDay" style={{color:day==null?"#64748b":day>=0?"#4ade80":"#f87171"}}>
                   {day==null?"—":<>{day>=0?"▲":"▼"} <Rolling text={pct(Math.abs(day)).replace("+","")}/> <em>{lastDayLabel().toLowerCase()}</em></>}
                 </span>
+                {logos&&logos.length>0&&(
+                  <span className="rkPodLogos" title="As ações com melhor desempenho desta carteira">
+                    {logos.map(tk=><StockLogo key={tk} ticker={tk} size={16}/>)}
+                  </span>
+                )}
               </span>
             </span>
           </div>
@@ -2748,7 +2755,7 @@ function UpdatesFeedback({myName}){
   return(
     <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:"clamp(20px,4vw,32px)"}}>
       <h2 style={{fontSize:20,fontWeight:700,letterSpacing:"-0.3px",margin:"0 0 4px",textAlign:"center"}}>
-        Updates e feedbacks
+        Updates
       </h2>
       <p style={{fontSize:13,color:"#6b7280",margin:"0 0 22px",textAlign:"center"}}>O que vai mudando na plataforma.</p>
 
@@ -4702,7 +4709,8 @@ function Ranking({ranking,myNorm,pricesLoading,pricesAsOf,spy,dayChange,marketCl
     const podiumEl=showPodium?(
       <RankPodium meKey={myRow?myRow.key:null} highlightKey={highlightKey} meRef={meRowRef} hiRef={highlightRef} meFlash={meFlash}
         onPick={k=>cmp?toggleSel(k):onSelect(k)}
-        items={ranked.slice(0,3).map(p=>({p,rank:p._rank,val:perActive?valForPeriod(p):p.total,day:pfDayReturn(p)}))}/>
+        items={ranked.slice(0,3).map(p=>({p,rank:p._rank,val:perActive?valForPeriod(p):p.total,day:pfDayReturn(p),
+          logos:(p.stocks||[]).map(s=>({t:s.ticker,r:stockRet(s,livePrices)})).sort((a,b)=>b.r-a.r).slice(0,4).map(x=>x.t)}))}/>
     ):null;
     return(
     <>
@@ -5543,10 +5551,11 @@ function Ranking({ranking,myNorm,pricesLoading,pricesAsOf,spy,dayChange,marketCl
           background:radial-gradient(circle at 40% 30%,#fff,#e2e8f0 70%,#cbd5e1);box-shadow:inset 0 1px 3px rgba(0,0,0,0.3)}
         .rkPod1 .rkPodNum{display:block;transform:translateX(-0.035em)}  /* o "1" ligeiramente para a esquerda do centro do disco */
         .rkPod1 .rkPodBallIn{background:radial-gradient(circle at 40% 30%,#fff7d6,#fde68a 70%,#f59e0b);color:#451a03;font-size:clamp(16px,3.8vw,26px)}
+        .rkPodLogos{display:flex;align-items:center;justify-content:center;gap:4px;margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,0.10)}
         .rkPodStack{position:relative;z-index:1;width:100%}
         .rkPodStack svg{display:block;width:100%;height:auto;overflow:visible;filter:drop-shadow(0 10px 14px rgba(0,0,0,0.45))}
-        .rkPodPlaque{position:absolute;left:50%;bottom:27%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;max-width:64%;box-sizing:border-box;
-          padding:8px 14px 9px;border-radius:14px;background:rgba(8,14,30,0.74);border:1px solid rgba(var(--pod),0.4);box-shadow:0 6px 16px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.08);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+        .rkPodPlaque{position:absolute;left:50%;bottom:clamp(30px,2.4vw,40px);transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;max-width:64%;box-sizing:border-box;
+          padding:7px 13px 8px;border-radius:14px;background:rgba(8,14,30,0.74);border:1px solid rgba(var(--pod),0.4);box-shadow:0 6px 16px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.08);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
         .rkPodVal{font-variant-numeric:tabular-nums;font-weight:800;letter-spacing:-.2px;font-size:clamp(13px,3.4vw,22px);white-space:nowrap}
         .rkPod1 .rkPodVal{font-size:clamp(15px,4.2vw,28px)}
         .rkPodDay{margin-top:2px;font-variant-numeric:tabular-nums;font-size:clamp(9.5px,2.3vw,12.5px);font-weight:600;white-space:nowrap}
@@ -6477,7 +6486,7 @@ function PortfolioShareCard({cardRef,name,total,stocks,ranks}){
     </div>
   );
 }
-function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,spy,nav,onBack,myNorm,myUserId,adminPw,preLaunch,competitionStarted,gameStartDate,winners,standings,monthBase,weekBase,reload,showToast,onOpenMember,focusRef}){
+function Detail({pf,rank,rowHover="#0a1120",livePrices,priceStale,dayChange,marketClosed,spy,nav,onBack,myNorm,myUserId,adminPw,preLaunch,competitionStarted,gameStartDate,winners,standings,monthBase,weekBase,reload,showToast,onOpenMember,focusRef}){
   const goBack=onBack||(()=>nav("ranking")); // voltar ao ranking (com destaque da linha, via onBack)
   // Coluna de rentabilidade da lista: "total" (desde a compra) ↔ "day" (diário).
   const [retMode,setRetMode]=useState("total");
@@ -6741,6 +6750,10 @@ function Detail({pf,rank,rowHover="#0a1120",livePrices,dayChange,marketClosed,sp
                 <span style={{display:"inline-flex",alignItems:"center",gap:2,minWidth:0}}>
                   <span style={{fontWeight:800,fontSize:14,color:"#e2e8f0"}}>{s.ticker}</span>
                   <SideBadge side={s.side} label/>
+                  {priceStale&&priceStale[s.ticker]&&(
+                    <span title={`Sem cotação desde ${new Date(priceStale[s.ticker]).toLocaleDateString("pt-PT")} — a ação pode ter deixado de negociar. Conta com o último preço conhecido.`}
+                      style={{marginLeft:6,fontSize:9.5,fontWeight:800,letterSpacing:".3px",textTransform:"uppercase",color:"#fbbf24",background:"rgba(251,191,36,0.12)",border:"1px solid rgba(251,191,36,0.40)",borderRadius:999,padding:"2px 7px",whiteSpace:"nowrap"}}>sem cotação</span>
+                  )}
                 </span>
               </div>
               <div style={{fontSize:13,color:"#94a3b8",marginTop:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.companyName}</div>
@@ -7685,6 +7698,20 @@ function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,reload,s
             {!h?(
               <p style={{color:"#4b5563"}}>{loadingHealth?"A carregar…":"Sem dados."}</p>
             ):(<>
+              {/* Integridade — as mesmas verificações do alerta automático (GitHub: "Saúde dos dados") */}
+              {(()=>{ const g=h.integrity; if(!g) return null; const np=(g.problems||[]).length, nw=(g.warnings||[]).length;
+                return <div style={{...card,border:`1px solid ${np?"rgba(248,113,113,0.45)":nw?"rgba(250,204,21,0.30)":"rgba(74,222,128,0.30)"}`}}>
+                  <div style={{fontSize:12,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",marginBottom:8}}>Integridade dos dados</div>
+                  <Row c={np?R:G} label="Problemas (falham o alerta)" value={np}/>
+                  <Row c={nw?Y:G} label="Avisos" value={nw}/>
+                  {[...(g.problems||[]).map(x=>({...x,_p:1})),...(g.warnings||[])].map((x,i)=>(
+                    <div key={i} style={{marginTop:6,fontSize:12.5,color:"#e2e8f0",background:x._p?"rgba(248,113,113,0.07)":"rgba(250,204,21,0.06)",border:`1px solid ${x._p?"rgba(248,113,113,0.28)":"rgba(250,204,21,0.22)"}`,borderRadius:8,padding:"6px 10px"}}>
+                      <div style={{fontWeight:700}}>{x.msg}</div>
+                      {x.tickers&&<div style={{color:"#94a3b8",marginTop:2}}>{x.tickers.join(", ")}{x.count>x.tickers.length?` … (+${x.count-x.tickers.length})`:""}</div>}
+                    </div>
+                  ))}
+                  <div style={{marginTop:8,fontSize:11.5,color:"#64748b"}}>Verificado 2×/dia (12:30 e 23:30 UTC); se houver problemas, o GitHub envia email de falha.</div>
+                </div>; })()}
               {/* Snapshots */}
               {(()=>{ const s=h.snapshots||{}; const c=s.missingCount===0?(s.daysSince>4?Y:G):(s.missingCount<5?Y:R);
                 return <div style={card}>

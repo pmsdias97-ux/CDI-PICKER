@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from "../../../lib/supabaseAdmin";
 import { fetchQuote } from "../../../lib/marketData";
-import { usMarketOpen } from "../../../lib/marketHours";
+import { usMarketOpen, lastClosedSession, US_MARKET_HALF_DAYS } from "../../../lib/marketHours";
 
 export const maxDuration = 60; // muitos tickers → damos folga à função
 
@@ -18,6 +18,15 @@ async function mapPool(items, size, fn) {
   return out;
 }
 
+// Instante (ms UTC) de uma hora de NOVA IORQUE num dado dia 'YYYY-MM-DD' (trata verão/inverno).
+function etInstantMs(dateKey, h, m) {
+  const [y, mo, d] = dateKey.split("-").map(Number);
+  const guess = Date.UTC(y, mo - 1, d, h, m);
+  const p = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).formatToParts(new Date(guess));
+  const v = {}; for (const x of p) v[x.type] = x.value; let hh = parseInt(v.hour, 10); if (hh === 24) hh = 0;
+  return guess - (Date.UTC(+v.year, +v.month - 1, +v.day, hh, +v.minute, +v.second) - guess);
+}
+
 // Snapshot do retorno de cada portefólio para os gráficos (evolução / season race).
 // Pode correr várias vezes por dia (ex.: 2×) — cada corrida grava um ponto por
 // "slot" (hora arredondada), por isso re-runs no mesmo slot não duplicam.
@@ -33,13 +42,26 @@ export async function GET(request) {
   // ?force=1 permite forçar à mão (testes), continuando a exigir o CRON_SECRET.
   const now = new Date();
   const force = new URL(request.url).searchParams.get("force") === "1";
-  if (!force && !usMarketOpen(now)) {
-    return Response.json({ ok: true, snapshots: 0, skipped: "mercado fechado" });
-  }
-
   let supabase;
   try { supabase = getSupabaseAdmin(); }
   catch (e) { return Response.json({ error: e.message }, { status: 500 }); }
+
+  // PONTO DE FECHO: com o mercado fechado normalmente não se grava — EXCETO o ponto do fecho do pregão que
+  // acabou de terminar. Os gatilhos (Vercel Hobby ±59 min, GitHub horas atrasado) falhavam muitas vezes a janela
+  // 16:00–16:15 ET e o último ponto do dia ficava às 19:00 UTC, uma hora antes do fecho. Agora, até 12 h depois do
+  // fecho, a 1.ª corrida grava o ponto com captured_at = instante do FECHO (as cotações já são as de fecho).
+  let closeSlot = null;
+  if (!force && !usMarketOpen(now)) {
+    const { session } = lastClosedSession(now);
+    const closeMs = etInstantMs(session, US_MARKET_HALF_DAYS.has(session) ? 13 : 16, 0);
+    if (!(now.getTime() >= closeMs && now.getTime() - closeMs < 12 * 3600000)) {
+      return Response.json({ ok: true, snapshots: 0, skipped: "mercado fechado" });
+    }
+    const closeIso = new Date(closeMs).toISOString();
+    const { data: has } = await supabase.from("portfolio_snapshots").select("id").eq("captured_at", closeIso).limit(1);
+    if (has && has.length) return Response.json({ ok: true, snapshots: 0, skipped: "fecho já gravado", captured_at: closeIso });
+    closeSlot = { iso: closeIso, date: session };
+  }
 
   // Snapshot rules:
   //   - DEMO (official=false): sempre (mostra uma amostra da evolução desde já).
@@ -70,8 +92,8 @@ export async function GET(request) {
   // captured_at = instante da corrida arredondado à hora (o "slot" intraday).
   const slot = new Date(now);
   slot.setUTCMinutes(0, 0, 0);
-  const capturedAt = slot.toISOString();
-  const date = now.toISOString().slice(0, 10);
+  const capturedAt = closeSlot ? closeSlot.iso : slot.toISOString();
+  const date = closeSlot ? closeSlot.date : now.toISOString().slice(0, 10);
   const snapshots = [];
   for (const pf of portfolios) {
     const stocks = pf.portfolio_stocks || [];

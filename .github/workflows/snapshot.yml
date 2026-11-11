@@ -16,7 +16,7 @@ name: Snapshot evolução
 
 on:
   schedule:
-    - cron: "0 14-21 * * 1-5"
+    - cron: "0 14-22 * * 1-5"   # 22:00 UTC: garante o ponto de FECHO também no inverno (fecho às 21:00 UTC), mesmo com atrasos
   workflow_dispatch:
 
 jobs:

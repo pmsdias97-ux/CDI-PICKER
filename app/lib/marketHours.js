@@ -68,7 +68,8 @@ export function lastClosedSession(now) {
   let [y, m, d] = [+parts.year, +parts.month, +parts.day]; let h = parseInt(parts.hour, 10); if (h === 24) h = 0;
   const t = new Date(Date.UTC(y, m - 1, d));
   const isTrading = (c) => c.getUTCDay() !== 0 && c.getUTCDay() !== 6 && !US_MARKET_HOLIDAYS.has(c.toISOString().slice(0, 10));
-  if (h < 16 || !isTrading(t)) t.setUTCDate(t.getUTCDate() - 1);         // hoje ainda não fechou (ou não é pregão)
+  const closeH = US_MARKET_HALF_DAYS.has(t.toISOString().slice(0, 10)) ? 13 : 16; // meios-dias fecham às 13:00 ET
+  if (h < closeH || !isTrading(t)) t.setUTCDate(t.getUTCDate() - 1);     // hoje ainda não fechou (ou não é pregão)
   while (!isTrading(t)) t.setUTCDate(t.getUTCDate() - 1);                // recua a fins de semana/feriados
   const session = t.toISOString().slice(0, 10);
   const lastOfMonth = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0));

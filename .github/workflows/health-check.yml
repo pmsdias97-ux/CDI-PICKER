@@ -1,0 +1,30 @@
+name: Saúde dos dados (alerta)
+
+# Verifica a INTEGRIDADE dos dados do jogo (baselines semanais/mensais coerentes, fechos gravados, pipeline de
+# preços e snapshots a correr, splits propagados). Só leitura. Se houver problemas, o workflow FALHA de propósito
+# → o GitHub envia email de "run failed" ao dono do repositório. Os avisos (ex.: ATLN sem cotação) não falham.
+# Horários (UTC): 12:30 (2ª–6ª, antes da abertura US, já depois do sync de 2ª) e 23:30 (depois dos fechos).
+# Disparável à mão. Segredo: CRON_SECRET.
+
+on:
+  schedule:
+    - cron: "30 12 * * 1-5"
+    - cron: "30 23 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar integridade
+        run: |
+          code=$(curl -s -o /tmp/out.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://cdi-picker.vercel.app/api/cron/health-check)
+          echo "HTTP $code"
+          test "$code" = "200"
+          echo "--- avisos"; jq -r '.warnings[]? | "• \(.msg) \(.tickers // [] | join(", "))"' /tmp/out.json
+          echo "--- problemas"; jq -r '.problems[]? | "✗ \(.msg) \(.tickers // [] | join(", "))"' /tmp/out.json
+          n=$(jq '.problems | length' /tmp/out.json)
+          echo "problemas: $n"
+          test "$n" = "0"
