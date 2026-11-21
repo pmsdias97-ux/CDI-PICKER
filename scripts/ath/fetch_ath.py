@@ -188,7 +188,8 @@ def compute_rows(symbols, names, in_sp500):
                 d = close.index[-1].date().isoformat()  # data da barra de preço mais recente
                 if max_bar_date is None or d > max_bar_date:
                     max_bar_date = d
-                info[sym] = {"ath": round(float(high.max()), 2),
+                info[sym] = {"bar_date": d,
+                             "ath": round(float(high.max()), 2),
                              "ath_ts": _iso_utc(high.idxmax()),
                              "price": round(float(close.iloc[-1]), 2),
                              # fecho ANTERIOR (para a variação do dia = price/prev_close - 1)
@@ -248,7 +249,13 @@ def compute_rows(symbols, names, in_sp500):
             "shares": float(shares) if shares else None,
             "ath": d["ath"], "ath_ts": d["ath_ts"], "in_sp500": in_sp500,
         }
-        if write_prices:  # feed fresco → atualiza o preço; velho → omite (a rota não lhe toca)
+        # Barra MAIS RECENTE deste ticker tem de ser tão recente como a do resto do feed. Se vier atrasada (ex.: SNDK no
+        # split de 20-nov-2026: o runner devolveu a barra de quinta em vez da de sexta) o preço/fecho anterior NÃO se
+        # escrevem — um dado velho de um ticker nunca sobrescreve um mais novo já gravado pelas corridas leves.
+        bar_fresh = (d.get("bar_date") is None) or (max_bar_date is None) or (d["bar_date"] >= max_bar_date)
+        if not bar_fresh:
+            print(f"[ath] {sym}: barra de {d['bar_date']} < {max_bar_date} → preço/fecho anterior não atualizados")
+        if write_prices and bar_fresh:  # feed fresco → atualiza o preço; velho → omite (a rota não lhe toca)
             row["price"] = d["price"]
             row["prev_close"] = d.get("prev_close")
         rows.append(row)
