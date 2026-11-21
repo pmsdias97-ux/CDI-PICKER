@@ -302,7 +302,11 @@ def fetch_full():
 
     with_cap = sum(1 for r in rows if r["marketcap"])
     print(f"[ath] full: {len(rows)} linhas (com marketcap: {with_cap})")
-    post_rows(rows)
+    # POSTs SEPARADOS para linhas com e sem preço: a rota faz upsert em lote e o PostgREST põe NULL nas colunas que
+    # faltam a algumas linhas do lote → misturar na mesma chamada apagava price/prev_close dos tickers com barra
+    # atrasada (SNDK e WBD, 21-nov-2026). Cada chamada tem de ser UNIFORME.
+    post_rows([r for r in rows if "price" in r])
+    post_rows([r for r in rows if "price" not in r])
 
     # Rebaixa (in_sp500=false) quem já não consta no S&P → deixa de aparecer na lista principal.
     # Só depois de o upsert ter corrido bem e só se o download trouxe (quase) todo o índice.
