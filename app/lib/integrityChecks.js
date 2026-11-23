@@ -97,11 +97,13 @@ export async function runIntegrityChecks(supabase, now = new Date()) {
   const ath = await allRows(supabase, "sp500_ath", "symbol, price, updated_at");
   const A = new Map(ath.map((r) => [norm(r.symbol), r]));
   const latest = Math.max(0, ...ath.map((r) => Date.parse(r.updated_at) || 0));
-  // Último dia de pregão (hoje incluído): o pipeline tem de ter corrido desde as 06:00 UTC desse dia.
-  const lastTd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  if (now.getUTCHours() < 8) lastTd.setUTCDate(lastTd.getUTCDate() - 1); // antes das 08:00 UTC ainda conta o dia anterior
-  while (!isTradingDay(lastTd)) lastTd.setUTCDate(lastTd.getUTCDate() - 1);
-  if (latest < lastTd.getTime() + 6 * 3600000) add(problems, "prices-stale", `Pipeline de preços parado: última atualização ${latest ? new Date(latest).toISOString().slice(0, 16) + "Z" : "nunca"}`);
+  // O pipeline (positions a cada ~10 min na sessão + 3 disparos pontuais) tem de ter escrito preços DEPOIS do fecho do
+  // último pregão já encerrado. 21:00 UTC cobre inverno (fecho 21:00) e verão (20:00); o disparo das 21:20 e os runs
+  // até às 21:50 garantem uma escrita posterior. (Não há job noturno: o antigo "full" das 06:00 foi removido.)
+  const lastClosed = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 21, 0));
+  if (lastClosed.getTime() > now.getTime()) lastClosed.setUTCDate(lastClosed.getUTCDate() - 1);
+  while (!isTradingDay(lastClosed)) lastClosed.setUTCDate(lastClosed.getUTCDate() - 1);
+  if (latest < lastClosed.getTime()) add(problems, "prices-stale", `Pipeline de preços parado: última atualização ${latest ? new Date(latest).toISOString().slice(0, 16) + "Z" : "nunca"}`);
   const stale = [], scale = [], noPrice = [];
   for (const t of held) {
     if (isCrypto(t)) continue;

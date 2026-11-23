@@ -1,29 +1,28 @@
 #!/usr/bin/env python3
-"""Recolhe o ATH (máximo histórico) + preço + marketcap do S&P 500 e envia para o
-CDI-PICKER (POST /api/cron/ath, Bearer CRON_SECRET → upsert em sp500_ath).
+"""Recolhe o PREÇO e o FECHO ANTERIOR das ações que os membros têm (≈165 símbolos) e envia para o
+CDI-PICKER (POST /api/cron/ath, Bearer CRON_SECRET → upsert em sp500_ath). É a fonte de preços do jogo.
 
-Três modos:
-  --mode full     (diário)  ATH (max High de toda a história) + nome + preço + marketcap + shares
-  --mode prices   (hora a hora) preço atual (bulk) + marketcap (shares lidas do site)
-  --mode splits   (horário) deteta splits recentes das ações dos membros (Ticker.splits) e
-                  faz POST a /api/cron/splits, que corrige os baselines de forma justa.
+Modos:
+  --mode prices / positions   preço atual + fecho anterior (2 pedidos bulk ao Yahoo). "positions" corre a cada
+                              ~10 min na sessão; "prices" corre 3×/dia em horas certas (dispatch do Vercel).
+  --mode splits   (horário)   deteta splits recentes das ações dos membros (Ticker.splits) e faz POST a
+                              /api/cron/splits, que corrige os baselines de forma justa.
+
+(O antigo modo "full" — máximos históricos, market cap e o S&P 500 inteiro, para a aba ATH — foi removido.)
 
 Corre fora do Vercel (GitHub Actions) porque o Yahoo bloqueia o IP do site a esta escala.
 
 Env: CRON_SECRET (obrigatório), ATH_INGEST_URL (default = produção),
-     SUPABASE_URL + SUPABASE_ANON_KEY (para o modo prices ler as shares).
+     SUPABASE_URL + SUPABASE_ANON_KEY (leitura das ações dos membros).
 """
 import argparse
 import datetime as dt
-import io
 import os
-import signal
 import socket
 import sys
 import time
 from zoneinfo import ZoneInfo
 
-import pandas as pd
 import requests
 import yfinance as yf
 
@@ -32,7 +31,6 @@ import yfinance as yf
 socket.setdefaulttimeout(45)
 
 INGEST_URL = os.environ.get("ATH_INGEST_URL", "https://cdi-picker.vercel.app/api/cron/ath")
-EXTRA_URL = INGEST_URL.replace("/api/cron/ath", "/api/cron/extra-tickers")
 SPLITS_URL = INGEST_URL.replace("/api/cron/ath", "/api/cron/splits")
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
@@ -89,54 +87,9 @@ CRYPTO = {"BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "USDC", "ADA", "DOGE", "TRX
 def _is_crypto(t):
     return str(t or "").upper().replace("-USD", "").strip() in CRYPTO
 
-ENRICH_BUDGET_S = 300  # teto DURO (SIGALRM) p/ a fase de marketcap/nome — evita pendurar se o Yahoo limitar
-
 
 def yf_symbol(s):
     return str(s).replace(".", "-").strip().upper()
-
-
-def constituents():
-    """S&P 500 (symbol, name) via Wikipédia (com User-Agent de browser; sem ele dá 403)."""
-    url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-    ua = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-          "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
-    resp = requests.get(url, headers={"User-Agent": ua}, timeout=30)
-    resp.raise_for_status()
-    df = pd.read_html(io.StringIO(resp.text))[0]
-    out = []
-    for _, row in df.iterrows():
-        sym = yf_symbol(row["Symbol"])
-        name = str(row["Security"]).strip()
-        if sym:
-            out.append((sym, name))
-    return out
-
-
-def _iso_utc(ts):
-    try:
-        ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
-        return ts.isoformat()
-    except Exception:
-        return None
-
-
-def fi_get(fi, *keys):
-    """Acesso tolerante ao fast_info (suporta chave [] e atributo, vários nomes)."""
-    for k in keys:
-        try:
-            v = fi[k]
-            if v is not None:
-                return v
-        except Exception:
-            pass
-        try:
-            v = getattr(fi, k)
-            if v is not None:
-                return v
-        except Exception:
-            pass
-    return None
 
 
 def _prev_session(d):
@@ -201,183 +154,6 @@ def post_rows(rows):
                 time.sleep(3 * (attempt + 1))
         if last_err:
             raise last_err
-
-
-def compute_rows(symbols, names, in_sp500):
-    """ATH (max High de toda a história) + preço + marketcap/shares para uma lista de símbolos."""
-    info = {}  # symbol -> {ath, ath_ts, price}  (tudo do histórico → fiável)
-    max_bar_date = None
-    for i in range(0, len(symbols), BATCH):
-        batch = symbols[i:i + BATCH]
-        try:
-            df = yf.download(batch, period="max", interval="1d", auto_adjust=False,
-                             threads=True, progress=False, group_by="ticker")
-        except Exception as e:
-            print(f"[ath] download(max) erro {i}: {e}")
-            continue
-        for sym in batch:
-            try:
-                sub = df[sym] if len(batch) > 1 else df
-                high = sub["High"].dropna() if "High" in sub.columns else sub["Close"].dropna()
-                close = sub["Close"].dropna()
-                if high.empty or close.empty:
-                    continue
-                d = close.index[-1].date().isoformat()  # data da barra de preço mais recente
-                if max_bar_date is None or d > max_bar_date:
-                    max_bar_date = d
-                pc = None
-                if len(close) >= 2:
-                    if close.index[-2].date() == _prev_session(close.index[-1].date()):
-                        pc = round(float(close.iloc[-2]), 2)
-                    else:  # feed sem a barra do pregão anterior → não usar um fecho mais antigo (ver _dl_prices)
-                        pc = _chart_prev_close(sym, d)
-                        print(f"[ath] {sym}: fecho anterior do feed é de {close.index[-2].date()} "
-                              f"(≠ pregão anterior a {d}) → chart: {pc}")
-                info[sym] = {"bar_date": d,
-                             "ath": round(float(high.max()), 2),
-                             "ath_ts": _iso_utc(high.idxmax()),
-                             "price": round(float(close.iloc[-1]), 2),
-                             # fecho ANTERIOR (para a variação do dia = price/prev_close - 1)
-                             "prev_close": pc}
-            except Exception:
-                continue
-        print(f"[ath] download {min(i + BATCH, len(symbols))}/{len(symbols)} (acumulado {len(info)})")
-        time.sleep(1)
-
-    # GUARDA: se o feed de preços estiver DESATUALIZADO (barra mais recente < último pregão fechado),
-    # o ATH/nome/marketcap ainda valem, mas o PREÇO não → não o escrevemos (o preço bom fica intacto).
-    write_prices = _feed_fresh(max_bar_date, "full (preços)")
-
-    # marketcap + shares via fast_info (best-effort). Nome: S&P vem da Wikipédia; extras via .info.
-    # Teto DURO via SIGALRM: mesmo que UMA chamada do yfinance fique pendurada (Yahoo a limitar),
-    # o alarme interrompe-a e seguimos com o que já temos (ATH/preço já garantidos pela fase 1).
-    enriched = {}
-
-    def _on_alarm(signum, frame):
-        raise TimeoutError("enrich budget")
-
-    prev = signal.signal(signal.SIGALRM, _on_alarm)
-    signal.alarm(ENRICH_BUDGET_S)
-    try:
-        for sym in info:
-            mcap = shares = None
-            nm = names.get(sym)
-            try:
-                tk = yf.Ticker(sym)
-                fi = tk.fast_info
-                mcap = fi_get(fi, "market_cap", "marketCap")
-                shares = fi_get(fi, "shares", "sharesOutstanding", "implied_shares_outstanding")
-                if not nm:
-                    try:
-                        inf = tk.info
-                        nm = inf.get("shortName") or inf.get("longName")
-                    except TimeoutError:
-                        raise
-                    except Exception:
-                        pass
-            except TimeoutError:
-                print(f"[ath] enriquecimento estourou o teto ({ENRICH_BUDGET_S}s) — resto sem marketcap/nome")
-                break
-            except Exception:
-                pass
-            enriched[sym] = (nm, mcap, shares)
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, prev)
-
-    rows = []
-    for sym, d in info.items():
-        nm, mcap, shares = enriched.get(sym, (names.get(sym), None, None))
-        row = {
-            "symbol": sym, "name": nm or sym,
-            "marketcap": float(mcap) if mcap else None,
-            "shares": float(shares) if shares else None,
-            "ath": d["ath"], "ath_ts": d["ath_ts"], "in_sp500": in_sp500,
-        }
-        # Barra MAIS RECENTE deste ticker tem de ser tão recente como a do resto do feed. Se vier atrasada (ex.: SNDK no
-        # split de 20-nov-2026: o runner devolveu a barra de quinta em vez da de sexta) o preço/fecho anterior NÃO se
-        # escrevem — um dado velho de um ticker nunca sobrescreve um mais novo já gravado pelas corridas leves.
-        bar_fresh = (d.get("bar_date") is None) or (max_bar_date is None) or (d["bar_date"] >= max_bar_date)
-        if not bar_fresh:
-            print(f"[ath] {sym}: barra de {d['bar_date']} < {max_bar_date} → preço/fecho anterior não atualizados")
-        if write_prices and bar_fresh:  # feed fresco → atualiza o preço; velho → omite (a rota não lhe toca)
-            row["price"] = d["price"]
-            row["prev_close"] = d.get("prev_close")
-        rows.append(row)
-    return rows
-
-
-def extra_tickers(sp_set):
-    """Tickers que os membros têm/vigiam (endpoint protegido), menos os já S&P."""
-    try:
-        r = requests.get(EXTRA_URL, headers={"Authorization": f"Bearer {CRON_SECRET}"}, timeout=30)
-        r.raise_for_status()
-        raw = r.json().get("tickers", [])
-    except Exception as e:
-        print(f"[ath] extra-tickers erro: {e}")
-        return []
-    # Mantém o ORIGINAL (ponto p/ europeias, ex. RMS.PA — o yfinance precisa do ponto);
-    # deduplica vs S&P comparando na forma normalizada (ponto→traço).
-    sp_norm = {s.replace(".", "-") for s in sp_set}
-    out = []
-    seen = set()
-    for t in raw:
-        s = str(t).upper().strip()
-        if not s:
-            continue
-        n = s.replace(".", "-")
-        if n in sp_norm or n in seen:
-            continue
-        seen.add(n)
-        out.append(s)
-    return out
-
-
-def fetch_full():
-    pairs = constituents()
-    names = {s: n for s, n in pairs}
-    symbols = [s for s, _ in pairs]
-    print(f"[ath] full: {len(symbols)} símbolos S&P")
-    rows = compute_rows(symbols, names, True)
-
-    extra = extra_tickers(set(symbols))
-    if extra:
-        print(f"[ath] extras: {len(extra)} símbolos (watchlists/portefólios)")
-        rows += compute_rows(extra, {}, False)
-
-    with_cap = sum(1 for r in rows if r["marketcap"])
-    print(f"[ath] full: {len(rows)} linhas (com marketcap: {with_cap})")
-    # POSTs SEPARADOS para linhas com e sem preço: a rota faz upsert em lote e o PostgREST põe NULL nas colunas que
-    # faltam a algumas linhas do lote → misturar na mesma chamada apagava price/prev_close dos tickers com barra
-    # atrasada (SNDK e WBD, 21-nov-2026). Cada chamada tem de ser UNIFORME.
-    post_rows([r for r in rows if "price" in r])
-    post_rows([r for r in rows if "price" not in r])
-
-    # Rebaixa (in_sp500=false) quem já não consta no S&P → deixa de aparecer na lista principal.
-    # Só depois de o upsert ter corrido bem e só se o download trouxe (quase) todo o índice.
-    sp_ok = [r["symbol"] for r in rows if r.get("in_sp500") is True and r.get("ath")]
-    if len(sp_ok) >= 400:
-        try:
-            r = requests.post(INGEST_URL, json={"members": symbols},
-                              headers={"Authorization": f"Bearer {CRON_SECRET}", "Content-Type": "application/json"}, timeout=60)
-            print(f"[ath] membros S&P -> {r.status_code} {r.text[:200]}")
-        except Exception as e:
-            print(f"[ath] membros S&P erro (não bloqueia): {e}")
-    else:
-        print(f"[ath] membros S&P: só {len(sp_ok)} com ATH — não rebaixo ninguém")
-
-
-def site_shares():
-    """{symbol: shares} a partir do Supabase (anon)."""
-    if not (SUPABASE_URL and SUPABASE_ANON_KEY):
-        return {}
-    r = requests.get(
-        f"{SUPABASE_URL}/rest/v1/sp500_ath?select=symbol,shares",
-        headers={"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {SUPABASE_ANON_KEY}"},
-        timeout=30,
-    )
-    r.raise_for_status()
-    return {row["symbol"]: row.get("shares") for row in r.json()}
 
 
 def _chart_price(symbol):
@@ -451,7 +227,38 @@ def _dl_prices(symbols):
     return prices, prevs, max_bar_date
 
 
-def _price_rows(prices, prevs, shares, have_shares):
+def table_symbols():
+    """Símbolos já presentes em sp500_ath (anon). Servem para casar a FORMA do ticker: o S&P guarda BRK-B,
+    as europeias guardam RMS.PA — usa-se a forma que já existe na tabela."""
+    if not (SUPABASE_URL and SUPABASE_ANON_KEY):
+        return set()
+    r = requests.get(
+        f"{SUPABASE_URL}/rest/v1/sp500_ath?select=symbol&limit=2000",
+        headers={"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {SUPABASE_ANON_KEY}"},
+        timeout=30,
+    )
+    r.raise_for_status()
+    return {row["symbol"] for row in r.json()}
+
+
+def member_symbols():
+    """Símbolos (na forma guardada em sp500_ath) das ações que os membros TÊM. É o ÚNICO universo do pipeline:
+    preços e fecho anterior só para estas (o resto do S&P já não é recolhido)."""
+    known = table_symbols()
+    out, seen = [], set()
+    for t in held_tickers():
+        cands = (t, t.replace(".", "-"))
+        sym = next((c for c in cands if c in known), None)
+        if sym is None:  # ticker novo: sufixo de 1 letra = classe de ações (BRK.B → BRK-B); mais longo = bolsa (RMS.PA)
+            head, _, tail = t.rpartition(".")
+            sym = t.replace(".", "-") if (head and len(tail) == 1) else t
+        if sym not in seen:
+            seen.add(sym)
+            out.append(sym)
+    return out
+
+
+def _price_rows(prices, prevs):
     rows = []
     for sym, p in prices.items():
         if not p:
@@ -462,93 +269,45 @@ def _price_rows(prices, prevs, shares, have_shares):
             row["prev_close"] = round(pc, 2)
         elif sym in prevs:  # fecho anterior desmentido pela guarda → limpa o valor velho (o site calcula ao vivo)
             row["prev_close"] = None
-        if have_shares:  # só atualiza marketcap se soubermos as shares (senão não lhe toca)
-            sh = shares.get(sym)
-            row["marketcap"] = round(sh * p) if sh else None
         rows.append(row)
     return rows
 
 
 def fetch_prices():
+    """Preço atual + fecho anterior das ações dos MEMBROS (≈165 símbolos, 2 pedidos bulk ao Yahoo) → POST
+    /api/cron/ath. Corre a cada ~10 min na sessão (modo positions) e 3×/dia pontual (modo prices)."""
     # Só em dias de PREGÃO US: exclui feriados (os fins de semana já ficam de fora pelo cron "1-5").
-    # Nesses dias o mercado não abre → não há cotações novas para atualizar.
     _et = dt.datetime.now(dt.timezone.utc).astimezone(ZoneInfo("America/New_York")).date()
     if not _is_trading_day(_et):
         print(f"[ath] prices: {_et} não é dia de pregão US (fim de semana/feriado) — nada a fazer."); return
-    shares = site_shares()
-    symbols = list(shares.keys()) or [s for s, _ in constituents()]
-    have_shares = bool(shares)
-    print(f"[ath] prices: {len(symbols)} símbolos")
+    symbols = member_symbols()
+    if not symbols:
+        print("[ath] prices: sem tickers de membros — nada a fazer."); return
+    stocks = [s for s in symbols if not _is_crypto(s)]
+    print(f"[ath] prices: {len(symbols)} símbolos (membros)")
 
-    # PASSAGEM RÁPIDA: primeiro só os tickers que os MEMBROS têm, e POST logo — assim as POSIÇÕES
-    # atualizam no site poucos segundos após a abertura, sem esperar pelo resto do S&P.
-    held = {t.replace(".", "-") for t in held_tickers()}  # normaliza p/ casar com os símbolos (traço)
-    fast = [s for s in symbols if s.replace(".", "-") in held]
-    fast_set = set(fast)
-    rest = [s for s in symbols if s not in fast_set]
-
-    if fast:
-        print(f"[ath] prices passagem 1 (membros): {len(fast)} símbolos")
-        p, pv, mx = _dl_prices(fast)
-        if _feed_fresh(mx, "prices passagem 1 (membros)"):
-            _fill_missing_via_chart([s for s in fast if s not in p], p)  # ex.: ATLN (sem barras)
-            rows = _price_rows(p, pv, shares, have_shares)
-            print(f"[ath] prices passagem 1: {len(rows)} linhas -> POST")
+    if stocks:
+        p, pv, mx = _dl_prices(stocks)
+        if _feed_fresh(mx, "prices (membros)"):
+            _fill_missing_via_chart([s for s in stocks if s not in p], p)  # ex.: ATLN (sem barras)
+            rows = _price_rows(p, pv)
+            print(f"[ath] prices: {len(rows)} linhas -> POST")
             post_rows_uniform(rows)
 
-    # CRIPTO dos membros (ex.: BTC = ETF Grayscale que o yf.download não resolve e que pode ainda não estar no
-    # sp500_ath): via chart-v8 (mesma fonte do app), SÓ com o mercado aberto → entra no sp500_ath e depois
-    # CONGELA fora de horas como as ações (senão corria 24/7 e mexia o ranking). NÃO-fatal.
+    # CRIPTO dos membros (ex.: BTC = ETF Grayscale que o yf.download não resolve): via chart-v8 (mesma fonte do app),
+    # SÓ com o mercado aberto → entra no sp500_ath e depois CONGELA fora de horas como as ações (senão corria 24/7 e
+    # mexia o ranking). NÃO-fatal.
     try:
-        crypto_held = [t for t in held if _is_crypto(t)]
+        crypto_held = [t for t in symbols if _is_crypto(t)]
         if crypto_held and _us_market_open_now():
             cp = {}
             _fill_missing_via_chart(crypto_held, cp)
             if cp:
-                rows = _price_rows(cp, {}, shares, False)
+                rows = _price_rows(cp, {})
                 print(f"[ath] prices cripto (chart, mercado aberto): {len(rows)} linha(s) -> POST")
                 post_rows(rows)
     except Exception as e:
         print(f"[ath] prices cripto falhou (não-fatal): {e}")
-
-    # PASSAGEM 2: o resto do S&P (para a aba ATH / % abaixo). Se não houve lista de membros,
-    # `rest` == todos os símbolos → comporta-se como a passagem única de antes.
-    # NÃO-fatal: os preços dos MEMBROS (passagem 1) já foram atualizados; se a 2 falhar
-    # (blip transitório), não vale a pena derrubar o run (evita emails de falha por nada).
-    try:
-        print(f"[ath] prices passagem 2 (resto): {len(rest)} símbolos")
-        p, pv, mx = _dl_prices(rest)
-        if _feed_fresh(mx, "prices passagem 2 (resto)"):
-            rows = _price_rows(p, pv, shares, have_shares)
-            print(f"[ath] prices passagem 2: {len(rows)} linhas (marketcap: {have_shares}) -> POST")
-            post_rows_uniform(rows)
-    except Exception as e:
-        print(f"[ath] prices passagem 2 falhou (não-fatal): {e}")
-
-
-def fetch_positions():
-    """Passagem LEVE (a cada ~10 min): SÓ os tickers que os membros têm — preço + fecho anterior,
-    em ~2 pedidos bulk ao Yahoo. Não toca no resto do S&P (aba ATH), que fica na corrida horária."""
-    _et = dt.datetime.now(dt.timezone.utc).astimezone(ZoneInfo("America/New_York")).date()
-    if not _is_trading_day(_et):
-        print(f"[ath] positions: {_et} não é dia de pregão US (fim de semana/feriado) — nada a fazer."); return
-    shares = site_shares()
-    symbols = list(shares.keys())
-    have_shares = bool(shares)
-    if not symbols:
-        print("[ath] positions: site_shares vazio — nada a fazer."); return
-    held = {t.replace(".", "-") for t in held_tickers()}
-    fast = [s for s in symbols if s.replace(".", "-") in held]
-    if not fast:
-        print("[ath] positions: sem tickers de membros — nada a fazer."); return
-    print(f"[ath] positions: {len(fast)} símbolos (membros)")
-    p, pv, mx = _dl_prices(fast)
-    if not _feed_fresh(mx, "positions"):
-        return
-    _fill_missing_via_chart([s for s in fast if s not in p], p)  # ex.: ATLN (sem barras no download)
-    rows = _price_rows(p, pv, shares, have_shares)
-    print(f"[ath] positions: {len(rows)} linhas (marketcap: {have_shares}) -> POST")
-    post_rows_uniform(rows)
 
 
 def held_tickers():
@@ -621,8 +380,8 @@ def fetch_splits():
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["full", "prices", "positions", "splits"], default="full")
+    ap.add_argument("--mode", choices=["prices", "positions", "splits"], default="prices")
     args = ap.parse_args()
     if not CRON_SECRET:
         sys.exit("CRON_SECRET em falta")
-    {"full": fetch_full, "prices": fetch_prices, "positions": fetch_positions, "splits": fetch_splits}[args.mode]()
+    {"prices": fetch_prices, "positions": fetch_prices, "splits": fetch_splits}[args.mode]()

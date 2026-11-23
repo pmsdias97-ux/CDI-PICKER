@@ -8,7 +8,6 @@ import { Ranking, RankingSkeleton } from "./components/ranking";
 import { Shell } from "./components/shell";
 import { Home } from "./components/home";
 import { AlreadySubmitted, Confirm, Create, LockedGate } from "./components/create";
-import { ATH } from "./components/ath";
 import { Duel } from "./components/duel";
 import { Detail } from "./components/detail";
 import { Admin } from "./components/admin";
@@ -232,7 +231,7 @@ export default function App(){
     else if(link==="ranking") navRank("total");
     else if(link==="ranking-week") navRank("week");
     else if(link==="ranking-month") navRank("month");
-    else if(link==="ath") nav("ath");
+    else if(link==="ath") nav("home"); // a aba ATH foi removida — notificações antigas levam à homepage
     else if(link==="updates"){ nav("home"); setTimeout(()=>{ const el=document.getElementById("updates-feedbacks"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); },400); }
     else if(link.startsWith("p:")){ const id=link.slice(2); const pf=portfolios.find(p=>p.id===id); if(pf) openDetail(pf.key); }
   },[openMyPortfolio,navRank,nav,openDetail,portfolios]);
@@ -283,12 +282,6 @@ export default function App(){
       const p=offs.find(x=>x.normName===norm(seed.name)); if(p) add(p.key,"weekly",weekLabel(seed.period)); }
     return map;
   },[ranking,pastBaselines,weekOpens,weekCloses,monthCloses,weekBase,monthBase,livePrices]);
-  // Popularidade por ação na competição (liga a aba ATH ao jogo): quantos oficiais têm cada ticker.
-  const compStats=useMemo(()=>{
-    const off=ranking.filter(p=>p.official); const counts={};
-    for(const p of off) for(const s of (p.stocks||[])){ const k=tkNorm(s.ticker); if(k) counts[k]=(counts[k]||0)+1; }
-    return { counts, members:off.length, tickers:Object.keys(counts) };
-  },[ranking]);
 
   // S&P 500 benchmark — alinhado no tempo: "se tivesses metido no SPY em vez das
   // 8 ações, no mesmo período". Usa o preço do SPY AGORA (ao vivo) vs o preço do
@@ -433,7 +426,6 @@ export default function App(){
   if(page==="home")   return sh(<Home nav={nav} navRank={navRank} submitted={submitted} settings={settings} ranking={ranking} livePrices={livePrices} onMyPortfolio={openMyPortfolio} myName={myName}/>);
   if(page==="create") return sh(submitted?<AlreadySubmitted nav={nav} name={myName}/>:<Create settings={settings} doSubmit={doSubmit} onDone={()=>nav("ranking")} showToast={showToast}/>);
   if(page==="confirm")return sh(<Confirm nav={nav} name={myName}/>);
-  if(page==="ath")    return sh(<ATH myTickers={submitted&&myPf?(myPf.stocks||[]).map(s=>s.ticker):null} auth={submitted&&myName?{name:myName,pin:sget(K.MYPIN)}:null} pickCounts={compStats.counts} compTickers={compStats.tickers} showToast={showToast}/>);
   if(page==="ranking")return sh(<Ranking ranking={ranking} myNorm={norm(myName)} pricesLoading={pricesLoading} pricesAsOf={pricesAsOf} spy={spy} dayChange={dayChange} marketClosed={marketClosed} livePrices={livePrices} preLaunch={isPreLaunch(settings)} settings={settings} monthBase={monthBase} pastBaselines={pastBaselines} monthCloses={monthCloses} weekBase={weekBase} weekOpens={weekOpens} weekCloses={weekCloses} period={rankPeriod} setPeriod={setRankPeriod} onSelect={openDetail} onCompare={openDuel} highlightKey={rankHighlight} clearHighlight={()=>setRankHighlight(null)} winners={winners} showToast={showToast} recentComments={recentComments.filter(c=>portfolios.some(p=>p.id===c.portfolioId))} openComments={openComments}/>);
   if(page==="duel")   return sh(submitted?<Duel a={findBySlug(ranking,duelSlugs?.[0])} b={findBySlug(ranking,duelSlugs?.[1])} livePrices={livePrices} spy={spy} dayChange={dayChange} nav={nav}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);
   if(page==="detail") return sh(submitted?<Detail pf={detailPf} rank={detailRank} rowHover={rowHover} livePrices={livePrices} priceStale={priceStale} dayChange={dayChange} marketClosed={marketClosed} spy={spy} nav={nav} onBack={()=>{ setRankHighlight(detailPf?.key||null); goRoute({page:"ranking"}); }} myNorm={norm(myName)} myUserId={myPf?.userId||null} adminPw={adminPw} preLaunch={isPreLaunch(settings)} competitionStarted={settings?.competitionStarted===true} gameStartDate={settings?.gameStartDate||""} winners={winners} standings={detailStandings} monthBase={monthBase} weekBase={weekBase} reload={load} showToast={showToast} onOpenMember={openMember} focusRef={detailFocusRef}/>:<LockedGate nav={nav} recoverByName={recoverByName} showToast={showToast}/>);

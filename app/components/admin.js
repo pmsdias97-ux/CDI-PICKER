@@ -466,7 +466,6 @@ export function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,r
                 <option value="ranking-week">Ranking Semanal</option>
                 <option value="mine">As Minhas 8</option>
                 <option value="updates">Secção Updates (Homepage)</option>
-                <option value="ath">ATH</option>
               </select>
             </label>
             {(nTitle.trim()||nBody.trim())&&(
@@ -493,7 +492,7 @@ export function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,r
           const btnG={border:"1px solid rgba(255,255,255,0.16)",borderRadius:9,padding:"9px 14px",fontSize:13,fontWeight:700,cursor:"pointer",background:"rgba(255,255,255,0.06)",color:"#cbd5e1"};
           const lk={background:"none",border:"none",color:"#93c5fd",cursor:"pointer",fontSize:11.5,fontWeight:700,padding:0};
           const lkDel={...lk,color:"#f87171"};
-          const OPTS=[["","Nada (só a mensagem)"],["ranking","Ranking Geral"],["ranking-month","Ranking Mensal"],["ranking-week","Ranking Semanal"],["mine","As Minhas 8"],["updates","Secção Updates (Homepage)"],["ath","ATH"]];
+          const OPTS=[["","Nada (só a mensagem)"],["ranking","Ranking Geral"],["ranking-month","Ranking Mensal"],["ranking-week","Ranking Semanal"],["mine","As Minhas 8"],["updates","Secção Updates (Homepage)"]];
           const linkSel=(val,on)=><select value={val||""} onChange={on} style={inputSt}>{OPTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>;
           const editForm=(withLink)=>(
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -801,7 +800,7 @@ export function AdminPanel({settings,setSettings,portfolios,ranking,livePrices,r
                     {row("Ações sem preço de partida",ok(readiness.stocksWithoutBaseline===0),readiness.stocksWithoutBaseline)}
                     {row("Oficiais sem ações",ok(readiness.officialEmpty===0),readiness.officialEmpty)}
                     {row("Demos sem PIN",ok(readiness.demosWithoutPin===0),readiness.demosWithoutPin)}
-                    {row("ATH atualizado",warn(stale(readiness.athLatest,30)),fmt(readiness.athLatest))}
+                    {row("Preços atualizados",warn(stale(readiness.athLatest,30)),fmt(readiness.athLatest))}
                     {row("Último snapshot",warn(stale(readiness.snapshotLatest,30)),fmt(readiness.snapshotLatest))}
                     {row("Tickers distintos",info,readiness.distinctTickers)}
                     {row("Preços trancados",s.baselines_locked_at?ok(true):warn(true),s.baselines_locked_at?fmt(s.baselines_locked_at):"não")}

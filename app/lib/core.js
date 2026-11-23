@@ -610,7 +610,6 @@ export function routeToPath(r){
   if(r.page==="detail") return r.detailSlug?`/p/${r.detailSlug}`:"/minhas"; // sem slug = "Minhas 8" (deslogado → Área bloqueada)
   if(r.page==="duel"&&r.duelSlugs?.[0]&&r.duelSlugs?.[1]) return `/duel/${r.duelSlugs[0]}~${r.duelSlugs[1]}`;
   if(r.page==="ranking") return "/ranking";
-  if(r.page==="ath")     return "/ath";
   if(r.page==="create")  return "/criar";
   if(r.page==="confirm") return "/confirmar";
   if(r.page==="admin")   return "/admin";
@@ -626,7 +625,6 @@ export function parseRoute(){
   }
   if(p==="/"||p==="")  return {page:"home"};
   if(p==="/ranking")   return {page:"ranking"};
-  if(p==="/ath")       return {page:"ath"};
   if(p==="/criar")     return {page:"create"};
   if(p==="/confirmar") return {page:"confirm"};
   if(p==="/admin")     return {page:"admin"};
@@ -649,7 +647,6 @@ export const NAV_ICONS={
   home:<><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/></>,
   trophy:<><path d="M7 4h10v4a5 5 0 0 1-10 0V4z"/><path d="M7 5H5a2 2 0 0 0 0 4h2M17 5h2a2 2 0 0 1 0 4h-2"/><path d="M12 13v4M8.5 21h7M10.5 21a1.5 1.5 0 0 1 3 0"/></>,
   person:<><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></>,
-  mountain:<><path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="M4.1 15.1c2.6-1.6 5.2-1.4 7.9.4 2.7 1.9 5.5 2 8.2.2"/></>,
 };
 
 export const RANK_BADGE={

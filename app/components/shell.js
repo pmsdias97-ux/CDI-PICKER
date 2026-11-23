@@ -204,13 +204,8 @@ export function Aurora({page}){
     ],50000);
     return()=>{ try{ a1&&a1.cancel(); a2&&a2.cancel(); }catch{} };
   },[]);
-  const ath=page==="ath"; // ATH: lavanda no canto sup. direito + violeta à direita (combina com o tema)
-  const b1=ath
-    ? {top:"-12%",right:"-4%",width:"52vw",height:"52vw",background:"radial-gradient(closest-side, rgba(208,206,232,0.16), transparent 70%)"}
-    : {top:"-10%",left:"-6%",width:"48vw",height:"48vw",background:"radial-gradient(closest-side, rgba(56,189,248,0.10), transparent 70%)"};
-  const b2=ath
-    ? {top:"16%",right:"-12%",width:"40vw",height:"40vw",background:"radial-gradient(closest-side, rgba(134,104,166,0.16), transparent 70%)"}
-    : {bottom:"-14%",right:"-8%",width:"44vw",height:"44vw",background:"radial-gradient(closest-side, rgba(45,212,191,0.09), transparent 70%)"};
+  const b1={top:"-10%",left:"-6%",width:"48vw",height:"48vw",background:"radial-gradient(closest-side, rgba(56,189,248,0.10), transparent 70%)"};
+  const b2={bottom:"-14%",right:"-8%",width:"44vw",height:"44vw",background:"radial-gradient(closest-side, rgba(45,212,191,0.09), transparent 70%)"};
   return(
     <div aria-hidden="true" style={{position:"fixed",inset:0,zIndex:0,pointerEvents:"none",overflow:"hidden"}}>
       <div ref={r1} style={{position:"absolute",borderRadius:"50%",filter:"blur(40px)",willChange:"transform",...b1}}/>
@@ -242,14 +237,12 @@ export function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRa
   const TEAL={bg:"radial-gradient(1800px 1100px at 50% -8%, rgba(20,160,150,0.22) 0%, rgba(13,120,120,0.09) 42%, transparent 72%), linear-gradient(180deg,#0c2e2e 0%,#0a2626 52%,#071c1d 80%,#051315 100%)",color:"#051315",tint:"rgba(45,212,191,0.15)",hover:"#0a2422",panel:"rgba(24,56,56,0.9)"};
   // TESTE: azul-petróleo/teal (referência) — só no ranking.
   const BLUE_REF={bg:"radial-gradient(1600px 1000px at 50% -6%, rgba(64,170,205,0.20) 0%, rgba(44,130,170,0.07) 40%, transparent 72%), linear-gradient(180deg,#16526a 0%,#123f52 50%,#0d2d3c 78%,#091e29 100%)",color:"#091e29",tint:"rgba(64,170,205,0.17)",hover:"#0a2430"};
-  // ATH: brilho lavanda no canto superior direito + toque roxo à direita, azul-marinho a escurecer para quase preto.
-  const ATHBG={bg:"radial-gradient(1500px 1150px at 82% -2%, rgba(210,208,230,0.42) 0%, rgba(150,150,192,0.16) 30%, transparent 58%), radial-gradient(1200px 1000px at 104% 30%, rgba(120,96,152,0.26) 0%, transparent 56%), radial-gradient(1300px 1000px at 20% 14%, rgba(86,104,168,0.18) 0%, transparent 60%), linear-gradient(165deg,#1e2540 0%,#151b2f 44%,#0a0e1c 78%,#060810 100%)",color:"#060810",tint:"rgba(170,158,214,0.18)"};
   // Pódio → ouro/prata/bronze. Ranking + detalhe de OUTROS (4º+/em espera) → azul
   // petróleo novo. O PRÓPRIO portefólio (fora do pódio) e a homepage → azul original.
   const medal=page==="detail"?(detailRank===1?GOLD:detailRank===2?SILVER:detailRank===3?BRONZE:null):null;
-  // ATH = tema roxo; pódio (top-3) = medal (ouro/prata/bronze) acima; TUDO o resto
+  // pódio (top-3) = medal (ouro/prata/bronze) acima; TUDO o resto
   // (homepage, ranking, duel, "Minhas 8" e os restantes portefólios) = o mesmo azul-marinho.
-  const theme=medal||(page==="ath"?ATHBG:(page==="ranking"&&rankPeriod==="week"?TEAL:page==="ranking"&&rankPeriod==="month"?PURPLE:BLUE));
+  const theme=medal||(page==="ranking"&&rankPeriod==="week"?TEAL:page==="ranking"&&rankPeriod==="month"?PURPLE:BLUE);
   return(
     <div style={{minHeight:"100vh",position:"relative","--row-hover":theme.hover||"#0a1120","--cdi-panel":theme.panel||"rgba(26,41,74,0.9)",
       backgroundColor:theme.color,transition:"background-color .6s ease",
@@ -331,7 +324,7 @@ export function Shell({children,page,rankPeriod,detailRank,detailIsOwn,nav,navRa
         <div className={"cdiClock"+(clockHidden?" cdiClockHidden":"")}><MarketStatus/></div>
       </header>
       <main className="cdiMain" style={{position:"relative",zIndex:1}}><div key={page} className="cdiPageFade">{children}</div></main>
-      {(()=>{ const mw=page==="ranking"?900:page==="detail"?1320:(page==="ath"||page==="home")?940:null;
+      {(()=>{ const mw=page==="ranking"?900:page==="detail"?1320:page==="home"?940:null;
         // Portal → fora do root (overflow-x:clip) p/ o position:fixed não "flutuar" ao centro no Safari iOS.
         return(
           <Portal>
@@ -431,7 +424,6 @@ export function Nav({page,nav,navRank,rankPeriod,submitted,onMyPortfolio,myPortf
       )}
       <NavLink label="Início" active={page==="home"} onClick={()=>nav("home")} icon={NAV_ICONS.home}/>
       <RankingNav active={page==="ranking"} rankPeriod={rankPeriod} navToRanking={()=>nav("ranking")} navRank={navRank}/>
-      <NavLink label="ATH" active={page==="ath"} onClick={()=>nav("ath")} icon={NAV_ICONS.mountain}/>
       <NavLink label="Minhas 8" active={submitted?myPortfolioActive:page==="detail"} onClick={onMyPortfolio} locked={!submitted} icon={NAV_ICONS.person}/>
     </div>
   );

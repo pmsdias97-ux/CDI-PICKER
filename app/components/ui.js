@@ -220,7 +220,6 @@ export function StockLogo({ticker,size=28}){
   );
 }
 
-/* ---- Aba ATH: distância ao máximo histórico (S&P 500) -------------------- */
 export function Skeleton({w="100%",h=12,r=8,style}){
   return <span className="cdiSkeleton" style={{display:"inline-block",width:w,height:h,borderRadius:r,...style}}/>;
 }
