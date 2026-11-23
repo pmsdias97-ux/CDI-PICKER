@@ -139,6 +139,43 @@ def fi_get(fi, *keys):
     return None
 
 
+def _prev_session(d):
+    """Pregão US imediatamente anterior a `d` (datetime.date)."""
+    d = d - dt.timedelta(days=1)
+    while not _is_trading_day(d):
+        d -= dt.timedelta(days=1)
+    return d
+
+
+def _chart_prev_close(symbol, last_date):
+    """Fecho do pregão imediatamente anterior a `last_date` (YYYY-MM-DD) via Yahoo chart v8, com a DATA
+    da barra verificada. None se a barra desse pregão não existir (nunca devolve um fecho mais antigo)."""
+    try:
+        want = _prev_session(dt.date.fromisoformat(last_date)).isoformat()
+        r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+                         params={"range": "10d", "interval": "1d"},
+                         headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        res = (r.json().get("chart", {}).get("result") or [{}])[0]
+        off = (res.get("meta") or {}).get("gmtoffset") or 0
+        closes = (((res.get("indicators") or {}).get("quote") or [{}])[0]).get("close") or []
+        for ts, c in zip(res.get("timestamp") or [], closes):
+            if c and dt.datetime.fromtimestamp(ts + off, dt.timezone.utc).date().isoformat() == want:
+                return round(float(c), 2)
+    except Exception:
+        pass
+    return None
+
+
+def post_rows_uniform(rows):
+    """O upsert em lote do PostgREST mete NULL nas chaves em falta de algumas linhas → cada POST só leva
+    linhas com o MESMO conjunto de chaves (ver rota /api/cron/ath)."""
+    groups = {}
+    for r in rows:
+        groups.setdefault(tuple(sorted(r)), []).append(r)
+    for g in groups.values():
+        post_rows(g)
+
+
 def post_rows(rows):
     if not rows:
         print("[ath] nada para enviar")
@@ -188,12 +225,20 @@ def compute_rows(symbols, names, in_sp500):
                 d = close.index[-1].date().isoformat()  # data da barra de preço mais recente
                 if max_bar_date is None or d > max_bar_date:
                     max_bar_date = d
+                pc = None
+                if len(close) >= 2:
+                    if close.index[-2].date() == _prev_session(close.index[-1].date()):
+                        pc = round(float(close.iloc[-2]), 2)
+                    else:  # feed sem a barra do pregão anterior → não usar um fecho mais antigo (ver _dl_prices)
+                        pc = _chart_prev_close(sym, d)
+                        print(f"[ath] {sym}: fecho anterior do feed é de {close.index[-2].date()} "
+                              f"(≠ pregão anterior a {d}) → chart: {pc}")
                 info[sym] = {"bar_date": d,
                              "ath": round(float(high.max()), 2),
                              "ath_ts": _iso_utc(high.idxmax()),
                              "price": round(float(close.iloc[-1]), 2),
                              # fecho ANTERIOR (para a variação do dia = price/prev_close - 1)
-                             "prev_close": round(float(close.iloc[-2]), 2) if len(close) >= 2 else None}
+                             "prev_close": pc}
             except Exception:
                 continue
         print(f"[ath] download {min(i + BATCH, len(symbols))}/{len(symbols)} (acumulado {len(info)})")
@@ -392,6 +437,14 @@ def _dl_prices(symbols):
                         max_bar_date = d
                     if len(c) >= 2:
                         prevs[sym] = float(c.iloc[-2])
+                        # O fecho anterior TEM de ser o do pregão imediatamente anterior à última barra. Se o feed
+                        # perdeu essa barra (SNDK a 23-nov: faltava 6ª → iloc[-2] era 5ª, 94.39 em vez de 79.24 →
+                        # diário −4% em vez de +14%), tenta o chart v8; sem confirmação → None (o site vai ao vivo).
+                        if c.index[-2].date() != _prev_session(c.index[-1].date()):
+                            fix = _chart_prev_close(sym, d)
+                            print(f"[ath] {sym}: fecho anterior do feed é de {c.index[-2].date()} (≠ pregão anterior a {d}) "
+                                  f"→ chart: {fix}")
+                            prevs[sym] = fix  # None = sem fecho anterior fiável
             except Exception:
                 continue
         time.sleep(1)
@@ -407,6 +460,8 @@ def _price_rows(prices, prevs, shares, have_shares):
         pc = prevs.get(sym)
         if pc:  # só envia prev_close quando o temos (senão não mexe no valor guardado)
             row["prev_close"] = round(pc, 2)
+        elif sym in prevs:  # fecho anterior desmentido pela guarda → limpa o valor velho (o site calcula ao vivo)
+            row["prev_close"] = None
         if have_shares:  # só atualiza marketcap se soubermos as shares (senão não lhe toca)
             sh = shares.get(sym)
             row["marketcap"] = round(sh * p) if sh else None
@@ -439,7 +494,7 @@ def fetch_prices():
             _fill_missing_via_chart([s for s in fast if s not in p], p)  # ex.: ATLN (sem barras)
             rows = _price_rows(p, pv, shares, have_shares)
             print(f"[ath] prices passagem 1: {len(rows)} linhas -> POST")
-            post_rows(rows)
+            post_rows_uniform(rows)
 
     # CRIPTO dos membros (ex.: BTC = ETF Grayscale que o yf.download não resolve e que pode ainda não estar no
     # sp500_ath): via chart-v8 (mesma fonte do app), SÓ com o mercado aberto → entra no sp500_ath e depois
@@ -466,7 +521,7 @@ def fetch_prices():
         if _feed_fresh(mx, "prices passagem 2 (resto)"):
             rows = _price_rows(p, pv, shares, have_shares)
             print(f"[ath] prices passagem 2: {len(rows)} linhas (marketcap: {have_shares}) -> POST")
-            post_rows(rows)
+            post_rows_uniform(rows)
     except Exception as e:
         print(f"[ath] prices passagem 2 falhou (não-fatal): {e}")
 
@@ -493,7 +548,7 @@ def fetch_positions():
     _fill_missing_via_chart([s for s in fast if s not in p], p)  # ex.: ATLN (sem barras no download)
     rows = _price_rows(p, pv, shares, have_shares)
     print(f"[ath] positions: {len(rows)} linhas (marketcap: {have_shares}) -> POST")
-    post_rows(rows)
+    post_rows_uniform(rows)
 
 
 def held_tickers():
