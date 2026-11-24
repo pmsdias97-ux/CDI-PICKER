@@ -7,6 +7,7 @@ import { COIN_DR, COIN_DRX, COIN_DX, COIN_SET, LAUREL_LEAVES, MARKET_HOLIDAYS_US
 import { GlowBehind, GoldGlow, HoverName, InfoTip, MiniSparkline, Rolling, Skeleton, StockLogo, Tri } from "./ui";
 import { SeasonRace } from "./race";
 import { CompetitionTimer } from "./home";
+import { displayTicker, displayCompany } from "../lib/tickerAlias";
 
 export function PodiumLaurel({rank,hi,lo}){
   const gid="rkLau"+rank;
@@ -599,7 +600,7 @@ export function Ranking({ranking,myNorm,pricesLoading,pricesAsOf,spy,dayChange,m
     // Rank REAL anotado antes de ordenar/filtrar (a ordenação/filtro NÃO estraga o nº do lugar).
     const ranked=src.map((p,i)=>({...p,_rank:i+1}));
     const q=norm(query), pq=norm(posQuery);
-    const matchesPos=(p)=>(p.stocks||[]).some(s=>norm(s.ticker).includes(pq)||norm(s.companyName).includes(pq));
+    const matchesPos=(p)=>(p.stocks||[]).some(s=>norm(s.ticker).includes(pq)||norm(s.companyName).includes(pq)||norm(displayTicker(s.ticker)).includes(pq)||norm(displayCompany(s.ticker,s.companyName)).includes(pq));
     const posCount=(searchable&&pq)?ranked.filter(matchesPos).length:0; // quantos membros têm a posição
     // Demos (searchable=false): tudo, como antes. Oficiais: filtra (nome + posição) → ordena (coluna)
     // → fatia (render progressivo, só quando não há pesquisa nenhuma → a pesquisa vê a lista toda).
@@ -742,7 +743,7 @@ export function Ranking({ranking,myNorm,pricesLoading,pricesAsOf,spy,dayChange,m
             </span>
             <span className="rkHide" style={{display:"flex",alignItems:"center",justifyContent:"flex-start",gap:2,flexWrap:"nowrap",overflow:"hidden"}}>
               {(p.stocks||[]).map(s=>({s,r:stockRet(s,livePrices)})).sort((a,b)=>b.r-a.r).map(({s,r})=>(
-                <HoverName key={s.ticker} label={`${s.companyName||s.ticker} · ${pct(r)}`} ring={!!pq&&(norm(s.ticker).includes(pq)||norm(s.companyName).includes(pq))}><StockLogo ticker={s.ticker} size={16}/></HoverName>
+                <HoverName key={s.ticker} label={`${displayCompany(s.ticker,s.companyName)} · ${pct(r)}`} ring={!!pq&&(norm(s.ticker).includes(pq)||norm(s.companyName).includes(pq))}><StockLogo ticker={s.ticker} size={16}/></HoverName>
               ))}
             </span>
           </div>
@@ -1070,7 +1071,7 @@ export function Ranking({ranking,myNorm,pricesLoading,pricesAsOf,spy,dayChange,m
       {topPicks.map(t=>(
         <div key={t.ticker} style={{display:"flex",alignItems:"center",gap:8}}>
           <StockLogo ticker={t.ticker} size={18}/>
-          <span style={{fontWeight:700,fontSize:12.5,width:50,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis"}}>{t.ticker}</span>
+          <span style={{fontWeight:700,fontSize:12.5,width:50,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis"}}>{displayTicker(t.ticker)}</span>
           <div style={{flex:1,height:6,borderRadius:999,background:"rgba(255,255,255,0.07)",overflow:"hidden",minWidth:0}}>
             <div style={{height:"100%",width:`${Math.max(5,Math.round(t.frac*100))}%`,background:"linear-gradient(90deg,#16a34a,#4ade80)",borderRadius:999}}/>
           </div>
@@ -1081,8 +1082,8 @@ export function Ranking({ranking,myNorm,pricesLoading,pricesAsOf,spy,dayChange,m
   )):null;
   const perfRow=(o)=>{const pos=o.ret>=0,c=pos?"#4ade80":"#f87171";return(
     <div key={o.ticker} style={{display:"flex",alignItems:"center",gap:8}}>
-      <HoverName label={o.companyName||o.ticker}><StockLogo ticker={o.ticker} size={17}/></HoverName>
-      <span style={{fontWeight:700,fontSize:12,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.ticker}</span>
+      <HoverName label={displayCompany(o.ticker,o.companyName)}><StockLogo ticker={o.ticker} size={17}/></HoverName>
+      <span style={{fontWeight:700,fontSize:12,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayTicker(o.ticker)}</span>
       <span style={{fontFamily:"ui-monospace, monospace",fontWeight:800,fontSize:11.5,color:c,background:pos?"rgba(74,222,128,0.10)":"rgba(248,113,113,0.10)",border:`1px solid ${pos?"rgba(74,222,128,0.30)":"rgba(248,113,113,0.30)"}`,borderRadius:7,padding:"1px 7px"}}>{o.ret>=0?"+":""}{(o.ret*100).toFixed(2)}%</span>
     </div>);};
   const perfSpark=(up)=>(
@@ -1413,7 +1414,7 @@ export function Ranking({ranking,myNorm,pricesLoading,pricesAsOf,spy,dayChange,m
                 <span style={{textAlign:"center",alignSelf:"center",color:"#4b5563"}}>—</span>
                 <span className="rkHide" style={{display:"flex",alignItems:"center",justifyContent:"flex-start",gap:2,flexWrap:"nowrap",overflow:"hidden"}}>
                   {(p.stocks||[]).map(s=>({s,rr:histFromTo?pfPeriodRet({stocks:[s]},histFromTo.from,histFromTo.to):null})).sort((a,b)=>(b.rr??-9)-(a.rr??-9)).map(({s,rr})=>(
-                    <HoverName key={s.ticker} label={`${s.companyName||s.ticker}${rr!=null?` · ${pct(rr)}`:""}`}><StockLogo ticker={s.ticker} size={16}/></HoverName>
+                    <HoverName key={s.ticker} label={`${displayCompany(s.ticker,s.companyName)}${rr!=null?` · ${pct(rr)}`:""}`}><StockLogo ticker={s.ticker} size={16}/></HoverName>
                   ))}
                 </span>
               </div>

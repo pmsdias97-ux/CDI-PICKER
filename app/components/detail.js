@@ -8,6 +8,7 @@ import { BADGE_ICONS, COMMENT_REACTIONS, K, RANK_BADGE, SECTORS, SECTOR_COLORS, 
 import { BreatheGlow, Confetti, GoldGlow, Reveal, Rolling, SideBadge, Skeleton, StockLogo, TiltCard, Tri } from "./ui";
 import { LeftBackRail } from "./shell";
 import { WinnerMedals } from "./ranking";
+import { RENAMED, TICKER_NOTES, displayTicker, displayCompany } from "../lib/tickerAlias";
 
 /* ---- Evolution chart -----------------------------------------------------
    Lê os snapshots diários (gravados pelo cron) e desenha a evolução da
@@ -182,8 +183,8 @@ export function SectorDonut({stocks}){
         {hi!=null&&(
           <div style={{display:"flex",flexWrap:"wrap",gap:5,alignItems:"center",justifyContent:"center"}}>
             {membersOf(segs[hi].name).map(s=>(
-              <span key={s.ticker} title={s.companyName||s.ticker}
-                style={{fontSize:10.5,fontFamily:"monospace",fontWeight:700,color:"#cbd5e1",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:6,padding:"2px 6px"}}>{s.ticker}</span>
+              <span key={s.ticker} title={displayCompany(s.ticker,s.companyName)}
+                style={{fontSize:10.5,fontFamily:"monospace",fontWeight:700,color:"#cbd5e1",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:6,padding:"2px 6px"}}>{displayTicker(s.ticker)}</span>
             ))}
           </div>
         )}
@@ -513,7 +514,7 @@ export function SlotChart({pf,livePrices,dayChange,monthBase,weekBase}){
         <div style={{display:"flex",flexDirection:"column",gap:16}}>
           {rows.map(r=>{ const w=(Math.abs(r.ret)/maxAbs)*50, up=r.ret>=0; return(
             <div key={r.ticker} style={{display:"flex",alignItems:"center",gap:12}}>
-              <span style={{width:50,flexShrink:0,fontSize:12.5,fontWeight:700,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.ticker}</span>
+              <span style={{width:50,flexShrink:0,fontSize:12.5,fontWeight:700,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayTicker(r.ticker)}</span>
               <div style={{flex:1,position:"relative",height:14,minWidth:0}}>
                 <div style={{position:"absolute",left:"50%",top:-3,bottom:-3,width:1,background:"rgba(255,255,255,0.14)"}}/>
                 <div style={{position:"absolute",top:0,bottom:0,width:`${w}%`,...(up?{left:"50%",background:"linear-gradient(90deg,#16a34a,#4ade80)",borderRadius:"0 4px 4px 0"}:{right:"50%",background:"linear-gradient(270deg,#dc2626,#f87171)",borderRadius:"4px 0 0 4px"})}}/>
@@ -661,7 +662,7 @@ export function PortfolioShareCard({cardRef,name,total,stocks,ranks}){
             <div key={i} style={{background:"#101c36",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"9px 11px 10px"}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <StockLogo ticker={s.ticker} size={22}/>
-                <span style={{fontWeight:800,fontSize:13.5,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.ticker}{s.side==="short"?" ↓":""}</span>
+                <span style={{fontWeight:800,fontSize:13.5,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayTicker(s.ticker)}{s.side==="short"?" ↓":""}</span>
                 <span style={{fontWeight:800,fontSize:13,color:up?"#34d399":"#fb7185"}}>{pct(s.ret)}</span>
               </div>
               <div style={{height:4,borderRadius:2,background:"rgba(255,255,255,0.07)",marginTop:8,overflow:"hidden"}}>
@@ -943,15 +944,20 @@ export function Detail({pf,rank,rowHover="#0a1120",livePrices,priceStale,dayChan
               <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
                 <StockLogo ticker={s.ticker} size={32}/>
                 <span style={{display:"inline-flex",alignItems:"center",gap:2,minWidth:0}}>
-                  <span style={{fontWeight:800,fontSize:14,color:"#e2e8f0"}}>{s.ticker}</span>
+                  <span style={{fontWeight:800,fontSize:14,color:"#e2e8f0"}}>{displayTicker(s.ticker)}</span>
+                  {RENAMED[String(s.ticker).toUpperCase()]&&<span title={`Antes ${s.ticker}`} style={{marginLeft:5,fontSize:10.5,fontWeight:600,color:"#94a3b8",whiteSpace:"nowrap"}}>ex-{s.ticker}</span>}
                   <SideBadge side={s.side} label/>
+                  {TICKER_NOTES[String(s.ticker).toUpperCase()]?.kind==="acquired"&&(
+                    <span title={TICKER_NOTES[String(s.ticker).toUpperCase()].text}
+                      style={{marginLeft:6,fontSize:9.5,fontWeight:800,letterSpacing:".3px",textTransform:"uppercase",color:"#fbbf24",background:"rgba(251,191,36,0.12)",border:"1px solid rgba(251,191,36,0.40)",borderRadius:999,padding:"2px 7px",whiteSpace:"nowrap",cursor:"help"}}>{TICKER_NOTES[String(s.ticker).toUpperCase()].pill}</span>
+                  )}
                   {priceStale&&priceStale[s.ticker]&&(
                     <span title={`Sem cotação desde ${new Date(priceStale[s.ticker]).toLocaleDateString("pt-PT")} — a ação pode ter deixado de negociar. Conta com o último preço conhecido.`}
                       style={{marginLeft:6,fontSize:9.5,fontWeight:800,letterSpacing:".3px",textTransform:"uppercase",color:"#fbbf24",background:"rgba(251,191,36,0.12)",border:"1px solid rgba(251,191,36,0.40)",borderRadius:999,padding:"2px 7px",whiteSpace:"nowrap"}}>sem cotação</span>
                   )}
                 </span>
               </div>
-              <div style={{fontSize:13,color:"#94a3b8",marginTop:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.companyName}</div>
+              <div style={{fontSize:13,color:"#94a3b8",marginTop:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayCompany(s.ticker,s.companyName)}</div>
             </div>
             <span style={{textAlign:"center",fontFamily:"monospace",fontSize:"clamp(10.5px,2.7vw,13px)",color:"#94a3b8",whiteSpace:"nowrap"}}>{money(s.initialPrice,s.currency)}</span>
             <span style={{textAlign:"center",fontFamily:"monospace",fontSize:"clamp(10.5px,2.7vw,13px)",color:"#e2e8f0",whiteSpace:"nowrap"}}>{money(s.cur,s.currency)}</span>
@@ -1062,8 +1068,8 @@ export function TopList({items}){
           <span style={{fontSize:12,fontWeight:700,color:"#4b5563",minWidth:16}}>{i+1}</span>
           <StockLogo ticker={s.ticker} size={26}/>
           <div style={{minWidth:0,flex:1}}>
-            <div style={{fontSize:13,fontWeight:800,color:"#e2e8f0",display:"flex",alignItems:"center",gap:6}}>{s.ticker}{s.side==="short"&&<SideBadge side="short" label/>}</div>
-            <div style={{fontSize:11,color:"#6b7280",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.companyName}</div>
+            <div style={{fontSize:13,fontWeight:800,color:"#e2e8f0",display:"flex",alignItems:"center",gap:6}}>{displayTicker(s.ticker)}{s.side==="short"&&<SideBadge side="short" label/>}</div>
+            <div style={{fontSize:11,color:"#6b7280",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayCompany(s.ticker,s.companyName)}</div>
           </div>
           <span style={{fontFamily:"monospace",fontSize:14,fontWeight:700,color:s.ret>=0?"#4ade80":"#f87171"}}>{pct(s.ret)}</span>
         </div>

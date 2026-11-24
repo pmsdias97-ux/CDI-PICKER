@@ -5,6 +5,7 @@ import { supabase } from "../supabase";
 import { GlowBehind, Rolling, SideBadge, Skeleton, StockLogo, Tri } from "./ui";
 import { DUEL_A, DUEL_B, pct, pfDayRet, pfStats, stockRet } from "../lib/core";
 import { SectorDonut } from "./detail";
+import { displayTicker, displayCompany } from "../lib/tickerAlias";
 
 // cores de identidade A (azul) / B (âmbar)
 export function DuelChart({a,b,curA,curB}){
@@ -102,10 +103,10 @@ export function PickCell({s,kind}){
   const bg=up?"rgba(34,197,94,0.10)":"rgba(239,68,68,0.10)";
   const bd=up?"rgba(34,197,94,0.20)":"rgba(239,68,68,0.20)";
   return(
-    <div title={s.companyName||s.ticker} style={{display:"flex",alignItems:"center",gap:5,background:bg,border:`1px solid ${bd}`,borderRadius:9,padding:"5px 8px",minWidth:0,overflow:"hidden"}}>
+    <div title={displayCompany(s.ticker,s.companyName)} style={{display:"flex",alignItems:"center",gap:5,background:bg,border:`1px solid ${bd}`,borderRadius:9,padding:"5px 8px",minWidth:0,overflow:"hidden"}}>
       <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:9,flexShrink:0,color:col}}><Tri up={up} size={8}/></span>
       <span style={{flexShrink:0,display:"inline-flex"}}><StockLogo ticker={s.ticker} size={16}/></span>
-      <span style={{flex:1,minWidth:0,fontSize:"clamp(9.5px,2.4vw,12px)",fontWeight:800,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.ticker}</span>
+      <span style={{flex:1,minWidth:0,fontSize:"clamp(9.5px,2.4vw,12px)",fontWeight:800,color:"#e2e8f0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayTicker(s.ticker)}</span>
       {s.side==="short"&&<span style={{flexShrink:0}}><SideBadge side="short"/></span>}
       <span style={{fontFamily:"monospace",fontWeight:800,fontSize:"clamp(9.5px,2.4vw,12px)",color:col,flexShrink:0,whiteSpace:"nowrap",marginLeft:4}}>{pct(s.ret)}</span>
     </div>

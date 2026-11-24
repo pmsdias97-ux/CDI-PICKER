@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "../supabase";
 import { HERO_LINE_PATH, RANK_BADGE, SUBMISSIONS_CLOSE_MS, WEEK_LIVE_FROM, fmtDateShort, isPreLaunch, nextWeek, pct, stockRet, weekFirstOpenMs, weekFriday, weekKey, weekLabel, weekPreOpen, weekTradingDone } from "../lib/core";
 import { Arrow, BreatheGlow, Btn, CountUp, GoldGlow, LockIcon, MiniSparkline, Reveal, Rolling } from "./ui";
+import { displayCompany } from "../lib/tickerAlias";
 
 // Contador da competição: antes do arranque conta até ao fim das submissões;
 // depois mostra a data do vencedor + contagem decrescente. Elegante e responsivo.
@@ -250,7 +251,7 @@ export function WinnerCard({p,rank,livePrices,series,onClick}){
       </div>
       <div style={{display:"flex",gap:4,marginBottom:14}}>
         {p.stocks.map(s=>{ const g=stockRet(s,livePrices)>=0; return(
-          <span key={s.ticker} title={s.companyName||s.ticker} style={{flex:1,height:6,borderRadius:999,
+          <span key={s.ticker} title={displayCompany(s.ticker,s.companyName)} style={{flex:1,height:6,borderRadius:999,
             background:g?"linear-gradient(180deg,#34d399,#10b981)":"linear-gradient(180deg,#fb7185,#ef4444)",
             boxShadow:"inset 0 1px 0 rgba(255,255,255,0.25)"}}/>
         ); })}

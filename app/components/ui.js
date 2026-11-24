@@ -4,6 +4,7 @@ import { useState, useEffect, forwardRef, useRef, useId } from "react";
 import { prepareSparklinePoints } from "../lib/ranking-sparkline.mjs";
 import { createPortal } from "react-dom";
 import { CALM_MOTION, LOGODEV_TOKEN } from "../lib/core";
+import { TICKER_NOTES } from "../lib/tickerAlias";
 
 // Odómetro estilo Robinhood: cada dígito rola na vertical até ao valor (na entrada
 // e quando o valor muda). Carateres não-dígitos (sinais, ".", "%") ficam estáticos.
@@ -205,9 +206,73 @@ export function SideBadge({side,label}){
   );
 }
 
+// Logótipo de uma empresa com EVENTO CORPORATIVO (mudou de nome/símbolo: ATLN → CIRC; ou foi adquirida: WBD): mostra o logótipo
+// (o da empresa nova, no caso da mudança de nome) com um selinho no canto e, em tamanhos normais, um tooltip a explicar (hover no desktop; toque abre/fecha
+// no telemóvel). Em tamanhos pequenos (<22px) não há tooltip próprio — a lista que o rodeia já mostra o nome (HoverName).
+// Dados e texto em lib/tickerAlias.js.
+function NoteBadge({from,info,size}){
+  const [pos,setPos]=useState(null);
+  const [imgErr,setImgErr]=useState(false);
+  const ref=useRef(null);
+  const tip=size>=22;
+  const open=()=>{ if(!tip) return; const r=ref.current?.getBoundingClientRect(); if(!r) return;
+    const vw=typeof window!=="undefined"?window.innerWidth:1200;
+    const below=r.top<170;                                    // sem espaço em cima → abre para baixo
+    setPos({x:Math.min(Math.max(r.left+r.width/2,150),vw-150),y:below?r.bottom+8:r.top-8,below}); };
+  useEffect(()=>{
+    if(!pos) return;
+    const close=(e)=>{ if(ref.current&&!ref.current.contains(e.target)) setPos(null); };
+    const esc=(e)=>{ if(e.key==="Escape") setPos(null); };
+    const onScroll=()=>setPos(null);
+    document.addEventListener("pointerdown",close); document.addEventListener("keydown",esc); window.addEventListener("scroll",onScroll,{passive:true});
+    return()=>{ document.removeEventListener("pointerdown",close); document.removeEventListener("keydown",esc); window.removeEventListener("scroll",onScroll); };
+  },[pos]);
+  const rename=info.kind==="rename";
+  const src=LOGODEV_TOKEN?`https://img.logo.dev/${info.logoDomain||`ticker/${encodeURIComponent(from)}`}?token=${LOGODEV_TOKEN}&size=${size*3}&format=png&retina=true&fallback=404`:null;
+  const bd=Math.max(11,Math.round(size*0.44));
+  const handlers=tip?{
+    tabIndex:0,
+    onPointerEnter:e=>{ if(e.pointerType==="mouse") open(); }, onPointerLeave:e=>{ if(e.pointerType==="mouse") setPos(null); },
+    onFocus:open, onBlur:()=>setPos(null),
+    onClick:e=>{ if(e.nativeEvent?.pointerType==="mouse") open(); else if(pos) setPos(null); else open(); },
+  }:{};
+  return(
+    <span ref={ref} className="stkLogo" role="img" aria-label={rename?`${info.company} (antes ${from})`:`${from}: ${info.headline}`} {...handlers}
+      style={{position:"relative",display:"inline-flex",flexShrink:0,cursor:tip?"help":undefined}}>
+      {src&&!imgErr
+        ?<img src={src} alt="" width={size} height={size} loading="lazy" onError={()=>setImgErr(true)}
+            style={{width:size,height:size,borderRadius:6,objectFit:"cover",background:"#fff",display:"block",flexShrink:0}}/>
+        :<Monogram ticker={rename?info.to:from} size={size}/>}
+      {size>=24&&(
+        <span aria-hidden="true" style={{position:"absolute",right:-4,bottom:-4,width:bd,height:bd,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",
+          background:rename?"linear-gradient(145deg,#3b82f6 0%,#7c3aed 100%)":"linear-gradient(145deg,#f59e0b 0%,#d97706 100%)",border:"1.5px solid #0b1224",boxShadow:"0 1px 4px rgba(0,0,0,0.5)"}}>
+          <svg width={Math.round(bd*0.62)} height={Math.round(bd*0.62)} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            {rename
+              ?<><path d="m17 2 4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></>
+              :<><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></>}
+          </svg>
+        </span>
+      )}
+      {pos&&typeof document!=="undefined"&&createPortal(
+        <div role="tooltip" style={{position:"fixed",left:pos.x,top:pos.y,transform:pos.below?"translate(-50%,0)":"translate(-50%,-100%)",zIndex:9999,pointerEvents:"none",
+          width:"min(290px,calc(100vw - 24px))",boxSizing:"border-box",background:"rgba(8,15,32,0.97)",border:"1px solid rgba(167,139,250,0.45)",borderRadius:10,
+          padding:"10px 12px",boxShadow:"0 10px 30px rgba(0,0,0,0.55)",textAlign:"left",whiteSpace:"normal"}}>
+          <div style={{fontSize:12.5,fontWeight:800,color:"#e2e8f0",marginBottom:5,display:"flex",alignItems:"center",flexWrap:"wrap",gap:6}}>
+            {rename
+              ?<><span>{from}</span><span style={{color:"#a78bfa"}}>→</span><span style={{color:"#c4b5fd"}}>{info.to}</span><span style={{fontWeight:600,color:"#94a3b8",fontSize:11.5}}>· {info.company}</span></>
+              :<><span>{from}</span><span style={{fontWeight:700,color:"#fbbf24",fontSize:12}}>· {info.headline}</span></>}
+          </div>
+          <div style={{fontSize:12,lineHeight:1.45,color:"#cbd5e1",fontWeight:500}}>{info.text}</div>
+        </div>,document.body)}
+    </span>
+  );
+}
+
 export function StockLogo({ticker,size=28}){
   const [err,setErr]=useState(false);
   if(!ticker) return null;
+  const note=TICKER_NOTES[String(ticker).toUpperCase()];
+  if(note) return <NoteBadge from={String(ticker).toUpperCase()} info={note} size={size}/>;
   if(err||!LOGODEV_TOKEN) return <span className="stkLogo"><Monogram ticker={ticker} size={size}/></span>;
   return(
     <span className="stkLogo">
