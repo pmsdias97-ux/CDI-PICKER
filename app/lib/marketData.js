@@ -1,4 +1,5 @@
 import { searchTickerList } from "./tickerList";
+import { yahooSymbol } from "./tickerAlias";
 
 // Market data with graceful fallbacks (no API key required):
 //   quotes:  Yahoo Finance  ->  CNBC
@@ -160,7 +161,8 @@ const QUOTE_MAX_STALE_MS = 10 * 60 * 1000; // up to 10 min: serve stale + revali
 const quoteInflight = new Map();
 
 // Network only (no cache): Yahoo → CNBC.
-async function loadQuote(symbol) {
+async function loadQuote(ticker) {
+  const symbol = yahooSymbol(ticker); // ex.: ATLN → CIRC (mudança de símbolo); a cache continua a usar o ticker original
   if (yahooAvailable()) {
     try {
       const q = await yahooQuote(symbol);
@@ -331,8 +333,9 @@ export async function fetchHistory(ticker) {
   const cached = getCached(cacheKey);
   if (cached != null) return cached;
 
-  let out = await yahooHistory(symbol);
-  if (!out) out = await alphaVantageHistory(symbol);
+  const ySym = yahooSymbol(symbol);
+  let out = await yahooHistory(ySym);
+  if (!out) out = await alphaVantageHistory(ySym);
   if (!out) return null;
 
   setCached(cacheKey, out, AV_HIST_TTL);

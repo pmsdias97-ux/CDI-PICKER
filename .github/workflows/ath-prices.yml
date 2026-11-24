@@ -1,12 +1,12 @@
-name: ATH — preços (3×/dia)
+name: Preços — ações dos membros (15 em 15 min na sessão)
 
-# Atualiza o preço atual + fecho anterior das ações que os MEMBROS têm (≈165 símbolos), 3 vezes por dia útil
-# (depois da abertura US, a meio da sessão e depois do fecho). Também disparável à mão.
+# Atualiza o preço atual + fecho anterior das ações que os MEMBROS têm (≈165 símbolos). Também disparável à mão.
 # Segredos: CRON_SECRET, SUPABASE_URL, SUPABASE_ANON_KEY.
 
-# GATILHO: só por disparo (workflow_dispatch). Quem dispara é a rota /api/cron/dispatch-prices (crons da Vercel às
-# 14:35, 18:00 e 21:20 UTC), que garante NO MÁXIMO 3 execuções por dia útil — uma por janela — por mais vezes que seja
-# chamada. Sem `schedule` aqui de propósito: somado ao disparo daria 6/dia.
+# GATILHO: só por disparo (workflow_dispatch), sem `schedule` (os agendamentos do GitHub atrasam horas). Quem dispara é
+# lib/pricesDispatch.js, com a regra "no máximo 1 execução por 14 min, dias úteis, 14:30–21:00 UTC": (1) a rota
+# /api/stocks/prices, quando alguém abre a plataforma com o mercado aberto e os preços têm >13 min; (2) os crons da Vercel
+# (14:35, 18:00 e 21:20 UTC) via /api/cron/dispatch-prices — o das 21:20 apanha o fecho oficial.
 on:
   workflow_dispatch:
 

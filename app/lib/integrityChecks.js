@@ -9,7 +9,7 @@ import { US_MARKET_HOLIDAYS } from "./marketHours";
 // Devolve { problems: [...] } (falham o alerta) e { warnings: [...] } (só informativo — ex.: ATLN sem cotação).
 // Usado pelo painel de admin (/api/admin/health) e pelo alerta automático (/api/cron/health-check).
 const norm = (s) => String(s || "").toUpperCase().replace(/\./g, "-").trim();
-const KNOWN_UNSTABLE = new Set(["ATLN"]); // sem cotação fiável: reconciliação própria, não conta como divergência
+const KNOWN_UNSTABLE = new Set([]); // tickers sem cotação fiável (reconciliação própria, não contam como divergência). Vazio: a ATLN passou a CIRC
 const iso = (d) => d.toISOString().slice(0, 10);
 function weekKey(d) {
   const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));

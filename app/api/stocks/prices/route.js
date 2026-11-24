@@ -4,6 +4,7 @@ import { fetchQuoteFull, flushQuoteRevalidations } from "../../../lib/marketData
 import { isValidTicker, rateLimited } from "../../../lib/apiGuards";
 import { isCrypto } from "../../../lib/crypto";
 import { usMarketOpen } from "../../../lib/marketHours";
+import { maybeDispatchPrices, MIN_GAP_MS } from "../../../lib/pricesDispatch";
 
 export const maxDuration = 30; // corta de forma limpa se algo demorar
 
@@ -14,9 +15,11 @@ export const maxDuration = 30; // corta de forma limpa se algo demorar
 // por isso só é usado como recurso para tickers que NÃO estão no pipeline (ex.: BTC).
 const norm = (s) => String(s || "").toUpperCase().replace(/\./g, "-").trim();
 
-// Tickers cronicamente instáveis no pipeline yfinance (cotações erradas / negociação esparsa; ex.: ATLN).
+// Tickers cronicamente instáveis no pipeline yfinance (cotações erradas / negociação esparsa).
 // Além do congelamento de fim de semana (que os cobre), são protegidos DURANTE a semana de ticks absurdos.
-const UNSTABLE_TICKERS = new Set(["ATLN"]);
+// Vazio desde 24-nov-2026: a ATLN não era instável — mudou de símbolo para CIRC (ver lib/tickerAlias.js) e passou a ter
+// cotação normal. Uma penny stock que mexe >30% numa semana é movimento real, não lixo.
+const UNSTABLE_TICKERS = new Set([]);
 const UNSTABLE_DEV = 0.30; // durante a semana, rejeita desvios > 30% da abertura da semana (garbage, não movimento normal)
 
 // 2ª feira (UTC) da semana de uma data — chave dos weekly_baselines.
@@ -181,6 +184,13 @@ export async function GET(request) {
       }
     }
   } catch { /* guarda best-effort */ }
+
+  // PREÇOS AO DIA (15 em 15 min): com o mercado aberto e a cotação mais recente do pipeline com >13 min, pede o refresh
+  // (GitHub Actions). A regra do intervalo (≥14 min desde a última execução) e a janela 14:30–21:00 UTC estão em
+  // lib/pricesDispatch.js; aqui só se decide SE vale a pena perguntar. Corre depois da resposta → não atrasa ninguém.
+  if (marketOpen && ath.maxTs && Date.now() - ath.maxTs > MIN_GAP_MS - 60000) {
+    after(() => maybeDispatchPrices().catch(() => {}));
+  }
 
   // marketClosed → a UI mostra "Último dia" (variação do último pregão congelada) em vez de "Diário".
   return Response.json({ prices, changes, errors, marketClosed: !marketOpen, asOf: asOf ? new Date(asOf).toISOString() : null, stale });

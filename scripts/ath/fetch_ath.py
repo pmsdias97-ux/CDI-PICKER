@@ -88,8 +88,26 @@ def _is_crypto(t):
     return str(t or "").upper().replace("-USD", "").strip() in CRYPTO
 
 
+# Tickers que mudaram de símbolo: o jogo continua a chamar-lhes pelo antigo (portfolio_stocks, baselines, sp500_ath),
+# mas é com o símbolo ATUAL que se pede ao Yahoo. ATLN → CIRC (Circle8 Group, ~3-set-2026): o Yahoo deixou de ter
+# dados em ATLN e o preço ficou congelado meses. Mantém em sincronia com app/lib/tickerAlias.js.
+ALIAS = {"ATLN": "CIRC"}
+
+
+def _r(x):
+    """Arredonda um preço: 2 casas (≥ 1 USD) ou 4 casas (penny stocks — 0,165 não pode virar 0,17)."""
+    x = float(x)
+    return round(x, 2 if abs(x) >= 1 else 4)
+
+
+def _y(sym):
+    """Símbolo a pedir ao Yahoo para um ticker do jogo."""
+    s = str(sym).upper()
+    return ALIAS.get(s, s)
+
+
 def yf_symbol(s):
-    return str(s).replace(".", "-").strip().upper()
+    return _y(str(s).replace(".", "-").strip().upper())
 
 
 def _prev_session(d):
@@ -105,7 +123,7 @@ def _chart_prev_close(symbol, last_date):
     da barra verificada. None se a barra desse pregão não existir (nunca devolve um fecho mais antigo)."""
     try:
         want = _prev_session(dt.date.fromisoformat(last_date)).isoformat()
-        r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+        r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{_y(symbol)}",
                          params={"range": "10d", "interval": "1d"},
                          headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
         res = (r.json().get("chart", {}).get("result") or [{}])[0]
@@ -113,7 +131,7 @@ def _chart_prev_close(symbol, last_date):
         closes = (((res.get("indicators") or {}).get("quote") or [{}])[0]).get("close") or []
         for ts, c in zip(res.get("timestamp") or [], closes):
             if c and dt.datetime.fromtimestamp(ts + off, dt.timezone.utc).date().isoformat() == want:
-                return round(float(c), 2)
+                return _r(c)
     except Exception:
         pass
     return None
@@ -161,12 +179,12 @@ def _chart_price(symbol):
     micro-cap que o yfinance dá como 'delisted' no histórico mas ainda tem cotação em tempo real).
     Só o preço (não há fecho anterior fiável → sem variação diária)."""
     try:
-        r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+        r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{_y(symbol)}",
                          params={"range": "1d", "interval": "1d"},
                          headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
         meta = (r.json().get("chart", {}).get("result") or [{}])[0].get("meta", {}) or {}
         p = meta.get("regularMarketPrice")
-        return round(float(p), 2) if p and float(p) > 0 else None
+        return _r(p) if p and float(p) > 0 else None
     except Exception:
         return None
 
@@ -193,18 +211,19 @@ def _dl_prices(symbols):
     max_bar_date = None
     for i in range(0, len(symbols), BATCH):
         batch = symbols[i:i + BATCH]
+        ybatch = [_y(x) for x in batch]  # símbolos a pedir ao Yahoo (ATLN → CIRC)
         try:
             # period="5d": últimos pregões → o preço (iloc[-1]) E o fecho anterior (iloc[-2]).
             # 5d (não 2d) garante ≥2 fechos mesmo em ações de negociação esparsa (ex.: penny
             # stocks como ATLN) ou com feriados pelo meio — senão o prev_close ficava null.
-            df = yf.download(batch, period="5d", interval="1d", auto_adjust=False,
+            df = yf.download(ybatch, period="5d", interval="1d", auto_adjust=False,
                              threads=True, progress=False, group_by="ticker")
         except Exception as e:
             print(f"[ath] download(2d) erro {i}: {e}")
             continue
         for sym in batch:
             try:
-                sub = df[sym] if len(batch) > 1 else df
+                sub = df[_y(sym)] if len(batch) > 1 else df
                 c = sub["Close"].dropna()
                 if not c.empty:
                     prices[sym] = float(c.iloc[-1])
@@ -263,10 +282,10 @@ def _price_rows(prices, prevs):
     for sym, p in prices.items():
         if not p:
             continue
-        row = {"symbol": sym, "price": round(p, 2)}
+        row = {"symbol": sym, "price": _r(p)}
         pc = prevs.get(sym)
         if pc:  # só envia prev_close quando o temos (senão não mexe no valor guardado)
-            row["prev_close"] = round(pc, 2)
+            row["prev_close"] = _r(pc)
         elif sym in prevs:  # fecho anterior desmentido pela guarda → limpa o valor velho (o site calcula ao vivo)
             row["prev_close"] = None
         rows.append(row)
