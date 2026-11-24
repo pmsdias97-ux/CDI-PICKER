@@ -752,19 +752,25 @@ export function Detail({pf,rank,rowHover="#0a1120",livePrices,priceStale,dayChan
       {rail.active&&<LeftBackRail gap={rail.gap} onBack={goBack}/>}
       {rank===1&&<Confetti key={pf.key} intense={!!myNorm && pf.normName===myNorm}/>}
       <style>{`
-        /* Duas colunas INDEPENDENTES: a esquerda = lista de ações + "Overview"; a direita = análises +
-           comentários. Cada coluna flui a SUA altura → o "Overview" fica sempre colado à lista de ações,
-           sem a gap que surgia quando a coluna direita (donut com muitos setores) ficava mais alta. */
+        /* GRELHA ÚNICA no desktop: as linhas alinham dos dois lados (cartão do perfil = linha do gráfico/setores;
+           lista de ações = linha de Melhores/Piores + gráfico "líderes e atrasados"). Os contentores de coluna
+           são "display:contents", por isso cada cartão é um item da grelha. Mobile: 1 coluna pela ordem abaixo. */
         .cdiDetail{display:grid;gap:16px;grid-template-columns:1fr}
-        .detColL,.detColR{display:contents}   /* mobile: os 4 cartões fluem direto na grelha (ordem via order) */
-        .detLeft{order:1}.detRight{order:2}.detStats{order:3}.detComments{order:4}
-        .detLeft,.detRight,.detStats,.detComments{min-width:0}
+        .detColL,.detColR,.detLeft,.detRight{display:contents}
+        .detProfile,.detList{order:1}.detEvo,.detDay,.detSlot{order:2}.detStats{order:3}.detComments{order:4}
+        .detProfile,.detList,.detEvo,.detDay,.detSlot,.detStats,.detComments{min-width:0}
         .detSlot{display:none}   /* gráfico só em desktop */
         @media(min-width:1000px){
-          .cdiDetail{grid-template-columns:minmax(0,1fr) minmax(0,1.12fr);align-items:start}
-          .detColL,.detColR{display:flex;flex-direction:column;gap:16px;min-width:0}
-          .detRight{display:flex;flex-direction:column}
-          .detSlot{display:flex;margin-top:16px}
+          .cdiDetail{grid-template-columns:minmax(0,1fr) minmax(0,1.12fr);grid-template-rows:auto auto 1fr auto}
+          .detProfile{grid-column:1;grid-row:1;display:flex;flex-direction:column}
+          .detEvo{grid-column:2;grid-row:1;display:flex}
+          .detEvoGrid{flex:1}
+          .detList{grid-column:1;grid-row:2 / span 2}
+          .detDay{grid-column:2;grid-row:2}
+          .detSlot{grid-column:2;grid-row:3;display:flex}
+          .detSlotIn{flex:1;display:flex;min-width:0}
+          .detStats{grid-column:1;grid-row:4}
+          .detComments{grid-column:2;grid-row:4}
         }
       `}</style>
       {!rail.active&&(
@@ -778,7 +784,7 @@ export function Detail({pf,rank,rowHover="#0a1120",livePrices,priceStale,dayChan
       <div className="cdiDetail">
       <div className="detColL">
       <div className="detLeft">{/* coluna esquerda: portefólio */}
-      <div style={{position:"relative",marginBottom:16}}>
+      <div className="detProfile" style={{position:"relative"}}>
         {/* 📚 Piada da casa: o ÚLTIMO lugar do Ranking Geral ganha o livro "Pai Rico, Pai Pobre"
             pousado no cartão — clicar abre o PDF numa nova aba. (Só oficiais, com ≥2 classificados.) */}
         {standings?.geral&&standings.geral.n>=2&&standings.geral.rank===standings.geral.n&&(
@@ -811,7 +817,7 @@ export function Detail({pf,rank,rowHover="#0a1120",livePrices,priceStale,dayChan
               imgStyle={{width:"100%",height:"auto"}}/>
           );
         })()}
-      <TiltCard style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:acc?acc.border:"1px solid rgba(255,255,255,0.10)",boxShadow:acc?`${acc.glow}, 0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.16)`:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,zIndex:1,position:"relative"}}>
+      <TiltCard style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:acc?acc.border:"1px solid rgba(255,255,255,0.10)",boxShadow:acc?`${acc.glow}, 0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.16)`:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,padding:28,zIndex:1,position:"relative",flex:1}}>
         <button onClick={()=>setShareOpen(true)} title="Partilhar cartão" aria-label="Partilhar cartão"
           style={{position:"absolute",top:14,right:14,width:24,height:24,padding:0,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",zIndex:3,
             background:"none",border:"none",color:"#94a3b8",opacity:0.7,transition:"opacity .15s, color .15s"}}
@@ -844,16 +850,16 @@ export function Detail({pf,rank,rowHover="#0a1120",livePrices,priceStale,dayChan
           </div>
           {/* Saúde da carteira: 1 segmento por ação (verde = ganho, vermelho = perda), da melhor à pior. */}
           <div style={{marginTop:22,textAlign:"left"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:9,fontSize:12.5,fontWeight:600}}>
+              <span style={{color:"#4ade80"}}><Tri size={11}/> {st.pos} {st.pos===1?"positiva":"positivas"}</span>
+              <span style={{color:"#f87171"}}>{st.neg} {st.neg===1?"negativa":"negativas"} <Tri up={false} size={11}/></span>
+            </div>
             <div style={{display:"flex",gap:5,height:10}}>
               {bySorted.map(s=>{ const g=rSign(s.ret); return(
                 <span key={s.ticker} title={`${s.ticker} ${pct(s.ret)}`} style={{flex:1,borderRadius:5,
                   background:g>0?"linear-gradient(180deg,#4ade80,#16a34a)":g<0?"linear-gradient(180deg,#f87171,#dc2626)":"#475569",
                   boxShadow:g>0?"0 0 10px rgba(74,222,128,0.35)":g<0?"0 0 10px rgba(248,113,113,0.30)":"none"}}/>
               );})}
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",marginTop:9,fontSize:12.5,fontWeight:600}}>
-              <span style={{color:"#4ade80"}}><Tri size={11}/> {st.pos} {st.pos===1?"positiva":"positivas"}</span>
-              <span style={{color:"#f87171"}}>{st.neg} {st.neg===1?"negativa":"negativas"} <Tri up={false} size={11}/></span>
             </div>
           </div>
           {/* Posição nos 3 jogos: mosaicos nas cores de cada período (azul/roxo/verde-água). */}
@@ -915,7 +921,7 @@ export function Detail({pf,rank,rowHover="#0a1120",livePrices,priceStale,dayChan
         </div>
       </>)}
 
-      <div style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
+      <div className="detList" style={{background:"rgba(255,255,255,0.05)",backdropFilter:"blur(16px) saturate(160%)",WebkitBackdropFilter:"blur(16px) saturate(160%)",border:"1px solid rgba(255,255,255,0.10)",boxShadow:"0 8px 30px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.10)",borderRadius:16,overflow:"hidden"}}>
         <div style={{display:"grid",alignItems:"center",gridTemplateColumns:"1.6fr 1fr 1fr 1.4fr",
           padding:"10px 20px",borderBottom:`1px solid ${divider}`,
           fontSize:11,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.5px",fontWeight:600,lineHeight:1.2}}>
@@ -983,8 +989,8 @@ export function Detail({pf,rank,rowHover="#0a1120",livePrices,priceStale,dayChan
       <div className="detColR">
       <div className="detRight">{/* coluna direita: análises */}
       {/* Evolução (#5) + Exposição por setor */}
-      <Reveal>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16,marginBottom:16}}>
+      <Reveal className="detEvo">
+      <div className="detEvoGrid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16,width:"100%"}}>
         <TiltCard style={{...GLASS,borderRadius:16,padding:24,display:"flex",flexDirection:"column"}}>
           <h3 className="detailCardTitle" style={{fontSize:13,fontWeight:800,letterSpacing:"1px",textTransform:"uppercase",marginBottom:16,color:"#cbd5e1",display:"flex",alignItems:"center",gap:10}}><span aria-hidden="true" style={{width:4,height:16,borderRadius:2,background:"linear-gradient(180deg,#60a5fa,#a78bfa)"}}/>Evolução da rentabilidade</h3>
           <EvolutionChart portfolioId={pf.id} currentReturn={st.total} submittedAt={pf.submittedAt} competitionStarted={competitionStarted} gameStartDate={gameStartDate} spy={spy} spyInitialPrice={pf.spyInitialPrice} mine={!!isOwn} ownerName={pf.name} height={250}/>
@@ -1001,7 +1007,7 @@ export function Detail({pf,rank,rowHover="#0a1120",livePrices,priceStale,dayChan
         .dayGrid{display:grid;gap:16px;align-items:start;grid-template-columns:1fr 1fr;grid-template-areas:"best worst"}
         @media(max-width:560px){.dayGrid{grid-template-columns:1fr;grid-template-areas:"best" "worst"}}
       `}</style>
-      <Reveal delay={80}>
+      <Reveal delay={80} className="detDay">
       <div className="dayGrid">
         <TiltCard style={{...GLASS,gridArea:"best",minWidth:0,borderRadius:16,padding:24,
           background:"linear-gradient(160deg, rgba(34,197,94,0.12), rgba(34,197,94,0.03))",
@@ -1025,7 +1031,7 @@ export function Detail({pf,rank,rowHover="#0a1120",livePrices,priceStale,dayChan
       </Reveal>
       {/* Gráfico "líderes e atrasados" — só desktop; enche o espaço vazio que sobra na coluna direita
           (a coluna estica à altura da lista de ações e este cartão ocupa o resto via flex:1). */}
-      <Reveal><div className="detSlot"><SlotChart pf={pf} livePrices={livePrices} dayChange={dayChange} monthBase={monthBase} weekBase={weekBase}/></div></Reveal>
+      <Reveal className="detSlot"><div className="detSlotIn"><SlotChart pf={pf} livePrices={livePrices} dayChange={dayChange} monthBase={monthBase} weekBase={weekBase}/></div></Reveal>
       </div>{/* /coluna direita (análises) */}
       <div className="detComments" id="detComments" style={{scrollMarginTop:88}}><Reveal><PortfolioReactions pf={pf} myNorm={myNorm} myUserId={myUserId} adminPw={adminPw} showToast={showToast} onOpenMember={onOpenMember} focusRef={focusRef}/></Reveal></div>
       </div>{/* /detColR */}

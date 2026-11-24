@@ -276,7 +276,7 @@ export function CountUp({to=0}){
 // Materialização ao entrar no ecrã (estilo Apple): a superfície "chega" — desfoque→nítido + ligeira
 // subida e escala, com easing tipo-spring (sem overshoot). Corre 1× por elemento. Respeita
 // prefers-reduced-motion (só cross-fade, sem transform/blur). Compositor-friendly (transform/opacity).
-export function Reveal({children,delay=0,y=14,style}){
+export function Reveal({children,delay=0,y=14,style,className}){
   const ref=useRef(null);
   const [shown,setShown]=useState(false);
   useEffect(()=>{
@@ -294,7 +294,7 @@ export function Reveal({children,delay=0,y=14,style}){
   // SEM filter:blur — animá-lo por cima do backdrop-filter (vidro) das boxes é pesadíssimo e o desfoque
   // "agarra-se" (fica em blur muito tempo). Só fade + subida + escala: leve, compositor-friendly, instantâneo.
   return(
-    <div ref={ref} style={{
+    <div ref={ref} className={className} style={{
       ...style,
       opacity:shown?1:0,
       transform:(shown||reduce)?"none":`translateY(${y}px) scale(0.99)`,
